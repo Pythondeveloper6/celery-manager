@@ -63,15 +63,41 @@ export function TaskList() {
 
   useEffect(() => subscribeToUpdates(() => refresh()), [refresh]);
 
-  // A stale selection pointing at rows the current filter no longer shows
-  // (or that a live SSE event just moved out of "failed") is worse than an
-  // empty one — clear it whenever the filter changes rather than let a
-  // bulk retry silently act on tasks the user can no longer see.
+  // Switching filters clears the selection outright (simplest mental
+  // model: a selection belongs to the list you made it in) and also
+  // clears any leftover bulk-action feedback from the previous view.
   useEffect(() => {
     setSelected(new Set());
     setBulkError(null);
     setBulkNotice(null);
   }, [status]);
+
+  // A stale selection pointing at a row the list no longer shows is worse
+  // than an empty one — a bulk retry must never silently act on a
+  // task_id the user can no longer see. The effect above only fires on a
+  // filter *switch*; it does nothing when the SAME filter's `tasks` array
+  // changes shape underneath a live selection — e.g. a background SSE
+  // event (`subscribeToUpdates` -> `refresh()`, line ~64) moves a
+  // selected task out of "failed" without `status` itself changing. So
+  // prune `selected` against the current `tasks` id set on every `tasks`
+  // change too, not just on filter change — this is what actually
+  // guarantees "selected never contains an id that isn't currently
+  // visible," which the filter-only reset does not.
+  useEffect(() => {
+    const visibleIds = new Set(tasks.map((t) => t.task_id));
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [tasks]);
 
   function toggle(taskId: string) {
     setSelected((prev) => {
