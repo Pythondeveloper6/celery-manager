@@ -47,6 +47,7 @@
 | 16 | Django demo project | 1–15 |
 | 17 | Docs site (MkDocs Material) | 1–15 |
 | 18 | Dashboard — periodic schedules list screen (added mid-run, closes a spec gap) | 10, 12, 15 |
+| 19 | Dashboard — task search, filtering, and detail depth (added mid-run, user request) | 10, 13, 14 |
 
 ---
 
@@ -74,6 +75,7 @@ plus anything worth surfacing outside that ledger.
 - [x] **Task 16: Django demo project** — commit `24ed13e` (dispatched in parallel with Task 13; Redis not available in this sandbox, so verification used `task_always_eager` + REST API checks instead of a live worker/beat — README still documents the full real flow). Review: Approved, clean. Fixed a real bug in the plan's own `settings.py` example (bare-int schedule value breaks the occurrences endpoint — needs a real `celery.schedules.schedule()` instance).
 - [x] **Task 17: Docs site (MkDocs Material)** — commit `6d45fb2` (dispatched in parallel with Task 15). Documented from real source, not the original plan text — every spot-checked claim across all 6 pages verified accurate against actual code, including non-obvious deviations from earlier fix rounds. Review: Approved, clean.
 - [x] **Task 18: Dashboard — periodic schedules list screen** — commit `bf40e79`. Closes the discoverability gap: reviewer traced the full nav→list→detail chain through the actual diff and confirmed it's real end to end (no dead links, no guessed URLs). All 18 tasks now complete.
+- [ ] **Task 19: Dashboard — task search, filtering, and detail depth** — not started. **Added mid-run** per user request ("we need [the tasks UI] to be awesome... search, filter, group by, get tasks for a specific date, task full details and logs"). Scoped via clarifying questions: search covers task name + task ID + args/kwargs content; group-by covers status + task name + date (client-side); date filter is a from/to range; detail depth adds worker/queue/timing info and a retry-history chain on top of the existing baseline. Dispatched after the final-review fix wave (Critical/Important findings) lands, since both touch overlapping files.
 
 ---
 
@@ -3635,6 +3637,1229 @@ Expected: PASS (all tests, no regressions)
 ```bash
 git add src/celery_manager/control/schedules.py src/celery_manager/api/routes/schedules.py frontend/src src/celery_manager/dashboard/static tests/unit/test_control_schedules.py tests/unit/test_api_schedules.py
 git commit -m "feat: periodic schedules list screen, closing the discoverability gap for per-occurrence pause/cancel"
+```
+
+
+### Task 19: Dashboard — task search, filtering, and detail depth
+
+**Why this task exists:** added mid-run per an explicit user request to make the Tasks UI "awesome" — search across name/ID/args/kwargs, group-by (status/name/date), a date-range filter, and richer detail (worker/queue/timing plus a retry lineage). All four were confirmed in scope for v1, with grouping deliberately kept client-side (no new aggregation endpoint) and search deliberately kept to a pragmatic substring `ilike` over the existing `args`/`kwargs` TEXT columns rather than real JSON querying. A final code-review fix wave may be landing on `src/celery_manager/api/routes/tasks.py` concurrently (adding `queue`/`worker`/`runtime_seconds` to the detail response) — Step 9 below reads the file's current content first and reconciles against whatever is actually there, the same way Task 18 did for `App.tsx`.
+
+**Files:**
+- Modify: `src/celery_manager/db/models.py` — add `TaskRun.retried_from_id`
+- Modify: `src/celery_manager/control/tasks.py` — extend `list_task_runs` with `q`/`date_from`/`date_to`; extend `retry_task` to stamp the new run's `retried_from_id`; add `list_retries_of`
+- Modify: `src/celery_manager/api/routes/tasks.py` — extend `GET /api/tasks` query params; extend `GET /api/tasks/{task_id}` response with worker/queue/timing (if not already present) and retry-chain fields
+- Modify: `frontend/src/api/tasks.ts` — extend `TaskSummary`/`TaskDetail` types, `listTasks(params)`
+- Modify: `frontend/src/pages/TaskList.tsx` — debounced search, date-range filter, group-by selector (client-side)
+- Modify: `frontend/src/pages/TaskDetail.tsx` — worker/queue/timing panel, retry-history panel
+- Modify: `frontend/src/styles/tokens.css` — search/date-range/group-by controls, grouped-section headers, runtime panel, retry-chain panel (existing tokens only, no new colours)
+- Test: `tests/unit/test_control_tasks.py` — search, date-range, `list_retries_of`
+- Test: `tests/unit/test_control_retry_audit.py` — `retry_task` stamps `retried_from_id`
+- Test: `tests/unit/test_api_tasks.py` — `q`/`date_from`/`date_to` query params, retry-chain fields on the detail response
+
+**Interfaces:**
+- Consumes: `GET /api/tasks`, `GET /api/tasks/{task_id}` (Task 10, as currently implemented — see Step 9's reconciliation note); `TaskRun` model (Task 2); `list_task_runs`, `get_task_run`, `retry_task` (Tasks 5, 7); design tokens (Task 12).
+- Produces: `TaskRun.retried_from_id: Mapped[str | None]` column.
+- Produces: `list_task_runs(session, *, status=None, task_name=None, q=None, date_from=None, date_to=None, limit=50, offset=0) -> list[TaskRun]` — extended.
+- Produces: `list_retries_of(session, task_id: str) -> list[TaskRun]`.
+- Produces: `retry_task(...)` — unchanged signature, now also upserts and stamps the new dispatch's `TaskRun` row with `retried_from_id`.
+- Produces: `GET /api/tasks?q=&date_from=&date_to=` — three new optional query params, threaded through to `list_task_runs`.
+- Produces: `GET /api/tasks/{task_id}` response gains `queue`, `worker`, `started_at`, `finished_at`, `runtime_seconds` (if not already present) plus `retried_from_id: string | null` and `retried_by: string[]`.
+- Produces: `frontend/src/api/tasks.ts` — extended `TaskSummary`/`TaskDetail`, `listTasks({ status?, task_name?, q?, date_from?, date_to? })`.
+- Produces: `frontend/src/pages/TaskList.tsx` internal (unexported) `groupTasks(tasks, groupBy)` — client-side grouping by status/task_name/date over the already-fetched, already-filtered list. No new backend aggregation endpoint.
+
+---
+
+- [ ] **Step 1: Write the failing control-layer tests**
+
+Append to `tests/unit/test_control_tasks.py` (add `list_retries_of` to the existing import line):
+
+```python
+# add to the existing import line:
+from celery_manager.control.tasks import list_task_runs, get_task_run, start_task, cancel_task, list_retries_of
+
+
+def _session_with_search_fixture():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    with Session() as session:
+        session.add_all([
+            TaskRun(task_id="alpha-1", task_name="demo.send_report", status="succeeded",
+                    args="[42]", kwargs="{}", started_at=datetime(2026, 8, 10, tzinfo=timezone.utc)),
+            TaskRun(task_id="beta-2", task_name="demo.echo", status="succeeded",
+                    args="[]", kwargs='{"user": "alice"}', started_at=datetime(2026, 8, 12, tzinfo=timezone.utc)),
+            TaskRun(task_id="gamma-3", task_name="demo.echo", status="failed",
+                    args="[]", kwargs="{}", started_at=datetime(2026, 8, 14, tzinfo=timezone.utc)),
+        ])
+        session.commit()
+    return Session()
+
+
+def test_list_task_runs_search_matches_task_name():
+    session = _session_with_search_fixture()
+    results = list_task_runs(session, q="send_report")
+    assert [r.task_id for r in results] == ["alpha-1"]
+
+
+def test_list_task_runs_search_matches_task_id():
+    session = _session_with_search_fixture()
+    results = list_task_runs(session, q="beta-2")
+    assert [r.task_id for r in results] == ["beta-2"]
+
+
+def test_list_task_runs_search_matches_kwargs_content():
+    # args/kwargs are stored as JSON TEXT (see db/models.py) — this is a
+    # pragmatic substring match, not a real JSON query. See Step 4.
+    session = _session_with_search_fixture()
+    results = list_task_runs(session, q="alice")
+    assert [r.task_id for r in results] == ["beta-2"]
+
+
+def test_list_task_runs_filters_by_date_range():
+    session = _session_with_search_fixture()
+    results = list_task_runs(
+        session,
+        date_from=datetime(2026, 8, 11, tzinfo=timezone.utc),
+        date_to=datetime(2026, 8, 13, tzinfo=timezone.utc),
+    )
+    assert [r.task_id for r in results] == ["beta-2"]
+
+
+def test_list_task_runs_combines_search_and_date_range():
+    session = _session_with_search_fixture()
+    results = list_task_runs(session, q="echo", date_from=datetime(2026, 8, 13, tzinfo=timezone.utc))
+    assert [r.task_id for r in results] == ["gamma-3"]
+
+
+def test_list_retries_of_returns_chain_children_in_order():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    with Session() as session:
+        session.add_all([
+            TaskRun(task_id="orig-1", task_name="demo.echo", status="failed"),
+            TaskRun(task_id="retry-1", task_name="demo.echo", status="succeeded", retried_from_id="orig-1"),
+            TaskRun(task_id="retry-2", task_name="demo.echo", status="failed", retried_from_id="orig-1"),
+        ])
+        session.commit()
+    session = Session()
+
+    assert [r.task_id for r in list_retries_of(session, "orig-1")] == ["retry-1", "retry-2"]
+    assert list_retries_of(session, "retry-1") == []
+```
+
+Append to `tests/unit/test_control_retry_audit.py`:
+
+```python
+from celery_manager.control.tasks import get_task_run, list_retries_of
+
+
+def test_retry_task_stamps_retried_from_id_on_new_run():
+    session = _session_with_runs()
+    app = MagicMock(spec=Celery)
+    app.send_task.return_value = MagicMock(id="t1-retry")
+
+    new_id = retry_task(app, session, "t1", username="alice")
+
+    new_run = get_task_run(session, new_id)
+    assert new_run is not None
+    assert new_run.retried_from_id == "t1"
+    assert [r.task_id for r in list_retries_of(session, "t1")] == [new_id]
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/unit/test_control_tasks.py tests/unit/test_control_retry_audit.py -v`
+Expected: FAIL — `TypeError: list_task_runs() got an unexpected keyword argument 'q'`, `ImportError: cannot import name 'list_retries_of'`, `TypeError: 'retried_from_id' is an invalid keyword argument for TaskRun`
+
+- [ ] **Step 3: Add `retried_from_id` to `TaskRun` in `src/celery_manager/db/models.py`**
+
+Add alongside `schedule_name` (this project has no migration system — per Task 2's original design, `init_db()` just calls `Base.metadata.create_all()`, which only creates missing *tables*, not columns on an existing on-disk DB; that limitation is unchanged by this task, and every test here uses a fresh `sqlite:///:memory:` DB so it's not exercised):
+
+```python
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    schedule_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    retried_from_id: Mapped[str | None] = mapped_column(
+        String(255), ForeignKey("task_runs.task_id"), nullable=True, index=True
+    )  # set by retry_task() (Task 19) on the newly dispatched run; None for an original run
+```
+
+- [ ] **Step 4: Extend `list_task_runs` and add `list_retries_of` in `src/celery_manager/control/tasks.py`**
+
+Add `or_` and `datetime` to the top imports:
+
+```python
+from __future__ import annotations
+
+from datetime import datetime
+
+from celery import Celery
+from sqlalchemy import or_
+
+from celery_manager.db.models import TaskRun
+```
+
+Replace the `list_task_runs` function with:
+
+```python
+def list_task_runs(
+    session,
+    *,
+    status: str | None = None,
+    task_name: str | None = None,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[TaskRun]:
+    query = session.query(TaskRun)
+    if status is not None:
+        query = query.filter_by(status=status)
+    if task_name is not None:
+        query = query.filter_by(task_name=task_name)
+    if q:
+        # args/kwargs are JSON stored as Text (see db/models.py) — a plain
+        # substring ilike across all four columns is the pragmatic v1
+        # search (name + ID + args/kwargs content, per the user's explicit
+        # scope), not a real JSON query. SQLAlchemy compiles .ilike() to a
+        # case-insensitive LIKE on SQLite (no native ILIKE there).
+        pattern = f"%{q}%"
+        query = query.filter(
+            or_(
+                TaskRun.task_name.ilike(pattern),
+                TaskRun.task_id.ilike(pattern),
+                TaskRun.args.ilike(pattern),
+                TaskRun.kwargs.ilike(pattern),
+            )
+        )
+    if date_from is not None:
+        query = query.filter(TaskRun.started_at >= date_from)
+    if date_to is not None:
+        query = query.filter(TaskRun.started_at <= date_to)
+    # A queued task with no started_at yet is excluded by either bound,
+    # which matches the intuitive meaning of "ran within this range."
+    return query.order_by(TaskRun.id.desc()).offset(offset).limit(limit).all()
+```
+
+Append at the bottom of the file:
+
+```python
+def list_retries_of(session, task_id: str) -> list[TaskRun]:
+    """Every TaskRun dispatched as a retry of task_id (may be more than
+    one if it was retried multiple times), oldest first."""
+    return session.query(TaskRun).filter_by(retried_from_id=task_id).order_by(TaskRun.id).all()
+```
+
+- [ ] **Step 5: Extend `retry_task` to stamp the retry chain**
+
+Replace the existing `retry_task` function:
+
+```python
+def retry_task(celery_app: Celery, session, task_id: str, username: str, args: list | None = None, kwargs: dict | None = None) -> str:
+    """Re-run a task, by default with its original args/kwargs; pass
+    args/kwargs to override them. Stamps the new dispatch's TaskRun row
+    with retried_from_id so the retry chain (Task 19) is visible
+    immediately, even before any events-listener event arrives for the
+    new task_id — creates the row if the listener hasn't upserted it yet,
+    or updates it in place if it has (upsert_task_run only ever sets
+    fields present on the event it's handling, so it never clobbers
+    retried_from_id set here)."""
+    run = get_task_run(session, task_id)
+    if run is None:
+        raise ValueError(f"no task run found for {task_id}")
+
+    final_args = args if args is not None else _json.loads(run.args or "[]")
+    final_kwargs = kwargs if kwargs is not None else _json.loads(run.kwargs or "{}")
+
+    new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
+
+    new_run = get_task_run(session, new_id)
+    if new_run is None:
+        new_run = TaskRun(
+            task_id=new_id,
+            task_name=run.task_name,
+            status="queued",
+            args=_json.dumps(final_args),
+            kwargs=_json.dumps(final_kwargs),
+        )
+        session.add(new_run)
+    new_run.retried_from_id = task_id
+    session.commit()
+
+    _record_audit(session, username, "retry", "task", task_id, {"new_task_id": new_id})
+    return new_id
+```
+
+- [ ] **Step 6: Run control-layer tests to verify they pass**
+
+Run: `pytest tests/unit/test_control_tasks.py tests/unit/test_control_retry_audit.py -v`
+Expected: PASS (all tests in both files, including the new ones)
+
+- [ ] **Step 7: Write the failing API-layer tests**
+
+Append to `tests/unit/test_api_tasks.py` (add `from datetime import datetime, timezone` to the top imports):
+
+```python
+from datetime import datetime, timezone
+
+
+def test_list_tasks_search_matches_task_id():
+    client, _ = _client_and_session()
+    response = client.get("/api/tasks", params={"q": "t1"})
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+
+
+def test_list_tasks_filters_by_date_range():
+    client, session_factory = _client_and_session()
+    with session_factory() as session:
+        session.add(TaskRun(
+            task_id="t2", task_name="demo.echo", status="succeeded", args="[]", kwargs="{}",
+            started_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ))
+        session.commit()
+
+    response = client.get("/api/tasks", params={"date_from": "2025-01-01T00:00:00Z"})
+    assert response.status_code == 200
+    assert all(t["task_id"] != "t2" for t in response.json())
+
+
+def test_get_task_detail_includes_retry_chain_fields():
+    client, _ = _client_and_session()
+    body = client.get("/api/tasks/t1").json()
+    assert body["retried_from_id"] is None
+    assert body["retried_by"] == []
+
+
+def test_retry_task_endpoint_stamps_retry_chain():
+    client, _ = _client_and_session()
+    with patch("celery_manager.control.tasks.start_task", return_value="t1-retry"):
+        response = client.post("/api/tasks/t1/retry")
+    assert response.status_code == 200
+    new_id = response.json()["new_task_id"]
+    assert new_id == "t1-retry"
+
+    detail = client.get(f"/api/tasks/{new_id}").json()
+    assert detail["retried_from_id"] == "t1"
+
+    original = client.get("/api/tasks/t1").json()
+    assert original["retried_by"] == [new_id]
+```
+
+- [ ] **Step 8: Run tests to verify they fail**
+
+Run: `pytest tests/unit/test_api_tasks.py -v`
+Expected: FAIL — `422 Unprocessable Entity` on the unknown `q`/`date_from` params, `KeyError: 'retried_from_id'`
+
+- [ ] **Step 9: Extend `src/celery_manager/api/routes/tasks.py`**
+
+Read the file's current content first — a concurrent final-review fix wave may already have added `queue`, `worker`, `started_at`, `finished_at`, and `runtime_seconds` to the `GET /api/tasks/{task_id}` response dict. If those fields are already present, leave them as-is and only add the two new `retried_from_id`/`retried_by` fields plus the `list_tasks` query params below. If the file still matches Task 10's original shape (as read for this plan — see the block below), add everything shown.
+
+Add `datetime` to the imports and `list_retries_of` to the `control.tasks` import:
+
+```python
+from __future__ import annotations
+
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+
+from celery_manager.api.deps import get_current_user
+from celery_manager.control.tasks import (
+    list_task_runs,
+    get_task_run,
+    start_task,
+    cancel_task,
+    retry_task,
+    bulk_retry,
+    list_retries_of,
+)
+```
+
+Replace `list_tasks`:
+
+```python
+@router.get("")
+def list_tasks(
+    request: Request,
+    status: str | None = None,
+    task_name: str | None = None,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    username: str = Depends(get_current_user),
+):
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        runs = list_task_runs(session, status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to)
+        return [
+            {"task_id": r.task_id, "task_name": r.task_name, "status": r.status, "started_at": r.started_at, "finished_at": r.finished_at}
+            for r in runs
+        ]
+```
+
+Replace `get_task` (folding in worker/queue/timing if not already present, per the note above):
+
+```python
+@router.get("/{task_id}")
+def get_task(task_id: str, request: Request, username: str = Depends(get_current_user)):
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        run = get_task_run(session, task_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="not found")
+        retries = list_retries_of(session, task_id)
+        return {
+            "task_id": run.task_id,
+            "task_name": run.task_name,
+            "status": run.status,
+            "queue": run.queue,
+            "worker": run.worker,
+            "args": run.args,
+            "kwargs": run.kwargs,
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+            "runtime_seconds": run.runtime_seconds,
+            "exception": run.exception,
+            "traceback": run.traceback,
+            "log_output": run.log_output,
+            "retried_from_id": run.retried_from_id,
+            "retried_by": [r.task_id for r in retries],
+        }
+```
+
+- [ ] **Step 10: Run tests to verify they pass**
+
+Run: `pytest tests/unit/test_api_tasks.py -v`
+Expected: PASS (all tests in the file, including the new ones)
+
+- [ ] **Step 11: Extend `frontend/src/api/tasks.ts`**
+
+Read the file's current content first (last touched by Task 14). Replace the type/`listTasks` block:
+
+```typescript
+export interface TaskSummary {
+  task_id: string;
+  task_name: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface TaskDetail extends TaskSummary {
+  queue: string | null;
+  worker: string | null;
+  args: string;
+  kwargs: string;
+  runtime_seconds: number | null;
+  exception: string | null;
+  traceback: string | null;
+  log_output: string | null;
+  retried_from_id: string | null;
+  retried_by: string[];
+}
+
+export interface ListTasksParams {
+  status?: string;
+  task_name?: string;
+  q?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export async function listTasks(params: ListTasksParams = {}): Promise<TaskSummary[]> {
+  const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== "");
+  const query = new URLSearchParams(entries as [string, string][]).toString();
+  const response = await fetch(`${BASE}/tasks${query ? `?${query}` : ""}`, { credentials: "include" });
+  if (!response.ok) throw new Error("Couldn't load tasks.");
+  return response.json();
+}
+```
+
+Leave `getTask`, `retryTask`, `bulkRetryTasks`, `TaskEvent`, and `subscribeToUpdates` unchanged — only their `TaskDetail` type widened above.
+
+- [ ] **Step 12: Rewrite `frontend/src/pages/TaskList.tsx`**
+
+Read the file's current content first (last touched by Task 14's bulk-retry work). Replace it with the version below, which preserves the existing SSE subscription, bulk-select/bulk-retry, and stale-selection pruning exactly as they are, and adds a debounced search box, a date-range filter, and a client-side group-by:
+
+```tsx
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { bulkRetryTasks, listTasks, subscribeToUpdates, type TaskSummary } from "../api/tasks";
+
+const STATUS_FILTERS = ["all", "queued", "started", "succeeded", "failed", "retried", "skipped", "revoked"];
+
+type GroupBy = "none" | "status" | "task_name" | "date";
+
+const GROUP_LABELS: Record<GroupBy, string> = {
+  none: "None",
+  status: "Status",
+  task_name: "Task name",
+  date: "Date",
+};
+
+function formatTimestamp(value: string | null): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function groupKey(task: TaskSummary, groupBy: GroupBy): string {
+  switch (groupBy) {
+    case "status":
+      return task.status;
+    case "task_name":
+      return task.task_name;
+    case "date": {
+      if (!task.started_at) return "No start time";
+      const parsed = new Date(task.started_at);
+      if (Number.isNaN(parsed.getTime())) return "No start time";
+      return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    }
+    default:
+      return "";
+  }
+}
+
+function groupTasks(tasks: TaskSummary[], groupBy: GroupBy): { label: string; tasks: TaskSummary[] }[] {
+  if (groupBy === "none") return [{ label: "", tasks }];
+  const buckets = new Map<string, TaskSummary[]>();
+  for (const task of tasks) {
+    const key = groupKey(task, groupBy);
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(task);
+    } else {
+      buckets.set(key, [task]);
+    }
+  }
+  const entries = [...buckets.entries()];
+  if (groupBy === "date") {
+    // Newest date bucket first — tasks within a bucket keep the API's own
+    // id-desc order (most recent first), so this is entirely determined
+    // by each bucket's first task.
+    entries.sort((a, b) => {
+      const aTime = a[1][0]?.started_at ? new Date(a[1][0].started_at).getTime() : 0;
+      const bTime = b[1][0]?.started_at ? new Date(b[1][0].started_at).getTime() : 0;
+      return bTime - aTime;
+    });
+  } else {
+    entries.sort((a, b) => a[0].localeCompare(b[0]));
+  }
+  return entries.map(([label, groupedTasks]) => ({ label, tasks: groupedTasks }));
+}
+
+export function TaskList() {
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [status, setStatus] = useState("all");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkRetrying, setBulkRetrying] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
+
+  // Debounce the raw input so every keystroke doesn't trigger a fetch.
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
+  // Kept in a ref (rather than as refresh's dependencies) so the SSE
+  // subscription below can stay open across filter changes instead of
+  // tearing down and reconnecting EventSource on every keystroke/click.
+  const filtersRef = useRef({ status, q: debouncedSearch, dateFrom, dateTo });
+  useEffect(() => {
+    filtersRef.current = { status, q: debouncedSearch, dateFrom, dateTo };
+  }, [status, debouncedSearch, dateFrom, dateTo]);
+
+  // Only the very first fetch shows the full "Loading tasks…" takeover;
+  // every fetch after that (filter/search/date change or a live SSE
+  // event) just dims the panel briefly via `refreshing` so the existing
+  // rows never flicker away while fresher data is on the way.
+  const hasLoadedRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    if (hasLoadedRef.current) setRefreshing(true);
+    try {
+      const current = filtersRef.current;
+      const results = await listTasks({
+        status: current.status === "all" ? undefined : current.status,
+        q: current.q || undefined,
+        date_from: current.dateFrom ? `${current.dateFrom}T00:00:00Z` : undefined,
+        date_to: current.dateTo ? `${current.dateTo}T23:59:59Z` : undefined,
+      });
+      setTasks(results);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't load tasks.");
+    } finally {
+      hasLoadedRef.current = true;
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [status, debouncedSearch, dateFrom, dateTo, refresh]);
+
+  useEffect(() => subscribeToUpdates(() => refresh()), [refresh]);
+
+  // Switching filters clears the selection outright (simplest mental
+  // model: a selection belongs to the list you made it in) and also
+  // clears any leftover bulk-action feedback from the previous view.
+  useEffect(() => {
+    setSelected(new Set());
+    setBulkError(null);
+    setBulkNotice(null);
+  }, [status, debouncedSearch, dateFrom, dateTo]);
+
+  // A stale selection pointing at a row the list no longer shows is worse
+  // than an empty one — prune `selected` against the current `tasks` id
+  // set on every `tasks` change (e.g. a background SSE-triggered refresh),
+  // not just on filter change. See Task 14's TaskList for why this can't
+  // be folded into the effect above.
+  useEffect(() => {
+    const visibleIds = new Set(tasks.map((t) => t.task_id));
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [tasks]);
+
+  function toggle(taskId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  }
+
+  async function handleBulkRetry() {
+    const taskIds = [...selected];
+    if (taskIds.length === 0) return;
+    setBulkRetrying(true);
+    setBulkError(null);
+    setBulkNotice(null);
+    try {
+      const { new_task_ids } = await bulkRetryTasks(taskIds);
+      setSelected(new Set());
+      setBulkNotice(`Retried ${new_task_ids.length} task${new_task_ids.length === 1 ? "" : "s"} as new runs.`);
+      refresh();
+    } catch (err) {
+      setBulkError(err instanceof Error ? err.message : "Bulk retry failed.");
+    } finally {
+      setBulkRetrying(false);
+    }
+  }
+
+  function clearDateRange() {
+    setDateFrom("");
+    setDateTo("");
+  }
+
+  const hasActiveFilters = status !== "all" || debouncedSearch !== "" || dateFrom !== "" || dateTo !== "";
+
+  return (
+    <div className="cm-page">
+      <header className="cm-page-header">
+        <div className="cm-page-header-titles">
+          <p className="cm-page-eyebrow">
+            <span className="cm-brand-mark" aria-hidden="true" />
+            celery-manager
+          </p>
+          <h1 className="cm-page-title">Task runs</h1>
+        </div>
+        <div className="cm-live-indicator" title="Updates as workers report task events">
+          <span className="cm-live-dot" aria-hidden="true" />
+          Live
+        </div>
+      </header>
+
+      <div className="cm-filter-bar" role="group" aria-label="Filter by status">
+        {STATUS_FILTERS.map((s) => (
+          <button key={s} type="button" aria-pressed={s === status} onClick={() => setStatus(s)}>
+            {s}
+          </button>
+        ))}
+      </div>
+
+      <div className="cm-controls-bar">
+        <div className="cm-search-field">
+          <input
+            type="search"
+            className="cm-search-input"
+            placeholder="Search by task name, ID, args, or kwargs…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            aria-label="Search tasks"
+          />
+        </div>
+        <div className="cm-date-range" role="group" aria-label="Filter by date range">
+          <label className="cm-date-range-field">
+            <span className="cm-visually-hidden">From date</span>
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} />
+          </label>
+          <span className="cm-date-range-sep" aria-hidden="true">
+            &ndash;
+          </span>
+          <label className="cm-date-range-field">
+            <span className="cm-visually-hidden">To date</span>
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} />
+          </label>
+          {(dateFrom || dateTo) && (
+            <button type="button" className="cm-btn cm-btn-outline cm-date-range-clear" onClick={clearDateRange}>
+              Clear
+            </button>
+          )}
+        </div>
+        <label className="cm-group-select">
+          <span className="cm-visually-hidden">Group by</span>
+          <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
+            {(Object.keys(GROUP_LABELS) as GroupBy[]).map((g) => (
+              <option key={g} value={g}>
+                Group: {GROUP_LABELS[g]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {status === "failed" && selected.size > 0 && (
+        <div className="cm-bulk-bar">
+          <span className="cm-bulk-bar-label">
+            {selected.size} task{selected.size === 1 ? "" : "s"} selected
+          </span>
+          <button type="button" className="cm-btn cm-btn-solid" onClick={handleBulkRetry} disabled={bulkRetrying}>
+            {bulkRetrying ? "Retrying…" : `Retry ${selected.size} selected`}
+          </button>
+        </div>
+      )}
+      {bulkNotice && (
+        <p className="cm-notice" role="status">
+          {bulkNotice}
+        </p>
+      )}
+      {bulkError && (
+        <p className="cm-error" role="alert">
+          {bulkError}
+        </p>
+      )}
+
+      <div className={`cm-panel${refreshing ? " cm-panel-refreshing" : ""}`}>
+        {loading ? (
+          <p className="cm-loading">
+            <span className="cm-live-dot" aria-hidden="true" />
+            Loading tasks&hellip;
+          </p>
+        ) : error ? (
+          <p className="cm-error" role="alert">
+            {error}
+          </p>
+        ) : tasks.length === 0 ? (
+          <p className="cm-empty-state">
+            {hasActiveFilters ? "No tasks match these filters yet." : "No tasks recorded yet."}
+          </p>
+        ) : (
+          <div className="cm-table-scroll">
+            {groupTasks(tasks, groupBy).map((group) => (
+              <section key={group.label || "all"} className="cm-group-section">
+                {groupBy !== "none" && (
+                  <h2 className="cm-group-section-header">
+                    {group.label}
+                    <span className="cm-group-section-count">({group.tasks.length})</span>
+                  </h2>
+                )}
+                <table className="cm-task-table">
+                  <thead>
+                    <tr>
+                      {status === "failed" && (
+                        <th scope="col" className="cm-select-cell">
+                          <span className="cm-visually-hidden">Select</span>
+                        </th>
+                      )}
+                      <th scope="col">Task</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Started</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.tasks.map((t) => (
+                      <tr key={t.task_id}>
+                        {status === "failed" && (
+                          <td className="cm-select-cell">
+                            <input
+                              type="checkbox"
+                              checked={selected.has(t.task_id)}
+                              onChange={() => toggle(t.task_id)}
+                              aria-label={`Select ${t.task_name} (${t.task_id}) for bulk retry`}
+                            />
+                          </td>
+                        )}
+                        <td>
+                          <Link to={`/tasks/${t.task_id}`} className="cm-task-link">
+                            <span className="cm-task-name">{t.task_name}</span>
+                            <span className="cm-task-id">{t.task_id}</span>
+                          </Link>
+                        </td>
+                        <td>
+                          <span className="cm-status-badge" data-status={t.status}>
+                            {t.status}
+                          </span>
+                        </td>
+                        <td className="cm-timestamp">{formatTimestamp(t.started_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 13: Rewrite `frontend/src/pages/TaskDetail.tsx`**
+
+Read the file's current content first (last touched by Task 14's retry button). Replace it with the version below, which preserves the existing retry flow and args/kwargs/failure/log sections exactly as they are, and adds a worker/queue/timing panel and a retry-history panel:
+
+```tsx
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
+
+function formatPayload(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function formatTimestamp(value: string | null): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatRuntime(seconds: number | null): string {
+  if (seconds === null) return "—";
+  if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
+  return `${seconds.toFixed(2)} s`;
+}
+
+export function TaskDetail() {
+  const { taskId } = useParams<{ taskId: string }>();
+  const [task, setTask] = useState<TaskDetailData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = useState<{ newTaskId: string } | null>(null);
+
+  useEffect(() => {
+    setTask(null);
+    setError(null);
+    setRetrying(false);
+    setRetryError(null);
+    setRetryNotice(null);
+    if (!taskId) return;
+    getTask(taskId)
+      .then(setTask)
+      .catch((err) => setError(err instanceof Error ? err.message : "Task not found."));
+  }, [taskId]);
+
+  async function handleRetry() {
+    if (!task) return;
+    setRetrying(true);
+    setRetryError(null);
+    setRetryNotice(null);
+    try {
+      const { new_task_id } = await retryTask(task.task_id);
+      setRetryNotice({ newTaskId: new_task_id });
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : "Retry failed.");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  return (
+    <div className="cm-page cm-detail-page">
+      <Link to="/" className="cm-back-link">
+        &larr; All tasks
+      </Link>
+
+      {error ? (
+        <p className="cm-error" role="alert">
+          {error}
+        </p>
+      ) : !task ? (
+        <p className="cm-loading">
+          <span className="cm-live-dot" aria-hidden="true" />
+          Loading&hellip;
+        </p>
+      ) : (
+        <>
+          <header className="cm-detail-header">
+            <h1 className="cm-page-title">{task.task_name}</h1>
+            <span className="cm-status-badge" data-status={task.status}>
+              {task.status}
+            </span>
+            {task.status === "failed" && (
+              <button type="button" className="cm-btn cm-btn-solid" onClick={handleRetry} disabled={retrying}>
+                {retrying ? "Retrying…" : "Retry"}
+              </button>
+            )}
+          </header>
+          <p className="cm-task-id cm-detail-task-id">{task.task_id}</p>
+
+          {retryNotice && (
+            <p className="cm-notice" role="status">
+              Retried as a new run &mdash;{" "}
+              <Link to={`/tasks/${retryNotice.newTaskId}`} className="cm-back-link">
+                view {retryNotice.newTaskId}
+              </Link>
+              .
+            </p>
+          )}
+          {retryError && (
+            <p className="cm-error" role="alert">
+              {retryError}
+            </p>
+          )}
+
+          <section className="cm-panel cm-runtime-panel">
+            <h2>Worker &amp; timing</h2>
+            <dl className="cm-detail-meta cm-runtime-meta">
+              <div>
+                <dt>Queue</dt>
+                <dd>{task.queue ?? <span className="cm-meta-empty">Not recorded</span>}</dd>
+              </div>
+              <div>
+                <dt>Worker</dt>
+                <dd>{task.worker ?? <span className="cm-meta-empty">Not recorded</span>}</dd>
+              </div>
+              <div>
+                <dt>Started</dt>
+                <dd>{formatTimestamp(task.started_at)}</dd>
+              </div>
+              <div>
+                <dt>Finished</dt>
+                <dd>{formatTimestamp(task.finished_at)}</dd>
+              </div>
+              <div>
+                <dt>Runtime</dt>
+                <dd>{formatRuntime(task.runtime_seconds)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <dl className="cm-detail-meta">
+            <div>
+              <dt>Args</dt>
+              <dd>
+                <pre className="cm-code-block">{formatPayload(task.args)}</pre>
+              </dd>
+            </div>
+            <div>
+              <dt>Kwargs</dt>
+              <dd>
+                <pre className="cm-code-block">{formatPayload(task.kwargs)}</pre>
+              </dd>
+            </div>
+          </dl>
+
+          <section className="cm-panel cm-retry-chain-panel">
+            <h2>Retry history</h2>
+            {task.retried_from_id ? (
+              <p className="cm-retry-chain-item">
+                Retried from{" "}
+                <Link to={`/tasks/${task.retried_from_id}`} className="cm-back-link">
+                  {task.retried_from_id}
+                </Link>
+              </p>
+            ) : (
+              <p className="cm-empty-state">This run was not itself a retry of another run.</p>
+            )}
+            {task.retried_by.length > 0 ? (
+              <ul className="cm-retry-chain-list">
+                {task.retried_by.map((id) => (
+                  <li key={id}>
+                    <Link to={`/tasks/${id}`} className="cm-back-link">
+                      {id}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="cm-empty-state">No retries have been made from this run yet.</p>
+            )}
+          </section>
+
+          {task.exception && (
+            <section className="cm-panel cm-failure-panel">
+              <h2>Why it failed</h2>
+              <p className="cm-failure-message">{task.exception}</p>
+              {task.traceback && <pre className="cm-traceback">{task.traceback}</pre>}
+            </section>
+          )}
+
+          <section className="cm-panel cm-log-panel">
+            <h2>Log output</h2>
+            {task.log_output ? (
+              <pre className="cm-log-output">{task.log_output}</pre>
+            ) : (
+              <p className="cm-empty-state">No log output captured for this run.</p>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 14: Extend `frontend/src/styles/tokens.css`**
+
+No new colours — everything below reuses the existing `--cm-color-*`/`--cm-space-*`/`--cm-font-*` tokens, the same as every prior addition to this file. Append:
+
+```css
+/* ==========================================================================
+   Search, date-range, and group-by controls (Task 19) — sit alongside the
+   status filter bar, styled with the same input language the login screen
+   and schedule occurrences view already established (mono text, accent
+   focus ring), not a new control language.
+   ========================================================================== */
+
+.cm-controls-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-3);
+}
+
+.cm-search-field {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+
+.cm-search-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease), box-shadow var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-search-input::placeholder {
+  color: var(--cm-color-text-faint);
+}
+
+.cm-search-input:hover {
+  border-color: var(--cm-color-accent);
+}
+
+.cm-search-input:focus-visible {
+  border-color: var(--cm-color-accent);
+  box-shadow: var(--cm-focus-ring);
+}
+
+.cm-date-range {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-date-range-field input[type="date"] {
+  padding: 0.45rem 0.6rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-date-range-field input[type="date"]:hover {
+  border-color: var(--cm-color-accent);
+}
+
+.cm-date-range-field input[type="date"]:focus-visible {
+  border-color: var(--cm-color-accent);
+  box-shadow: var(--cm-focus-ring);
+}
+
+.cm-date-range-sep {
+  color: var(--cm-color-text-faint);
+}
+
+.cm-date-range-clear {
+  padding: 0.35rem 0.7rem;
+  font-size: var(--cm-text-xs);
+}
+
+.cm-group-select select {
+  padding: 0.45rem 0.6rem;
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-group-select select:hover {
+  border-color: var(--cm-color-accent);
+}
+
+.cm-group-select select:focus-visible {
+  border-color: var(--cm-color-accent);
+  box-shadow: var(--cm-focus-ring);
+}
+
+/* ==========================================================================
+   Grouped sections (task list group-by, Task 19) — each group renders as
+   its own labeled sub-table within the existing panel rather than a new
+   card per group, so "grouped" reads as a re-sectioned version of the
+   same table, not a different screen.
+   ========================================================================== */
+
+.cm-group-section + .cm-group-section {
+  margin-top: var(--cm-space-5);
+}
+
+.cm-group-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cm-space-2);
+  margin-bottom: var(--cm-space-2);
+  padding-bottom: var(--cm-space-1);
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--cm-color-text);
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-group-section-count {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 500;
+  color: var(--cm-color-text-faint);
+}
+
+/* ==========================================================================
+   Worker/timing panel and retry-history panel (task detail, Task 19) —
+   both reuse cm-panel/cm-detail-meta exactly as the args/kwargs section
+   above them does; only new pieces are the "not recorded" empty-value
+   treatment and the retry-chain list.
+   ========================================================================== */
+
+.cm-runtime-panel,
+.cm-retry-chain-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+}
+
+.cm-runtime-panel h2,
+.cm-retry-chain-panel h2 {
+  font-family: var(--cm-font-display);
+  font-size: var(--cm-text-base);
+  font-weight: 700;
+  color: var(--cm-color-text);
+}
+
+.cm-runtime-meta {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.cm-meta-empty {
+  color: var(--cm-color-text-faint);
+  font-style: italic;
+}
+
+.cm-retry-chain-item {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text);
+}
+
+.cm-retry-chain-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+}
+```
+
+- [ ] **Step 15: Rebuild and copy static output**
+
+Run: `cd frontend && npm run build && rm -rf ../src/celery_manager/dashboard/static && cp -r dist ../src/celery_manager/dashboard/static`
+
+- [ ] **Step 16: Manual verification**
+
+Serve the app (as in prior dashboard tasks) with a handful of seeded `TaskRun` rows spanning different names/statuses/dates, at least one with `retried_from_id` set. Using a real browser: confirm typing in the search box (debounced) narrows the list by name, ID, and by a substring only present in `kwargs`; confirm the date-range pickers narrow/expand results and "Clear" resets them; confirm each group-by option (Status, Task name, Date) re-sections the table with correct counts and that switching back to "None" restores the flat table; confirm bulk-select/bulk-retry still work unaffected on the "failed" filter; open a task detail page and confirm the worker/queue/timing panel shows real values or "Not recorded" as appropriate, and the retry-history panel shows "Retried from …" / a "retried by" list, or their respective empty states, correctly in both directions of a real retry chain.
+
+- [ ] **Step 17: Run the full test suite**
+
+Run: `pytest tests/ -v`
+Expected: PASS (all tests, no regressions)
+
+- [ ] **Step 18: Commit**
+
+```bash
+git add src/celery_manager/db/models.py src/celery_manager/control/tasks.py src/celery_manager/api/routes/tasks.py frontend/src src/celery_manager/dashboard/static tests/unit/test_control_tasks.py tests/unit/test_control_retry_audit.py tests/unit/test_api_tasks.py
+git commit -m "feat: task search, date-range filter, group-by, and worker/timing + retry-chain detail"
 ```
 
 ---
