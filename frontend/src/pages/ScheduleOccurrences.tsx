@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { listOccurrences, pauseOccurrence, type Occurrence } from "../api/schedules";
+import { listOccurrences, pauseOccurrence, type Occurrence, type PauseAction } from "../api/schedules";
 
-const ACTION_LABEL: Record<string, string> = {
+// Keyed by PauseAction rather than a bare string, so adding an action to the
+// API without giving it a label here is a compile error instead of a blank
+// badge. "reschedule" is gone: the API now 422s it (see api/schedules.ts).
+const ACTION_LABEL: Record<PauseAction, string> = {
   skip: "Skip",
   cancel: "Cancel",
-  reschedule: "Reschedule",
 };
 
 function formatTargetTime(value: string): string {

@@ -147,3 +147,39 @@ def test_occurrences_endpoint_handles_a_bare_number_beat_schedule_entry():
     body = response.json()
     assert len(body) == 10
     assert body[0]["action"] is None
+
+
+def test_pause_rejects_reschedule_action_with_422():
+    """I6: `action` used to be a bare `str`, so "reschedule" was accepted,
+    stored, and displayed in the dashboard as a paused occurrence — while the
+    decorator only ever acts on skip/cancel, so it did nothing at all."""
+    client = _client_and_session()
+
+    response = client.post(
+        "/api/schedules/demo-every-2h/occurrences/pause",
+        json={"target_time": "2026-08-15T20:00:00+00:00", "action": "reschedule"},
+    )
+
+    assert response.status_code == 422
+    # And nothing was persisted for it.
+    assert all(o["action"] is None for o in client.get("/api/schedules/demo-every-2h/occurrences").json())
+
+
+def test_pause_rejects_an_arbitrary_action_with_422():
+    client = _client_and_session()
+    response = client.post(
+        "/api/schedules/demo-every-2h/occurrences/pause",
+        json={"target_time": "2026-08-15T20:00:00+00:00", "action": "delete-everything"},
+    )
+    assert response.status_code == 422
+
+
+def test_pause_still_accepts_skip_and_cancel():
+    client = _client_and_session()
+    for action in ("skip", "cancel"):
+        response = client.post(
+            "/api/schedules/demo-every-2h/occurrences/pause",
+            json={"target_time": "2026-08-15T20:00:00+00:00", "action": action},
+        )
+        assert response.status_code == 200, action
+        assert response.json()["action"] == action

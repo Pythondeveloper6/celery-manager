@@ -114,8 +114,9 @@ knows about, newest first.
   the other one both work as an update in place — matching the pause
   endpoint's own update-in-place idempotency (see
   [REST API: occurrence-matching nuances](rest-api.md#occurrence-matching-nuances-worth-knowing)).
-  There is currently no "reschedule" control in the UI even though the API
-  and data model support that action value.
+  There is no "reschedule" control in the UI, and the API no longer accepts
+  that action value either (it returns `422`) — the data model still has the
+  column, but no reschedule behavior is implemented.
 - A per-row busy/error state means one occurrence's pause request failing
   doesn't block or hide the others; a page-level success notice
   auto-dismisses after 6 seconds.
