@@ -1,0 +1,30 @@
+site_name: celery-manager
+site_description: A dashboard and control API for Celery background tasks.
+repo_url: https://github.com/pythondeveloper6/celery-manager
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+markdown_extensions:
+  - fenced_code
+  - tables
+  - admonition
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - The decorator: decorator.md
+  - REST API: rest-api.md
+  - Dashboard: dashboard.md
+  - Configuration: configuration.md
