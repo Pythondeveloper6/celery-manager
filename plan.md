@@ -61,7 +61,7 @@ plus anything worth surfacing outside that ledger.
 - [x] **Task 4: Events listener** — commit `4f2f96c`. Review: Approved, clean. `EventListener`'s Celery API usage (`app.events.Receiver`/`.capture()`/`State`) independently verified against installed Celery 5.6.3 by both implementer and reviewer.
 - [x] **Task 5: Core API — task control** — commit `43def07`. Review: Approved, clean.
 - [x] **Task 6: Core API — schedule occurrence control** — commit `291b088` + fix `1f6df0c`. Review found a real thread-safety issue in the `nowfun`-pinning mechanism (shared schedule object, no lock, FastAPI threadpool would race); fixed by switching to a private `copy.copy()` — re-review confirmed addressed, race structurally eliminated.
-- [ ] **Task 7: Core API — retry + audit log** — not started.
+- [x] **Task 7: Core API — retry + audit log** — commit `a74a8e0` (dispatched in parallel with Task 9). Review: Approved, clean. Fixed a doc-only bug found by review: the Interfaces bullets for `retry_task`/`bulk_retry` above were missing `username` (the Step 4 code and tests always had it).
 - [x] **Task 8: Auth** — commit `ad76df4` + fix `8e86197` (dispatched in parallel with Task 6 — independent files, no overlap). Review found a real gap: `verify_session` only caught `BadSignature`, not the broader `BadData`, so a corrupted (not tampered) token could raise uncaught instead of returning `None`. Fixed by broadening the catch; re-review confirmed addressed with a new regression test reproducing the exact scenario.
 - [ ] **Task 9: REST API skeleton** — not started.
 - [ ] **Task 10: REST API — task & schedule endpoints** — not started. Plan already amended twice (see Task 6 note above).
@@ -1296,8 +1296,8 @@ git commit -m "feat: core API for computing and pausing future schedule occurren
 **Interfaces:**
 - Consumes: `AuditLog` (Task 2), `TaskRun`, `start_task` (Task 5).
 - Produces: `celery_manager.control.audit.record(session, username: str, action: str, target_type: str, target_id: str, details: dict | None = None) -> AuditLog`
-- Produces: `celery_manager.control.tasks.retry_task(celery_app, session, task_id: str, args: list | None = None, kwargs: dict | None = None) -> str`
-- Produces: `celery_manager.control.tasks.bulk_retry(celery_app, session, task_ids: list[str]) -> list[str]`
+- Produces: `celery_manager.control.tasks.retry_task(celery_app, session, task_id: str, username: str, args: list | None = None, kwargs: dict | None = None) -> str`
+- Produces: `celery_manager.control.tasks.bulk_retry(celery_app, session, task_ids: list[str], username: str) -> list[str]`
 
 - [ ] **Step 1: Write the failing test**
 
