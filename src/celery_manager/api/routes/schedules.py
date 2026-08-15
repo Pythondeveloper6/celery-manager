@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from celery_manager.api.deps import get_current_user
-from celery_manager.control.schedules import pause_occurrence, list_upcoming_with_overrides
+from celery_manager.control.schedules import pause_occurrence, list_upcoming_with_overrides, list_periodic_schedules
 
 router = APIRouter(prefix="/api/schedules")
 
@@ -47,3 +47,14 @@ def occurrences(name: str, request: Request, username: str = Depends(get_current
     eta_tolerance_seconds = request.app.state.cm_config.eta_tolerance_seconds
     with session_factory() as session:
         return list_upcoming_with_overrides(session, celery_app, name, eta_tolerance_seconds=eta_tolerance_seconds)
+
+
+@router.get("")
+def list_schedules(request: Request, username: str = Depends(get_current_user)):
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        schedules = list_periodic_schedules(session)
+        return [
+            {"name": s.name, "task_name": s.task_name, "schedule_spec": s.schedule_spec, "enabled": s.enabled}
+            for s in schedules
+        ]

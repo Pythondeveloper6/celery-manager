@@ -211,3 +211,10 @@ def list_upcoming_with_overrides(
             "consumed": match.consumed if match is not None else False,
         })
     return result
+
+
+def list_periodic_schedules(session) -> list[PeriodicSchedule]:
+    """Every configured periodic schedule, for the dashboard's schedule-list
+    screen — populated by sync_periodic_schedules() at create_app startup,
+    this is a pure read."""
+    return session.query(PeriodicSchedule).order_by(PeriodicSchedule.name).all()

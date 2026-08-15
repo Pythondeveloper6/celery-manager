@@ -85,3 +85,26 @@ def test_paused_occurrence_shows_as_paused_on_next_request():
     assert refreshed[0]["target_time"] != first_target_time
     assert refreshed[0]["action"] == "skip"
     assert refreshed[0]["consumed"] is False
+
+
+def test_list_schedules_endpoint_returns_synced_schedules():
+    client = _client_and_session()
+    response = client.get("/api/schedules")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["name"] == "demo-every-2h"
+    assert body[0]["task_name"] == "demo.echo"
+    assert body[0]["enabled"] is True
+
+
+def test_list_schedules_endpoint_requires_auth():
+    from celery import Celery
+    from celery_manager.api.app import create_app
+    from celery_manager.config import CeleryManagerConfig
+    from fastapi.testclient import TestClient
+
+    config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    app, _ = create_app(config)
+    response = TestClient(app).get("/api/schedules")
+    assert response.status_code == 401
