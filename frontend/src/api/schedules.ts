@@ -32,3 +32,16 @@ export async function pauseOccurrence(name: string, targetTime: string, action: 
   });
   if (!response.ok) throw new Error("Couldn't update this occurrence.");
 }
+
+export interface ScheduleSummary {
+  name: string;
+  task_name: string;
+  schedule_spec: string;
+  enabled: boolean;
+}
+
+export async function listSchedules(): Promise<ScheduleSummary[]> {
+  const response = await fetch(`${BASE}/schedules`, { credentials: "include" });
+  if (!response.ok) throw new Error("failed to load schedules");
+  return response.json();
+}

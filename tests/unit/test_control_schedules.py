@@ -12,6 +12,7 @@ from celery_manager.control.schedules import (
     list_overrides,
     sync_periodic_schedules,
     list_upcoming_with_overrides,
+    list_periodic_schedules,
 )
 
 
@@ -237,3 +238,19 @@ def test_list_upcoming_with_overrides_does_not_double_match_closely_spaced_occur
     assert len(matched) == 1
     # The earlier (chronologically first) occurrence claims the override.
     assert matched[0]["target_time"] == start + timedelta(seconds=90)
+
+
+def test_list_periodic_schedules_returns_all_ordered_by_name():
+    session = _session()
+    session.add(PeriodicSchedule(name="zzz-last", task_name="demo.echo", schedule_spec="1h"))
+    session.add(PeriodicSchedule(name="aaa-first", task_name="demo.echo", schedule_spec="2h"))
+    session.commit()
+
+    result = list_periodic_schedules(session)
+
+    assert [s.name for s in result] == ["aaa-first", "zzz-last"]
+
+
+def test_list_periodic_schedules_empty_when_none_configured():
+    session = _session()
+    assert list_periodic_schedules(session) == []

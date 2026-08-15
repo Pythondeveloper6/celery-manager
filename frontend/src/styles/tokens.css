@@ -1313,3 +1313,95 @@ textarea:focus-visible,
   font-size: var(--cm-text-xs);
   color: var(--cm-color-text-faint);
 }
+
+/* ==========================================================================
+   Periodic schedules list (Task 18) — the missing discovery step for
+   ScheduleOccurrences (Task 14). Rows render as cards, reusing the exact
+   surface/border/shadow treatment cm-occurrence-row already established
+   for schedule-related content, rather than the cm-task-table grid: a
+   schedule row has too little per-column data (name, task, spec) to
+   earn tabular alignment. The name/meta split inside the link reuses
+   cm-task-link's own name-then-meta stacking and hover-underline
+   convention verbatim, just renamed for this list.
+   ========================================================================== */
+
+.cm-schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cm-schedule-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-4);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-card);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-schedule-list-row:hover {
+  border-color: var(--cm-color-accent);
+  background-color: var(--cm-color-surface-sunken);
+}
+
+.cm-schedule-list-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1 1 auto;
+  min-width: 200px;
+  color: var(--cm-color-text);
+  text-decoration: none;
+}
+
+.cm-schedule-list-link:hover .cm-schedule-list-name {
+  color: var(--cm-color-accent);
+  text-decoration: underline;
+}
+
+.cm-schedule-list-name {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+  transition: color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-schedule-list-meta {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-faint);
+}
+
+/* Generic administrative-state badge — same neutral text-muted /
+   surface-sunken / border-strong grammar the status-badge system
+   already reserves for "queued"/"skipped"/"revoked" (see the status
+   badge note above): a disabled schedule isn't an alarm, just a
+   notable, non-default state, so it gets the same quiet treatment
+   rather than a new colour. Enabled schedules render no badge at all —
+   silence is the "normal" state, exactly like an occurrence with no
+   override renders no badge in ScheduleOccurrences. */
+.cm-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0.2rem 0.6rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  background-color: var(--cm-color-surface-sunken);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-full);
+}
