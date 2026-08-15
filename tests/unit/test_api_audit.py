@@ -17,7 +17,7 @@ def test_list_audit_log():
         session.add(AuditLog(username="alice", action="retry", target_type="task", target_id="t1", created_at=datetime.now(timezone.utc)))
         session.commit()
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="https://testserver")
     client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
     response = client.get("/api/audit")
 

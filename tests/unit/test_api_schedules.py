@@ -21,7 +21,7 @@ def _client_and_session():
     app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")
-    client = TestClient(app)
+    client = TestClient(app, base_url="https://testserver")
     client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
     return client
 
@@ -125,7 +125,7 @@ def test_list_schedules_endpoint_requires_auth():
 
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
     app, _ = create_app(config)
-    response = TestClient(app).get("/api/schedules")
+    response = TestClient(app, base_url="https://testserver").get("/api/schedules")
     assert response.status_code == 401
 
 
@@ -138,7 +138,7 @@ def test_occurrences_endpoint_handles_a_bare_number_beat_schedule_entry():
     app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")
-    client = TestClient(app)
+    client = TestClient(app, base_url="https://testserver")
     client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
 
     response = client.get("/api/schedules/bare-every-30s/occurrences")

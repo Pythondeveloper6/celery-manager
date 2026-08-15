@@ -4869,6 +4869,44 @@ git commit -m "feat: task search, date-range filter, group-by, and worker/timing
 Append new mid-implementation requests here too, tagged with the task they'd extend.
 
 **Phase 2 (fast follow):**
+- **Schema migrations (Alembic or equivalent)** — *added by the final-review
+  fix wave, finding I5.* `init_db()` uses `Base.metadata.create_all` only,
+  which creates missing tables but never alters existing ones. Any future
+  column add/change therefore breaks upgrades in place: users have to
+  hand-write DDL or drop and recreate celery-manager's database. Documented
+  as a known v1 limitation in `docs/configuration.md` ("Schema and
+  upgrades"); the real fix is adopting Alembic (or equivalent), shipping a
+  baseline revision matching the v1 models, and adding a
+  `celery-manager migrate` command.
+- **Cross-process SSE delivery (Redis pub/sub, or an in-process listener)** —
+  *added by the final-review fix wave, finding I1, per the ledger's
+  deliberately-partial ruling.* `EventBus` (`api/sse.py`) is an in-memory
+  `asyncio.Queue` fan-out living inside the API process, but the only thing
+  that publishes to it is `EventListener`, which the documented deployment
+  runs as a **separate OS process** (`celery-manager events`). A separate
+  process cannot reach the API process's in-memory queues, so `/api/stream`
+  connects successfully and then never delivers anything in a real
+  deployment. The fix wave addressed the symptom (5s polling fallback in
+  `TaskList`) and a genuine independent thread-safety bug in `publish`, but
+  deliberately did **not** attempt the architectural fix. Two real options:
+  (a) back `EventBus` with **Redis pub/sub** (or the existing broker) so any
+  process can publish and every API process fans out to its own subscribers —
+  also what makes SSE work across more than one API worker behind a load
+  balancer; or (b) run the listener **in-process** as a background task of
+  the API app (e.g. a startup task on a thread) instead of a separate CLI
+  process, which removes the IPC need entirely but couples listener uptime to
+  the API's and doesn't scale past one API process. (a) is the more general
+  answer; (b) is the cheaper one for single-process deployments.
+- **A "start task" control in the dashboard UI** — *added by the final-review
+  fix wave, finding I8.* `POST /api/tasks/start` exists and is now audited,
+  but nothing in the SPA can invoke it; the demo README was pointing users at
+  a UI control that does not exist. The README now documents the real
+  endpoint with a working `curl`/shell snippet instead. Building the UI was
+  judged out of scope for a fix wave: doing it properly means a task-name
+  picker sourced from the Celery app's registered tasks (there is no endpoint
+  for that yet), an args/kwargs editor with validation, and real
+  loading/error/empty treatment matching the existing design system — a
+  feature, not a patch.
 - Worker health view (online workers, active/reserved counts, remote shutdown)
 - Queue depth / broker backlog monitoring
 - Trend analytics (success rate / duration over time)

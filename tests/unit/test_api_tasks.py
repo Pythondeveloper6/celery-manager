@@ -16,7 +16,7 @@ def _client_and_session():
         create_user(session, "alice", "pw")
         session.add(TaskRun(task_id="t1", task_name="demo.echo", status="failed", args="[]", kwargs="{}"))
         session.commit()
-    client = TestClient(app)
+    client = TestClient(app, base_url="https://testserver")
     client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
     return client, session_factory
 
@@ -24,7 +24,7 @@ def _client_and_session():
 def test_list_tasks_requires_auth():
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
     app, _ = create_app(config)
-    response = TestClient(app).get("/api/tasks")
+    response = TestClient(app, base_url="https://testserver").get("/api/tasks")
     assert response.status_code == 401
 
 
