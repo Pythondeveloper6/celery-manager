@@ -88,6 +88,24 @@
   --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
   --cm-color-status-revoked-border: var(--cm-color-border-strong);
 
+  /* ---- schedule-occurrence pause state (Task 14) --------------------
+     A *different* concept from task status above: this marks a future
+     occurrence a human has proactively paused, not an outcome a task
+     run reached. Kept as its own token pair rather than reusing
+     --cm-color-status-retried's identical amber values directly, so the
+     two features stay decoupled — a future change to "retried" task
+     styling shouldn't silently reskin the schedule view. The numbers
+     are deliberately the same tuned amber (already checked >=4.5:1 on
+     its own tinted background, see the status-badge note above) since
+     "paused/deferred" reads correctly with the same hue task 13 already
+     validated; "cancel" intentionally has no colour pair here — it
+     reuses the neutral text-muted/surface-sunken/border-strong tokens
+     plus a strikethrough, exactly like the "revoked" task status above,
+     since both mean "explicitly withdrawn" rather than "warned about". */
+  --cm-color-occurrence-skip: #8f5900;
+  --cm-color-occurrence-skip-bg: #faf1de;
+  --cm-color-occurrence-skip-border: #dac39b;
+
   --cm-shadow-card: 0 1px 2px rgba(16, 24, 32, 0.04), 0 12px 32px -12px rgba(16, 24, 32, 0.18);
   --cm-focus-ring: 0 0 0 3px rgba(10, 116, 120, 0.35);
 
@@ -186,6 +204,11 @@
     --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
     --cm-color-status-revoked-border: var(--cm-color-border-strong);
 
+    /* ---- schedule-occurrence pause state (dark, Task 14) ----------- */
+    --cm-color-occurrence-skip: #f2b33d;
+    --cm-color-occurrence-skip-bg: rgba(242, 179, 61, 0.12);
+    --cm-color-occurrence-skip-border: rgba(242, 179, 61, 0.35);
+
     --cm-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 48px -20px rgba(0, 0, 0, 0.6);
     --cm-focus-ring: 0 0 0 3px rgba(53, 214, 210, 0.35);
   }
@@ -259,6 +282,18 @@ textarea:focus-visible,
 [tabindex]:focus-visible {
   box-shadow: var(--cm-focus-ring);
   border-radius: var(--cm-radius-sm);
+}
+
+.cm-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -907,4 +942,229 @@ textarea:focus-visible,
 
 .cm-log-panel .cm-empty-state {
   border-style: dashed;
+}
+
+/* ==========================================================================
+   Action buttons — shared solid/outline treatments for retry, bulk retry,
+   and schedule-occurrence skip/cancel (Task 14). Same type scale and
+   timing as every other interactive control in the file; no new colour
+   beyond the tokens already declared above.
+   ========================================================================== */
+
+.cm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cm-space-2);
+  padding: 0.45rem 0.85rem;
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border-radius: var(--cm-radius-md);
+  border: 1px solid transparent;
+  transition: background-color var(--cm-duration-fast) var(--cm-ease), border-color var(--cm-duration-fast) var(--cm-ease),
+    color var(--cm-duration-fast) var(--cm-ease), opacity var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cm-btn-solid {
+  color: var(--cm-color-accent-contrast);
+  background-color: var(--cm-color-accent);
+}
+
+.cm-btn-solid:hover:not(:disabled) {
+  background-color: var(--cm-color-accent-hover);
+}
+
+.cm-btn-solid:active:not(:disabled) {
+  background-color: var(--cm-color-accent-active);
+}
+
+.cm-btn-outline {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface);
+  border-color: var(--cm-color-border-strong);
+}
+
+.cm-btn-outline:hover:not(:disabled) {
+  border-color: var(--cm-color-accent);
+  color: var(--cm-color-accent);
+}
+
+/* The action matching an occurrence's current override — pressed state
+   reuses the accent tokens (the app's one "this is the selected
+   interactive thing" signal) rather than borrowing task-status colour.
+   Needs to out-rank :hover:not(:disabled) above (0,3,0) on specificity —
+   without the explicit :hover variant below, hovering a pressed button
+   fell back to the plain hover rule's `color: accent` on an
+   accent-background button, i.e. invisible teal-on-teal text (caught by
+   actually hovering the rendered button, not just reading the CSS). */
+.cm-btn-outline[aria-pressed="true"] {
+  color: var(--cm-color-accent-contrast);
+  background-color: var(--cm-color-accent);
+  border-color: var(--cm-color-accent);
+}
+
+.cm-btn-outline[aria-pressed="true"]:hover:not(:disabled) {
+  color: var(--cm-color-accent-contrast);
+  background-color: var(--cm-color-accent-hover);
+  border-color: var(--cm-color-accent-hover);
+}
+
+/* ==========================================================================
+   Bulk-select bar and row checkboxes (task list, Task 14)
+   ========================================================================== */
+
+.cm-select-cell {
+  width: 2.25rem;
+}
+
+.cm-task-table input[type="checkbox"],
+.cm-occurrence-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--cm-color-accent);
+}
+
+.cm-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-3) var(--cm-space-4);
+  background-color: var(--cm-color-accent-soft);
+  border: 1px solid var(--cm-color-accent);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-bulk-bar-label {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+}
+
+/* ==========================================================================
+   Inline status notice — confirms a pause/cancel/retry action actually
+   went through, rather than the view just silently re-fetching (Task 14).
+   Uses the accent tokens: this always confirms something the user just
+   *did* succeeded, the same "one interactive colour" the rest of the
+   file reserves for user-driven state, not a task-outcome colour.
+   ========================================================================== */
+
+.cm-notice {
+  padding: 0.625rem 0.75rem;
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-accent-soft);
+  border: 1px solid var(--cm-color-accent);
+  border-radius: var(--cm-radius-md);
+}
+
+/* ==========================================================================
+   Schedule occurrences (future-schedule pause/cancel view, Task 14)
+   ========================================================================== */
+
+.cm-occurrence-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cm-occurrence-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-4);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-card);
+}
+
+/* A paused row (skip or cancel already recorded) gets a visibly
+   different card treatment, not just a badge, so the "already acted on"
+   set reads as a distinct group when scanning the list. */
+.cm-occurrence-row[data-state="paused"] {
+  background-color: var(--cm-color-occurrence-skip-bg);
+  border-color: var(--cm-color-occurrence-skip-border);
+}
+
+.cm-occurrence-row[data-state="paused"][data-action="cancel"] {
+  background-color: var(--cm-color-surface-sunken);
+  border-color: var(--cm-color-border-strong);
+}
+
+.cm-occurrence-row[data-state="resolved"] {
+  opacity: 0.6;
+}
+
+.cm-occurrence-main {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-3);
+  flex: 1 1 auto;
+  min-width: 200px;
+}
+
+.cm-occurrence-time {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+}
+
+.cm-occurrence-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: var(--cm-radius-full);
+  color: var(--cm-color-occurrence-skip);
+  background-color: var(--cm-color-occurrence-skip-bg);
+  border: 1px solid var(--cm-color-occurrence-skip-border);
+}
+
+/* "Cancel" is an explicit withdrawal rather than a soft skip — same
+   neutral-plus-strikethrough language as the "revoked" task-status
+   badge above, so the two "this was deliberately called off" states
+   read as the same idea across the dashboard. */
+.cm-occurrence-badge[data-action="cancel"] {
+  color: var(--cm-color-text-muted);
+  background-color: var(--cm-color-surface-sunken);
+  border-color: var(--cm-color-border-strong);
+  text-decoration: line-through;
+  text-decoration-color: var(--cm-color-text-faint);
+}
+
+.cm-occurrence-badge-resolved {
+  color: var(--cm-color-text-faint);
+  background-color: var(--cm-color-surface-sunken);
+  border: 1px solid var(--cm-color-border);
+}
+
+.cm-occurrence-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  flex: none;
+}
+
+.cm-occurrence-row-error {
+  flex: 1 0 100%;
+  margin-top: var(--cm-space-1);
 }
