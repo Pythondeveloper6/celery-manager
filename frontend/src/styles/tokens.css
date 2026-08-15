@@ -1,0 +1,443 @@
+/* ==========================================================================
+   celery-manager design system
+   ==========================================================================
+
+   Direction: "signal panel" — a calm, precise instrument-panel aesthetic
+   for an ops tool people reach for mid-incident. A quiet slate/paper
+   surface carries the UI; a single phosphor-cyan accent (evoking an
+   oscilloscope trace / NOC wall display) marks the one interactive
+   colour, kept separate from the red/amber/green triad reserved for task
+   status elsewhere in the dashboard so status colour never doubles as
+   brand colour. IBM Plex Sans carries UI copy and headings; IBM Plex Mono
+   marks data — credentials, identifiers, meta text — the way a terminal
+   would.
+
+   Tokens are defined for light mode on :root and overridden for dark mode
+   under `prefers-color-scheme: dark`. Every colour, spacing, radius and
+   type value used by components in this file (and by screens added in
+   later tasks) should come from a custom property here — no ad hoc hex
+   values in component files.
+   ========================================================================== */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ---- colour: light mode (default) -------------------------------- */
+  --cm-color-bg: #f3f5f6;
+  --cm-color-bg-elevated: #ffffff;
+  --cm-color-surface: #ffffff;
+  --cm-color-surface-sunken: #eaedef;
+
+  --cm-color-border: #d8dee2;
+  --cm-color-border-strong: #7c8a93;
+
+  --cm-color-text: #101820;
+  --cm-color-text-muted: #55636b;
+  --cm-color-text-faint: #838f97;
+
+  --cm-color-accent: #0a7478;
+  --cm-color-accent-hover: #086063;
+  --cm-color-accent-active: #064e50;
+  --cm-color-accent-contrast: #ffffff;
+  --cm-color-accent-soft: #e3f2f1;
+
+  --cm-color-danger: #c22b3a;
+  --cm-color-danger-bg: #fbeaea;
+  --cm-color-danger-border: #e7b4b9;
+
+  --cm-color-success: #1d8a56;
+  --cm-color-warn: #a66a0a;
+
+  --cm-shadow-card: 0 1px 2px rgba(16, 24, 32, 0.04), 0 12px 32px -12px rgba(16, 24, 32, 0.18);
+  --cm-focus-ring: 0 0 0 3px rgba(10, 116, 120, 0.35);
+
+  /* ---- type ----------------------------------------------------------- */
+  --cm-font-display: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cm-font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cm-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --cm-text-xs: 0.75rem;
+  --cm-text-sm: 0.875rem;
+  --cm-text-base: 1rem;
+  --cm-text-lg: 1.125rem;
+  --cm-text-xl: 1.375rem;
+  --cm-text-2xl: 1.875rem;
+
+  --cm-leading-tight: 1.2;
+  --cm-leading-normal: 1.5;
+
+  /* ---- spacing (4px base) ---------------------------------------------- */
+  --cm-space-1: 0.25rem;
+  --cm-space-2: 0.5rem;
+  --cm-space-3: 0.75rem;
+  --cm-space-4: 1rem;
+  --cm-space-5: 1.5rem;
+  --cm-space-6: 2rem;
+  --cm-space-7: 3rem;
+  --cm-space-8: 4rem;
+
+  /* ---- radius: crisp, not bubbly — an instrument panel, not an app icon */
+  --cm-radius-sm: 4px;
+  --cm-radius-md: 6px;
+  --cm-radius-lg: 10px;
+  --cm-radius-full: 999px;
+
+  /* ---- motion ----------------------------------------------------------- */
+  --cm-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --cm-duration-fast: 120ms;
+  --cm-duration-base: 200ms;
+  --cm-duration-pulse: 2600ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ---- colour: dark mode -------------------------------------------- */
+    --cm-color-bg: #0b0f14;
+    --cm-color-bg-elevated: #10161d;
+    --cm-color-surface: #121820;
+    --cm-color-surface-sunken: #0e141b;
+
+    --cm-color-border: #232c36;
+    --cm-color-border-strong: #5a6875;
+
+    --cm-color-text: #e7ecef;
+    --cm-color-text-muted: #9aa7b0;
+    --cm-color-text-faint: #64717a;
+
+    --cm-color-accent: #35d6d2;
+    --cm-color-accent-hover: #5ce3df;
+    --cm-color-accent-active: #2ab5b2;
+    --cm-color-accent-contrast: #05201f;
+    --cm-color-accent-soft: rgba(53, 214, 210, 0.12);
+
+    --cm-color-danger: #ff6b73;
+    --cm-color-danger-bg: rgba(255, 107, 115, 0.12);
+    --cm-color-danger-border: rgba(255, 107, 115, 0.35);
+
+    --cm-color-success: #4fd98b;
+    --cm-color-warn: #f2b33d;
+
+    --cm-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 48px -20px rgba(0, 0, 0, 0.6);
+    --cm-focus-ring: 0 0 0 3px rgba(53, 214, 210, 0.35);
+  }
+}
+
+/* ==========================================================================
+   Base reset
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--cm-color-bg);
+  color: var(--cm-color-text);
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-base);
+  line-height: var(--cm-leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color var(--cm-duration-base) var(--cm-ease), color var(--cm-duration-base) var(--cm-ease);
+}
+
+h1,
+h2,
+h3,
+p,
+figure,
+blockquote {
+  margin: 0;
+}
+
+input,
+button,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+a,
+button,
+input,
+select,
+textarea,
+[tabindex] {
+  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  box-shadow: var(--cm-focus-ring);
+  border-radius: var(--cm-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ==========================================================================
+   Login screen
+   ========================================================================== */
+
+.cm-login-shell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--cm-space-5);
+  background-color: var(--cm-color-bg);
+  background-image: radial-gradient(var(--cm-color-border) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -11px -11px;
+}
+
+.cm-login-card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  padding: var(--cm-space-6) var(--cm-space-5) var(--cm-space-5);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-lg);
+  box-shadow: var(--cm-shadow-card);
+}
+
+.cm-login-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  margin-bottom: var(--cm-space-2);
+}
+
+.cm-login-header h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-family: var(--cm-font-display);
+  font-size: var(--cm-text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: var(--cm-leading-tight);
+  color: var(--cm-color-text);
+}
+
+.cm-brand-mark {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--cm-radius-full);
+  background-color: var(--cm-color-accent);
+  box-shadow: 0 0 0 3px var(--cm-color-accent-soft);
+  flex: none;
+}
+
+.cm-login-tagline {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+/* Signature element: a heartbeat line under the wordmark. Celery's own
+   scheduler is literally named "beat" — this reads as a live signal
+   without resorting to a startup animation that has nothing to do with
+   the product. Reduced-motion users get the static gradient only. */
+.cm-pulse-rule {
+  height: 2px;
+  border-radius: var(--cm-radius-full);
+  background: linear-gradient(90deg, var(--cm-color-accent) 0%, var(--cm-color-accent) 40%, var(--cm-color-border) 100%);
+  animation: cm-pulse var(--cm-duration-pulse) var(--cm-ease) infinite;
+}
+
+@keyframes cm-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.cm-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+}
+
+.cm-field label {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-login-card input {
+  padding: 0.625rem 0.75rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  background-color: var(--cm-color-surface);
+  color: var(--cm-color-text);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease), box-shadow var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-login-card input::placeholder {
+  color: var(--cm-color-text-faint);
+}
+
+.cm-login-card input:hover:not(:disabled) {
+  border-color: var(--cm-color-accent);
+}
+
+.cm-login-card input:focus-visible {
+  border-color: var(--cm-color-accent);
+  box-shadow: var(--cm-focus-ring);
+}
+
+.cm-login-card input:disabled {
+  background-color: var(--cm-color-surface-sunken);
+  color: var(--cm-color-text-faint);
+  cursor: not-allowed;
+}
+
+.cm-login-card input[aria-invalid="true"] {
+  border-color: var(--cm-color-danger);
+}
+
+.cm-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cm-space-2);
+  padding: 0.625rem 0.75rem;
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  color: var(--cm-color-danger);
+  background-color: var(--cm-color-danger-bg);
+  border: 1px solid var(--cm-color-danger-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-error::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 0.4rem;
+  border-radius: var(--cm-radius-full);
+  background-color: var(--cm-color-danger);
+}
+
+.cm-login-card button[type="submit"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cm-space-2);
+  margin-top: var(--cm-space-2);
+  padding: 0.7rem 1rem;
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--cm-color-accent-contrast);
+  background-color: var(--cm-color-accent);
+  border-radius: var(--cm-radius-md);
+  transition: background-color var(--cm-duration-fast) var(--cm-ease), transform var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-login-card button[type="submit"]:hover:not(:disabled) {
+  background-color: var(--cm-color-accent-hover);
+}
+
+.cm-login-card button[type="submit"]:active:not(:disabled) {
+  background-color: var(--cm-color-accent-active);
+  transform: translateY(1px);
+}
+
+.cm-login-card button[type="submit"]:disabled {
+  background-color: var(--cm-color-border-strong);
+  color: var(--cm-color-surface);
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.cm-login-card button[type="submit"][data-loading]::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border-radius: var(--cm-radius-full);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: currentColor;
+  animation: cm-spin 700ms linear infinite;
+}
+
+@keyframes cm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cm-login-meta {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-faint);
+  text-align: center;
+  margin-top: var(--cm-space-1);
+}
+
+/* ==========================================================================
+   Post-login placeholder (Tasks 13-15 replace this with the real shell)
+   ========================================================================== */
+
+.cm-app-placeholder {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--cm-space-5);
+  background-color: var(--cm-color-bg);
+  color: var(--cm-color-text-muted);
+  font-size: var(--cm-text-base);
+  text-align: center;
+}
+
+.cm-app-placeholder strong {
+  color: var(--cm-color-text);
+  font-weight: 600;
+}

@@ -1,0 +1,82 @@
+import { useId, useState } from "react";
+import { login } from "../api/client";
+
+export function Login({ onSuccess }: { onSuccess: (username: string) => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const usernameId = useId();
+  const passwordId = useId();
+  const errorId = useId();
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const user = await login(username, password);
+      onSuccess(user.username);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="cm-login-shell">
+      <form className="cm-login-card" onSubmit={handleSubmit} noValidate>
+        <div className="cm-login-header">
+          <h1>
+            <span className="cm-brand-mark" aria-hidden="true" />
+            celery-manager
+          </h1>
+          <p className="cm-login-tagline">Queue control</p>
+          <div className="cm-pulse-rule" aria-hidden="true" />
+        </div>
+
+        <div className="cm-field">
+          <label htmlFor={usernameId}>Username</label>
+          <input
+            id={usernameId}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            required
+          />
+        </div>
+
+        <div className="cm-field">
+          <label htmlFor={passwordId}>Password</label>
+          <input
+            id={passwordId}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? true : undefined}
+            required
+          />
+        </div>
+
+        {error && (
+          <p role="alert" id={errorId} className="cm-error">
+            {error}
+          </p>
+        )}
+
+        <button type="submit" disabled={loading} data-loading={loading || undefined}>
+          {loading ? "Signing in…" : "Sign in"}
+        </button>
+
+        <p className="cm-login-meta">Self-hosted &middot; session-based auth</p>
+      </form>
+    </div>
+  );
+}
