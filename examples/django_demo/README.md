@@ -33,13 +33,74 @@ as you'd run celery-manager against a production Django app.
    create_user(Session(), 'admin', 'admin')
    "
    ```
-7. Visit http://localhost:8001, sign in as `admin` / `admin`, trigger
-   `send_welcome_email` from the "start task" action, and watch it show up
-   live in the task list as the worker processes it. Watch `send_report`
-   fail ~30% of the time on its 2-hour schedule — a failed run shows its
-   traceback and captured log output in the task detail view. Pause an
-   upcoming `send-demo-report-every-2-hours` occurrence from the schedule
-   view to see that occurrence recorded as `skipped` instead of executed.
+7. Visit http://localhost:8001 and sign in as `admin` / `admin`. The task
+   list is empty until something runs, so trigger `send_welcome_email` —
+   see [Triggering a task](#triggering-a-task) below — and watch it appear
+   in the task list as the worker processes it.
+8. Watch `send_report` fail ~30% of the time on its 2-hour schedule — a
+   failed run shows its traceback and captured log output in the task detail
+   view. Pause an upcoming `send-demo-report-every-2-hours` occurrence from
+   **Schedules → send-demo-report-every-2-hours** to see that occurrence
+   recorded as `skipped` instead of executed.
+
+## Triggering a task
+
+There is **no "start task" button in the dashboard UI** — starting a task is
+a REST endpoint (`POST /api/tasks/start`), and building a UI for it is a
+tracked backlog item, not a v1 feature. Use either of these instead.
+
+**From a Django shell** (simplest, and the same path your own code would
+take):
+
+```bash
+python manage.py shell -c "
+from tasks_app.tasks import send_welcome_email
+send_welcome_email.delay('demo@example.com')
+"
+```
+
+**Or through the REST API**, which is what a UI control would call. The
+endpoint requires authentication, so log in first and keep the session cookie
+in a jar:
+
+```bash
+# 1. Log in, saving the session cookie to ./cm-cookies.txt
+curl -sS -c cm-cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"username": "admin", "password": "admin"}' \
+  http://localhost:8001/api/auth/login
+
+# 2. Start the task, sending that cookie back
+curl -sS -b cm-cookies.txt \
+  -H 'Content-Type: application/json' \
+  -d '{"task_name": "tasks_app.tasks.send_welcome_email", "args": ["demo@example.com"], "kwargs": {}}' \
+  http://localhost:8001/api/tasks/start
+# -> {"task_id":"...."}
+```
+
+The same thing in Python, if you'd rather not juggle cookie jars:
+
+```python
+import httpx
+
+with httpx.Client(base_url="http://localhost:8001") as client:
+    client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    response = client.post("/api/tasks/start", json={
+        "task_name": "tasks_app.tasks.send_welcome_email",
+        "args": ["demo@example.com"],
+        "kwargs": {},
+    })
+    print(response.json())  # {'task_id': '...'}
+```
+
+Either way the new run shows up in the dashboard's task list, and the
+REST-API route additionally records an entry in the **Audit Log** screen
+attributing the start to `admin`.
+
+> The `curl`/`httpx` flows work over plain HTTP because this demo sets
+> `CELERY_MANAGER_COOKIE_SECURE = False` in `settings.py`. With
+> celery-manager's default (`cookie_secure=True`) the session cookie is
+> marked `Secure` and a client will not send it back over HTTP.
 
 ### What each process is for
 
@@ -49,11 +110,16 @@ as you'd run celery-manager against a production Django app.
   isn't required for the dashboard to work, but a real Django app usually
   has other things worth running it for.
 - **`celery -A demo worker`** — executes tasks pulled off the broker. Without
-  this running, tasks stay queued in Redis and never actually run.
+  this running, tasks stay queued in Redis and never actually run. This is
+  also the process that must be wired with `celery_manager.setup(config)` —
+  `tasks_app/tasks.py` does that at import time, which is what makes the
+  `@celery_manager.track()` decorators below it actually do their job
+  (per-occurrence pause/skip and log capture). Wiring only the dashboard
+  process is the classic mistake: tasks run *there* only in eager mode.
 - **`celery -A demo beat`** — the periodic scheduler; it's what enqueues
   `send_report` every 2 hours per `CELERY_BEAT_SCHEDULE`. Without beat,
   the periodic schedule never fires (you can still trigger `send_report`
-  manually via the dashboard).
+  on demand — see [Triggering a task](#triggering-a-task)).
 - **`celery-manager events`** — a long-running consumer of Celery's event
   bus (task-sent/started/succeeded/failed/etc.), which is how the
   dashboard's task list updates live without polling. Without this
