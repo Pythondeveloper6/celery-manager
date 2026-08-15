@@ -71,7 +71,7 @@ plus anything worth surfacing outside that ledger.
 - [x] **Task 14: Dashboard — future-schedule view + retry/bulk retry** — commit `54283bc` + fix `19bdb09`. Verified end-to-end against a real stack (Docker Redis, real Celery worker, real browser). Found and fixed a headline-feature-breaking bug in the plan's own illustrative code (paused occurrences would never render as paused — `consumed` is always false for a matched override, need `action != null` instead) plus a real CSS specificity bug (pressed button invisible on hover). One fix round for a bulk-selection staleness gap under live SSE updates.
 - [ ] **Task 15: Dashboard — audit log + static bundling wire-up** — not started.
 - [x] **Task 16: Django demo project** — commit `24ed13e` (dispatched in parallel with Task 13; Redis not available in this sandbox, so verification used `task_always_eager` + REST API checks instead of a live worker/beat — README still documents the full real flow). Review: Approved, clean. Fixed a real bug in the plan's own `settings.py` example (bare-int schedule value breaks the occurrences endpoint — needs a real `celery.schedules.schedule()` instance).
-- [ ] **Task 17: Docs site (MkDocs Material)** — not started.
+- [x] **Task 17: Docs site (MkDocs Material)** — commit `6d45fb2` (dispatched in parallel with Task 15). Documented from real source, not the original plan text — every spot-checked claim across all 6 pages verified accurate against actual code, including non-obvious deviations from earlier fix rounds. Review: Approved, clean.
 
 ---
 
