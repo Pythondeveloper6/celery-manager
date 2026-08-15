@@ -49,6 +49,32 @@
 
 ---
 
+## Progress (living — updated after every task)
+
+Full detail and rulings live in the SDD ledger at
+`.superpowers/sdd/plan/progress.md`; this section is the at-a-glance status
+plus anything worth surfacing outside that ledger.
+
+- [x] **Task 1: Project scaffold & tooling** — commit `25c7f69`. Review: Approved (1 Important finding ruled non-blocking — `[project.scripts]` entry point points at `celery_manager.cli:main`, which doesn't exist until Task 16; intentional, documented sequencing, nothing between Task 1 and 16 invokes the CLI). 1 deferred minor (unused import).
+- [x] **Task 2: Storage layer** — commit `18b9e9d`. Review: Approved, clean. One accepted deviation: fixed a genuine bug in this plan (`ScheduleOverride.created_at` was non-nullable with no default, but the plan's own test never supplied it) by adding a Python-side default. 1 deferred minor (`AuditLog.created_at` has the same latent shape, untested so far, already safe because every planned call site sets it explicitly).
+- [x] **Task 3: Decorator — skip-check + log capture** — commit `926a5e0`. Review: Approved, clean. One accepted deviation: fixed a second genuine plan bug — SQLite drops tzinfo on `DateTime(timezone=True)` round-trip through a fresh session, which broke the plan's own literal skip-check comparison. **This turned out to be systemic**, not local to this task: it also would have silently broken Task 6's future-occurrence/override merge (a dict-key comparison, which fails silently rather than raising — worse than this task's `TypeError`). Fixed proactively in the plan text for Task 6 (`_as_aware_utc` helper) and Task 10 (added a cross-session end-to-end test) before either was dispatched — see commit `c5eaec6`.
+- [ ] **Task 4: Events listener** — not started.
+- [ ] **Task 5: Core API — task control** — not started.
+- [ ] **Task 6: Core API — schedule occurrence control** — not started. Plan already amended per Task 3's finding above (`_as_aware_utc`, `sync_periodic_schedules`, `list_upcoming_with_overrides`) and per the earlier preflight scan (future-occurrence view needed computed occurrences, not just existing overrides — commit `337d750`).
+- [ ] **Task 7: Core API — retry + audit log** — not started.
+- [ ] **Task 8: Auth** — not started.
+- [ ] **Task 9: REST API skeleton** — not started.
+- [ ] **Task 10: REST API — task & schedule endpoints** — not started. Plan already amended twice (see Task 6 note above).
+- [ ] **Task 11: REST API — SSE live updates** — not started.
+- [ ] **Task 12: Dashboard SPA scaffold + design system + login** — not started.
+- [ ] **Task 13: Dashboard — task list & detail** — not started.
+- [ ] **Task 14: Dashboard — future-schedule view + retry/bulk retry** — not started.
+- [ ] **Task 15: Dashboard — audit log + static bundling wire-up** — not started.
+- [ ] **Task 16: Django demo project** — not started.
+- [ ] **Task 17: Docs site (MkDocs Material)** — not started.
+
+---
+
 ### Task 1: Project scaffold & tooling
 
 **Files:**
