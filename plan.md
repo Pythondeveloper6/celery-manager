@@ -70,7 +70,7 @@ plus anything worth surfacing outside that ledger.
 - [ ] **Task 13: Dashboard — task list & detail** — not started.
 - [ ] **Task 14: Dashboard — future-schedule view + retry/bulk retry** — not started.
 - [ ] **Task 15: Dashboard — audit log + static bundling wire-up** — not started.
-- [ ] **Task 16: Django demo project** — not started.
+- [x] **Task 16: Django demo project** — commit `24ed13e` (dispatched in parallel with Task 13; Redis not available in this sandbox, so verification used `task_always_eager` + REST API checks instead of a live worker/beat — README still documents the full real flow). Review: Approved, clean. Fixed a real bug in the plan's own `settings.py` example (bare-int schedule value breaks the occurrences endpoint — needs a real `celery.schedules.schedule()` instance).
 - [ ] **Task 17: Docs site (MkDocs Material)** — not started.
 
 ---
