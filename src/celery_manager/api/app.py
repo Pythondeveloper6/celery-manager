@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.session import init_db, get_session_factory
@@ -34,5 +37,9 @@ def create_app(config: CeleryManagerConfig):
     @app.get("/api/stream")
     def stream(request: Request):
         return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
+
+    static_dir = Path(__file__).parent.parent / "dashboard" / "static"
+    if static_dir.exists():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="dashboard")
 
     return app, session_factory
