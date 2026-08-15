@@ -108,3 +108,42 @@ def test_retry_does_not_double_log_as_both_retry_and_start():
     with session_factory() as session:
         actions = [r.action for r in session.query(AuditLog).all()]
         assert actions == ["retry"]
+
+
+def test_task_detail_includes_worker_queue_and_timing_fields():
+    """The detail endpoint stored these on TaskRun but never returned them,
+    which also made the frontend's TaskDetail type (extending TaskSummary)
+    claim started_at/finished_at that never arrived."""
+    from datetime import datetime, timezone
+
+    config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    app, session_factory = create_app(config)
+    started = datetime(2026, 8, 15, 6, 0, 0, tzinfo=timezone.utc)
+    finished = datetime(2026, 8, 15, 6, 0, 3, tzinfo=timezone.utc)
+    with session_factory() as session:
+        create_user(session, "alice", "pw")
+        session.add(TaskRun(
+            task_id="t9", task_name="demo.echo", status="succeeded", args="[]", kwargs="{}",
+            queue="reports", worker="worker-1@host", started_at=started, finished_at=finished,
+            runtime_seconds=3.25,
+        ))
+        session.commit()
+    client = TestClient(app, base_url="https://testserver")
+    client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
+
+    body = client.get("/api/tasks/t9").json()
+
+    assert body["queue"] == "reports"
+    assert body["worker"] == "worker-1@host"
+    assert body["runtime_seconds"] == 3.25
+    assert body["started_at"] is not None and "2026-08-15" in body["started_at"]
+    assert body["finished_at"] is not None and "2026-08-15" in body["finished_at"]
+
+
+def test_task_detail_tolerates_missing_worker_queue_and_timings():
+    """A queued-but-never-started task must still return every key, as null."""
+    client, _ = _client_and_session()
+    body = client.get("/api/tasks/t1").json()
+    for field in ("queue", "worker", "started_at", "finished_at", "runtime_seconds"):
+        assert field in body, field
+        assert body[field] is None, field
