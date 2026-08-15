@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride
 
@@ -111,22 +111,65 @@ def _as_aware_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
-def list_upcoming_with_overrides(session, celery_app, schedule_name: str, count: int = 10, from_time: datetime | None = None) -> list[dict]:
+def _find_within_tolerance(candidates: list[ScheduleOverride], t: datetime, window: timedelta) -> ScheduleOverride | None:
+    """Same matching concept as the decorator's `_find_matching_override`
+    (celery_manager/decorator.py): a stored `target_time` is treated as
+    "the same occurrence" as a computed one if it falls within
+    `window` of it, rather than requiring exact equality. Unlike the
+    decorator (which matches a single override against "now" at actual
+    run time), here we're matching a whole list of computed occurrences
+    against a whole list of overrides, so pick the closest candidate
+    within the window rather than the first — with occurrences spaced
+    much further apart than a typical tolerance window this rarely
+    matters, but it keeps the match deterministic when it does."""
+    best: ScheduleOverride | None = None
+    best_diff: timedelta | None = None
+    for override in candidates:
+        diff = abs(_as_aware_utc(override.target_time) - t)
+        if diff <= window and (best is None or diff < best_diff):
+            best = override
+            best_diff = diff
+    return best
+
+
+def list_upcoming_with_overrides(
+    session,
+    celery_app,
+    schedule_name: str,
+    count: int = 10,
+    from_time: datetime | None = None,
+    eta_tolerance_seconds: int = 60,
+) -> list[dict]:
     """The data the dashboard's future-schedule view renders: every
-    upcoming occurrence, each annotated with any existing override."""
+    upcoming occurrence, each annotated with any existing override.
+
+    `upcoming_occurrences` recomputes occurrence timestamps relative to
+    "now" on every call (see its docstring), so a `target_time` a user
+    paused a few seconds or minutes ago via `pause_occurrence` will not
+    be byte-identical to the same logical occurrence recomputed just
+    now. Matching by `eta_tolerance_seconds` (same concept, and same
+    default, as the decorator's own skip-check window — see
+    `celery_manager.decorator._find_matching_override` — configured via
+    `CeleryManagerConfig.eta_tolerance_seconds`) instead of exact
+    equality is what keeps a paused occurrence showing as paused across
+    that drift. This is read-only: unlike the decorator's matching, we
+    never mark an override consumed here — that only happens when the
+    task actually runs (or is skipped) at its scheduled time."""
     periodic = session.query(PeriodicSchedule).filter_by(name=schedule_name).one_or_none()
     entry = celery_app.conf.beat_schedule.get(schedule_name)
     if periodic is None or entry is None:
         return []
 
     occurrences = upcoming_occurrences(periodic, entry["schedule"], count=count, from_time=from_time)
-    overrides_by_time = {_as_aware_utc(o.target_time): o for o in list_overrides(session, schedule_name)}
+    unconsumed = [o for o in list_overrides(session, schedule_name) if not o.consumed]
+    window = timedelta(seconds=eta_tolerance_seconds)
 
-    return [
-        {
+    result = []
+    for t in occurrences:
+        match = _find_within_tolerance(unconsumed, t, window)
+        result.append({
             "target_time": t,
-            "action": overrides_by_time[t].action if t in overrides_by_time else None,
-            "consumed": overrides_by_time[t].consumed if t in overrides_by_time else False,
-        }
-        for t in occurrences
-    ]
+            "action": match.action if match is not None else None,
+            "consumed": match.consumed if match is not None else False,
+        })
+    return result
