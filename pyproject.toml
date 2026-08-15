@@ -6,18 +6,53 @@ build-backend = "hatchling.build"
 name = "celery-manager"
 version = "0.1.0"
 description = "A dashboard and control API for Celery background tasks."
+readme = "README.md"
 requires-python = ">=3.10"
+authors = [{ name = "pythondeveloper6", email = "pythondeveloper6@gmail.com" }]
+keywords = ["celery", "dashboard", "monitoring", "task-queue", "scheduler"]
+# TODO: choose and add a LICENSE before publishing. Deliberately no `license`
+# field and no LICENSE file yet — picking a license is the project owner's
+# call, not something to default into. Until one is chosen this package is
+# "all rights reserved" by default and should not be published to PyPI.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: Celery",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Distributed Computing",
+    # No "Typing :: Typed" — the code is annotated throughout, but the package
+    # ships no py.typed marker, so type checkers won't use those annotations
+    # from an installed copy. Add both together or neither.
+]
 dependencies = [
     "celery>=5.3,<6.0",
     "sqlalchemy>=2.0,<3.0",
     "fastapi>=0.110,<1.0",
-    "uvicorn>=0.29",
     "bcrypt>=4.1",
     "itsdangerous>=2.1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/pythondeveloper6/celery-manager"
+Documentation = "https://github.com/pythondeveloper6/celery-manager#readme"
+Repository = "https://github.com/pythondeveloper6/celery-manager"
+Issues = "https://github.com/pythondeveloper6/celery-manager/issues"
+
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.4"]
+# uvicorn is only needed to *serve* celery-manager standalone (the demo's
+# run_dashboard.py, `uvicorn your_module:app`). Mounting the app into an
+# existing ASGI stack doesn't need it, so it isn't a core dependency.
+standalone = ["uvicorn>=0.29"]
+dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.4", "uvicorn>=0.29"]
 docs = ["mkdocs-material>=9.5"]
 
 [project.scripts]

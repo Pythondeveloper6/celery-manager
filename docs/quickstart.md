@@ -6,6 +6,15 @@
 pip install celery-manager
 ```
 
+`uvicorn` is **not** a core dependency — celery-manager is an ASGI app, and
+mounting it into a server you already run needs no server of its own. If you
+want to serve the dashboard standalone (`uvicorn your_module:app`, or the
+bundled demo's `run_dashboard.py`), install the extra:
+
+```bash
+pip install "celery-manager[standalone]"
+```
+
 ## Wire it into your app
 
 ```python
@@ -27,7 +36,8 @@ into `src/celery_manager/dashboard/static/` — the dashboard SPA at `/`.
 into the `periodic_schedules` table on startup, so the dashboard's schedule
 list reflects whatever periodic tasks your app has configured.
 
-Run it with any ASGI server, e.g. `uvicorn your_module:app`.
+Run it with any ASGI server, e.g. `uvicorn your_module:app` (installing
+the `standalone` extra above if you don't already have uvicorn).
 
 ## Run the events listener
 

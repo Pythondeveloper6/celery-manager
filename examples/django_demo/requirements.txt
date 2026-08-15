@@ -1,4 +1,7 @@
 django>=5.0,<6.0
 celery>=5.3,<6.0
 redis>=5.0
--e ../..
+# `[standalone]` pulls in uvicorn, which run_dashboard.py needs — it is not
+# a core celery-manager dependency (mounting into an existing ASGI app
+# doesn't need a server of its own).
+-e ../..[standalone]

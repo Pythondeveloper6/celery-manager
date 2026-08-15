@@ -1,0 +1,111 @@
+# celery-manager
+
+A dashboard and control API for Celery background tasks — for any
+Django, Flask, or FastAPI project that already uses Celery.
+
+Point it at your existing Celery app and you get a web UI and a REST API to
+see what your tasks are doing, act on them, and — the feature this project
+exists for — **pause or cancel a single future occurrence of a periodic task**
+without touching your beat schedule or restarting anything.
+
+## What you get
+
+- **Task visibility** — every task run (decorated or not) with status, args,
+  worker, queue, timings, exceptions, and full tracebacks.
+- **Log capture** — stdout and `logging` output from inside a task body,
+  attached to that run and readable in the dashboard.
+- **Control** — start, cancel/terminate, retry, and bulk retry, from the UI
+  or the API.
+- **Per-occurrence schedule control** — skip or cancel one upcoming run of a
+  periodic task, and see it stay paused.
+- **Audit log** — who did what, when, for every control action.
+- **Built-in auth** — bcrypt-hashed users and signed session cookies.
+- **No Node toolchain required** — the React dashboard ships prebuilt inside
+  the Python package.
+
+## Install
+
+```bash
+pip install celery-manager
+
+# add the `standalone` extra if you want to run the dashboard with uvicorn
+# rather than mounting it into an ASGI app you already serve:
+pip install "celery-manager[standalone]"
+```
+
+## Wire it up
+
+celery-manager runs in two places, and **both** need configuring — this is
+the step most easily missed:
+
+```python
+from celery_manager.config import CeleryManagerConfig
+
+config = CeleryManagerConfig(
+    celery_app=your_celery_app,
+    db_url="sqlite:///celery_manager.db",   # any SQLAlchemy URL
+    secret_key="a-real-secret-in-production",
+)
+```
+
+**1. The dashboard process** — build the ASGI app and serve or mount it:
+
+```python
+from celery_manager.api.app import create_app
+
+app, _ = create_app(config)   # then: uvicorn your_module:app
+```
+
+**2. The Celery worker process** — where `@track`-decorated tasks actually
+run:
+
+```python
+import celery_manager
+
+celery_manager.setup(config)   # at import time, in your tasks module
+
+@app.task(bind=True)
+@celery_manager.track(schedule_name="send-report-every-2-hours")
+def send_report(self):
+    ...
+```
+
+Then run the events listener alongside your worker and beat, so the dashboard
+sees every task rather than only the decorated ones:
+
+```bash
+celery-manager events --celery-app your_module:your_celery_app \
+                      --db-url sqlite:///celery_manager.db
+```
+
+## Documentation
+
+Full documentation lives in [`docs/`](docs/) (an MkDocs Material site — run
+`mkdocs serve` after `pip install -e ".[docs]"`):
+
+- [Quickstart](docs/quickstart.md) — install through first sign-in.
+- [The `@track` decorator](docs/decorator.md) — wiring, skip/cancel, logs.
+- [REST API](docs/rest-api.md) — every endpoint and payload.
+- [Dashboard](docs/dashboard.md) — the screens and what they do.
+- [Configuration](docs/configuration.md) — every config field, the schema
+  and upgrade story, and production notes.
+
+A complete runnable Django example is in
+[`examples/django_demo/`](examples/django_demo/).
+
+## Requirements
+
+Python 3.10+, Celery 5.x. Storage defaults to SQLite with zero configuration
+and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
+
+## Status
+
+v1. See [`plan.md`](plan.md) for the implementation history and the backlog
+of known gaps and planned follow-ups.
+
+## License
+
+**TODO: choose and add a LICENSE before publishing.** No license has been
+selected yet, so no `LICENSE` file and no `license` field in
+`pyproject.toml`. Until one is added this code is "all rights reserved" by
+default and should not be published to PyPI.
