@@ -73,7 +73,7 @@ plus anything worth surfacing outside that ledger.
 - [ ] **Task 15: Dashboard — audit log + static bundling wire-up** — not started.
 - [x] **Task 16: Django demo project** — commit `24ed13e` (dispatched in parallel with Task 13; Redis not available in this sandbox, so verification used `task_always_eager` + REST API checks instead of a live worker/beat — README still documents the full real flow). Review: Approved, clean. Fixed a real bug in the plan's own `settings.py` example (bare-int schedule value breaks the occurrences endpoint — needs a real `celery.schedules.schedule()` instance).
 - [x] **Task 17: Docs site (MkDocs Material)** — commit `6d45fb2` (dispatched in parallel with Task 15). Documented from real source, not the original plan text — every spot-checked claim across all 6 pages verified accurate against actual code, including non-obvious deviations from earlier fix rounds. Review: Approved, clean.
-- [ ] **Task 18: Dashboard — periodic schedules list screen** — not started. **Added mid-run**: spec §4.6 requires a "periodic schedules list" v1 screen; the original Task 12-15 breakdown never planned one, only the per-schedule occurrence view (Task 14). Discovered by Task 15's implementer while wiring the nav bar — there was nothing to link "Schedules" to. Without this, the fully-correct pause/cancel headline feature is unreachable from the UI without hand-typing a URL.
+- [x] **Task 18: Dashboard — periodic schedules list screen** — commit `bf40e79`. Closes the discoverability gap: reviewer traced the full nav→list→detail chain through the actual diff and confirmed it's real end to end (no dead links, no guessed URLs). All 18 tasks now complete.
 
 ---
 
