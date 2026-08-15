@@ -50,6 +50,44 @@
   --cm-color-success: #1d8a56;
   --cm-color-warn: #a66a0a;
 
+  /* ---- task status badges -------------------------------------------
+     A dedicated palette for the seven TaskRun states (Task 13+), kept
+     distinct from --cm-color-accent so brand colour never doubles as
+     status colour (see the file header note). "queued"/"skipped"/
+     "revoked" are administrative, no-alarm states and stay neutral;
+     "started" gets its own hue (not accent cyan, not the red/amber/
+     green outcome triad) since "in progress" isn't an outcome; the
+     text tones for succeeded/retried are tuned a shade darker than
+     --cm-color-success/--cm-color-warn so a badge's text stays >=4.5:1
+     against its own tinted background, not just against plain surface. */
+  --cm-color-status-queued: var(--cm-color-text-muted);
+  --cm-color-status-queued-bg: var(--cm-color-surface-sunken);
+  --cm-color-status-queued-border: var(--cm-color-border);
+
+  --cm-color-status-started: #4550c4;
+  --cm-color-status-started-bg: #eceefb;
+  --cm-color-status-started-border: #babfea;
+
+  --cm-color-status-succeeded: #177a4b;
+  --cm-color-status-succeeded-bg: #eaf5ef;
+  --cm-color-status-succeeded-border: #abd0be;
+
+  --cm-color-status-failed: var(--cm-color-danger);
+  --cm-color-status-failed-bg: var(--cm-color-danger-bg);
+  --cm-color-status-failed-border: var(--cm-color-danger-border);
+
+  --cm-color-status-retried: #8f5900;
+  --cm-color-status-retried-bg: #faf1de;
+  --cm-color-status-retried-border: #dac39b;
+
+  --cm-color-status-skipped: var(--cm-color-text-faint);
+  --cm-color-status-skipped-bg: var(--cm-color-surface-sunken);
+  --cm-color-status-skipped-border: var(--cm-color-border);
+
+  --cm-color-status-revoked: var(--cm-color-text-muted);
+  --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
+  --cm-color-status-revoked-border: var(--cm-color-border-strong);
+
   --cm-shadow-card: 0 1px 2px rgba(16, 24, 32, 0.04), 0 12px 32px -12px rgba(16, 24, 32, 0.18);
   --cm-focus-ring: 0 0 0 3px rgba(10, 116, 120, 0.35);
 
@@ -118,6 +156,35 @@
 
     --cm-color-success: #4fd98b;
     --cm-color-warn: #f2b33d;
+
+    /* ---- task status badges (dark) ------------------------------- */
+    --cm-color-status-queued: var(--cm-color-text-muted);
+    --cm-color-status-queued-bg: var(--cm-color-surface-sunken);
+    --cm-color-status-queued-border: var(--cm-color-border);
+
+    --cm-color-status-started: #9aa4ff;
+    --cm-color-status-started-bg: rgba(154, 164, 255, 0.12);
+    --cm-color-status-started-border: rgba(154, 164, 255, 0.35);
+
+    --cm-color-status-succeeded: #4fd98b;
+    --cm-color-status-succeeded-bg: rgba(79, 217, 139, 0.12);
+    --cm-color-status-succeeded-border: rgba(79, 217, 139, 0.35);
+
+    --cm-color-status-failed: var(--cm-color-danger);
+    --cm-color-status-failed-bg: var(--cm-color-danger-bg);
+    --cm-color-status-failed-border: var(--cm-color-danger-border);
+
+    --cm-color-status-retried: #f2b33d;
+    --cm-color-status-retried-bg: rgba(242, 179, 61, 0.12);
+    --cm-color-status-retried-border: rgba(242, 179, 61, 0.35);
+
+    --cm-color-status-skipped: var(--cm-color-text-faint);
+    --cm-color-status-skipped-bg: var(--cm-color-surface-sunken);
+    --cm-color-status-skipped-border: var(--cm-color-border);
+
+    --cm-color-status-revoked: var(--cm-color-text-muted);
+    --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
+    --cm-color-status-revoked-border: var(--cm-color-border-strong);
 
     --cm-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 48px -20px rgba(0, 0, 0, 0.6);
     --cm-focus-ring: 0 0 0 3px rgba(53, 214, 210, 0.35);
@@ -422,22 +489,422 @@ textarea:focus-visible,
 }
 
 /* ==========================================================================
-   Post-login placeholder (Tasks 13-15 replace this with the real shell)
+   Dashboard shell (shared by task list / detail; Task 13)
    ========================================================================== */
 
-.cm-app-placeholder {
+.cm-page {
   min-height: 100dvh;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--cm-space-6) var(--cm-space-5) var(--cm-space-8);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--cm-space-5);
-  background-color: var(--cm-color-bg);
-  color: var(--cm-color-text-muted);
-  font-size: var(--cm-text-base);
-  text-align: center;
+  flex-direction: column;
+  gap: var(--cm-space-5);
 }
 
-.cm-app-placeholder strong {
+.cm-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--cm-space-4);
+  flex-wrap: wrap;
+}
+
+.cm-page-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+}
+
+.cm-page-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-page-title {
+  font-family: var(--cm-font-display);
+  font-size: var(--cm-text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: var(--cm-leading-tight);
   color: var(--cm-color-text);
+}
+
+/* A quiet "this view is receiving live events" signal — reuses the same
+   pulse used for the login screen's heartbeat rule so the motif reads as
+   one system, not two unrelated animations. */
+.cm-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
   font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: var(--cm-radius-full);
+  background-color: var(--cm-color-accent);
+  box-shadow: 0 0 0 3px var(--cm-color-accent-soft);
+  animation: cm-pulse var(--cm-duration-pulse) var(--cm-ease) infinite;
+}
+
+.cm-back-link {
+  align-self: flex-start;
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-accent);
+}
+
+.cm-back-link:hover {
+  color: var(--cm-color-accent-hover);
+}
+
+/* ==========================================================================
+   Panels — the surface card used for the table, empty/loading states,
+   the failure callout, and the log block.
+   ========================================================================== */
+
+.cm-panel {
+  padding: var(--cm-space-5);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-lg);
+  box-shadow: var(--cm-shadow-card);
+  transition: opacity var(--cm-duration-base) var(--cm-ease);
+}
+
+.cm-panel-refreshing {
+  opacity: 0.65;
+}
+
+.cm-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-empty-state {
+  padding: var(--cm-space-5);
+  text-align: center;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-faint);
+  border: 1px dashed var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+/* ==========================================================================
+   Filter bar (task list)
+   ========================================================================== */
+
+.cm-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+}
+
+.cm-filter-bar button {
+  padding: 0.4rem 0.85rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-full);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease), color var(--cm-duration-fast) var(--cm-ease),
+    background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-filter-bar button:hover {
+  color: var(--cm-color-text);
+  border-color: var(--cm-color-accent);
+}
+
+.cm-filter-bar button[aria-pressed="true"] {
+  color: var(--cm-color-accent-contrast);
+  background-color: var(--cm-color-accent);
+  border-color: var(--cm-color-accent);
+}
+
+/* ==========================================================================
+   Task table (task list)
+   ========================================================================== */
+
+.cm-table-scroll {
+  overflow-x: auto;
+}
+
+.cm-task-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cm-task-table th {
+  padding: 0 0 var(--cm-space-2);
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-task-table td {
+  padding: var(--cm-space-3) 0;
+  border-bottom: 1px solid var(--cm-color-border);
+  vertical-align: middle;
+}
+
+.cm-task-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cm-task-table tbody tr:hover td {
+  background-color: var(--cm-color-surface-sunken);
+}
+
+.cm-task-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  color: var(--cm-color-text);
+  text-decoration: none;
+}
+
+.cm-task-link:hover .cm-task-name {
+  color: var(--cm-color-accent);
+  text-decoration: underline;
+}
+
+.cm-task-name {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+  transition: color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-task-id {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-faint);
+}
+
+.cm-timestamp {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Status badges — shared by the task list and the detail header.
+   Colour comes from the --cm-color-status-* tokens (keyed by the
+   `data-status` attribute) rather than per-status classes, so an
+   unrecognised status string degrades to the neutral default instead of
+   matching nothing.
+   ========================================================================== */
+
+.cm-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
+  color: var(--cm-color-status-queued);
+  background-color: var(--cm-color-status-queued-bg);
+  border: 1px solid var(--cm-color-status-queued-border);
+  border-radius: var(--cm-radius-full);
+}
+
+.cm-status-badge[data-status="started"] {
+  color: var(--cm-color-status-started);
+  background-color: var(--cm-color-status-started-bg);
+  border-color: var(--cm-color-status-started-border);
+}
+
+.cm-status-badge[data-status="succeeded"] {
+  color: var(--cm-color-status-succeeded);
+  background-color: var(--cm-color-status-succeeded-bg);
+  border-color: var(--cm-color-status-succeeded-border);
+}
+
+.cm-status-badge[data-status="failed"] {
+  color: var(--cm-color-status-failed);
+  background-color: var(--cm-color-status-failed-bg);
+  border-color: var(--cm-color-status-failed-border);
+}
+
+.cm-status-badge[data-status="retried"] {
+  color: var(--cm-color-status-retried);
+  background-color: var(--cm-color-status-retried-bg);
+  border-color: var(--cm-color-status-retried-border);
+}
+
+.cm-status-badge[data-status="skipped"] {
+  color: var(--cm-color-status-skipped);
+  background-color: var(--cm-color-status-skipped-bg);
+  border-color: var(--cm-color-status-skipped-border);
+}
+
+/* "Revoked" is an explicit cancellation rather than a passive skip — the
+   strikethrough is the differentiator since both share a neutral colour. */
+.cm-status-badge[data-status="revoked"] {
+  color: var(--cm-color-status-revoked);
+  background-color: var(--cm-color-status-revoked-bg);
+  border-color: var(--cm-color-status-revoked-border);
+  text-decoration: line-through;
+  text-decoration-color: var(--cm-color-text-faint);
+}
+
+/* ==========================================================================
+   Task detail
+   ========================================================================== */
+
+.cm-detail-page {
+  max-width: 760px;
+}
+
+.cm-detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-3);
+  flex-wrap: wrap;
+}
+
+.cm-detail-task-id {
+  margin-top: calc(-1 * var(--cm-space-2));
+}
+
+.cm-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--cm-space-4);
+}
+
+.cm-detail-meta dt {
+  margin-bottom: var(--cm-space-2);
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-detail-meta dd {
+  margin: 0;
+}
+
+.cm-code-block {
+  margin: 0;
+  padding: var(--cm-space-3);
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  line-height: var(--cm-leading-normal);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface-sunken);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cm-failure-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  background-color: var(--cm-color-danger-bg);
+  border-color: var(--cm-color-danger-border);
+}
+
+.cm-failure-panel h2 {
+  font-family: var(--cm-font-display);
+  font-size: var(--cm-text-base);
+  font-weight: 700;
+  color: var(--cm-color-danger);
+}
+
+.cm-failure-message {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text);
+  word-break: break-word;
+}
+
+.cm-traceback {
+  margin: 0;
+  padding: var(--cm-space-3);
+  max-height: 360px;
+  overflow: auto;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  line-height: var(--cm-leading-normal);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-danger-border);
+  border-radius: var(--cm-radius-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cm-log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+}
+
+.cm-log-panel h2 {
+  font-family: var(--cm-font-display);
+  font-size: var(--cm-text-base);
+  font-weight: 700;
+  color: var(--cm-color-text);
+}
+
+.cm-log-output {
+  margin: 0;
+  padding: var(--cm-space-3);
+  max-height: 420px;
+  overflow: auto;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  line-height: var(--cm-leading-normal);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface-sunken);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cm-log-panel .cm-empty-state {
+  border-style: dashed;
 }
