@@ -60,7 +60,14 @@ knows about, newest first.
   task list whenever *any* task event arrives, rather than trying to patch
   individual rows from the event payload. The connection is kept open
   across filter switches (not torn down and reopened) so switching filters
-  repeatedly doesn't reconnect the stream. New data dims the existing
+  repeatedly doesn't reconnect the stream. **Alongside** that, the screen
+  also polls `GET /api/tasks` every 5 seconds. That poll is not redundant
+  today: the SSE event bus lives in the API process's memory, but the
+  documented deployment runs the events listener as a separate OS process,
+  which cannot publish into it — so in a standard multi-process deployment
+  the SSE connection opens and then delivers nothing, and the poll is what
+  actually keeps the list current. See
+  [REST API: live updates](rest-api.md#live-updates-sse). New data dims the existing
   table briefly rather than showing a full loading state, so rows never
   flicker away while fresher data is in flight — only the very first load
   shows the full-page "Loading tasks…" state.

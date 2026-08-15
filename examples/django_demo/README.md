@@ -121,11 +121,14 @@ attributing the start to `admin`.
   the periodic schedule never fires (you can still trigger `send_report`
   on demand — see [Triggering a task](#triggering-a-task)).
 - **`celery-manager events`** — a long-running consumer of Celery's event
-  bus (task-sent/started/succeeded/failed/etc.), which is how the
-  dashboard's task list updates live without polling. Without this
-  running, the `@track()` decorator still records each run's outcome
-  directly (since it wraps the task body itself), but you lose the
-  live "queued" -> "started" state transitions streamed from the worker.
+  bus (task-sent/started/succeeded/failed/etc.). It is what records every
+  task, decorated or not, and the "queued" -> "started" transitions. Without
+  it running, the `@celery_manager.track()` decorator still records each
+  run's final outcome directly (since it wraps the task body itself), but
+  you lose those intermediate states and any task that isn't decorated.
+  Note the dashboard's task list refreshes by polling every few seconds —
+  the SSE stream does not yet deliver across process boundaries, see the
+  docs' [REST API: live updates](../../docs/rest-api.md#live-updates-sse).
 - **`run_dashboard.py`** — the celery-manager REST API + dashboard SPA,
   served by uvicorn on port 8001.
 
