@@ -127,3 +127,23 @@ def test_list_schedules_endpoint_requires_auth():
     app, _ = create_app(config)
     response = TestClient(app).get("/api/schedules")
     assert response.status_code == 401
+
+
+def test_occurrences_endpoint_handles_a_bare_number_beat_schedule_entry():
+    """I3 at the HTTP boundary: a bare-number `schedule` used to raise
+    AttributeError out of the route, i.e. a 500."""
+    celery_app = Celery("test")
+    celery_app.conf.beat_schedule = {"bare-every-30s": {"task": "demo.echo", "schedule": 30.0}}
+    config = CeleryManagerConfig(celery_app=celery_app, db_url="sqlite:///:memory:", secret_key="test-secret")
+    app, session_factory = create_app(config)
+    with session_factory() as session:
+        create_user(session, "alice", "pw")
+    client = TestClient(app)
+    client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
+
+    response = client.get("/api/schedules/bare-every-30s/occurrences")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 10
+    assert body[0]["action"] is None
