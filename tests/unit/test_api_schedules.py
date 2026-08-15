@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from celery import Celery
@@ -50,18 +51,37 @@ def test_paused_occurrence_shows_as_paused_on_next_request():
     # Each TestClient request opens its own session via session_factory()
     # (see Task 10 Step 5's create_app wiring) — this deliberately checks
     # the pause takes effect across two separate requests/sessions, not
-    # just within one, since that's what a real browser does and it's the
-    # exact scenario Task 6's _as_aware_utc normalization exists for.
+    # just within one, since that's what a real browser does.
+    #
+    # Between the first GET and the second GET we advance the clock by 5
+    # real seconds (well under the default 60s eta_tolerance_seconds, but
+    # enough that the two independently-recomputed "next occurrence"
+    # timestamps are NOT byte-identical) — the exact realistic gap
+    # (dashboard loads, user pauses a few seconds later, dashboard
+    # refreshes) that motivated switching list_upcoming_with_overrides
+    # from exact datetime equality to tolerance-window matching.
     client = _client_and_session()
-    occurrences = client.get("/api/schedules/demo-every-2h/occurrences").json()
-    target_time = occurrences[0]["target_time"]
 
-    pause_response = client.post(
-        "/api/schedules/demo-every-2h/occurrences/pause",
-        json={"target_time": target_time, "action": "skip"},
-    )
-    assert pause_response.status_code == 200
+    first_now = datetime(2026, 8, 15, 6, 0, 0, tzinfo=timezone.utc)
+    pause_now = datetime(2026, 8, 15, 6, 0, 2, tzinfo=timezone.utc)
+    second_now = datetime(2026, 8, 15, 6, 0, 5, tzinfo=timezone.utc)
 
-    refreshed = client.get("/api/schedules/demo-every-2h/occurrences").json()
+    with patch("celery_manager.control.schedules.datetime") as mock_dt:
+        mock_dt.now.side_effect = [first_now, pause_now, second_now]
+        occurrences = client.get("/api/schedules/demo-every-2h/occurrences").json()
+        first_target_time = occurrences[0]["target_time"]
+
+        pause_response = client.post(
+            "/api/schedules/demo-every-2h/occurrences/pause",
+            json={"target_time": first_target_time, "action": "skip"},
+        )
+        assert pause_response.status_code == 200
+
+        refreshed = client.get("/api/schedules/demo-every-2h/occurrences").json()
+
+    # The two GETs really did compute different timestamps for "the same"
+    # occurrence — proving this test isn't accidentally passing because
+    # both requests happened to land on an identical from_time.
+    assert refreshed[0]["target_time"] != first_target_time
     assert refreshed[0]["action"] == "skip"
     assert refreshed[0]["consumed"] is False

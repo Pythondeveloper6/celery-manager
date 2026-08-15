@@ -123,3 +123,57 @@ def test_list_upcoming_with_overrides_merges_computed_occurrences_and_overrides(
     assert result[0] == {"target_time": first_occurrence, "action": "skip", "consumed": False}
     assert result[1]["action"] is None
     assert result[1]["consumed"] is False
+
+
+def test_list_upcoming_with_overrides_matches_within_tolerance_despite_time_drift():
+    from unittest.mock import MagicMock
+    from celery import Celery
+
+    session = _session()
+    app = MagicMock(spec=Celery)
+    app.conf.beat_schedule = {
+        "demo-every-2h": {"task": "demo.echo", "schedule": interval_schedule(run_every=timedelta(hours=2)), "args": [], "kwargs": {}},
+    }
+    sync_periodic_schedules(session, app)
+
+    # Simulates the realistic gap this fix is for: a user pauses an
+    # occurrence a few seconds after it was first computed/displayed, so
+    # by the time upcoming occurrences are recomputed relative to a fresh
+    # `from_time`, the two timestamps for "the same" occurrence are close
+    # but not byte-identical.
+    computed_occurrence = datetime(2026, 8, 15, 8, 0, 0, tzinfo=timezone.utc)
+    paused_at = computed_occurrence + timedelta(seconds=30)
+    pause_occurrence(session, "demo-every-2h", paused_at, action="skip", created_by="alice")
+
+    start = datetime(2026, 8, 15, 6, 0, tzinfo=timezone.utc)
+    result = list_upcoming_with_overrides(session, app, "demo-every-2h", count=3, from_time=start, eta_tolerance_seconds=60)
+
+    assert result[0]["target_time"] == computed_occurrence
+    assert result[0]["action"] == "skip"
+    assert result[0]["consumed"] is False
+
+
+def test_list_upcoming_with_overrides_does_not_match_outside_tolerance():
+    from unittest.mock import MagicMock
+    from celery import Celery
+
+    session = _session()
+    app = MagicMock(spec=Celery)
+    app.conf.beat_schedule = {
+        "demo-every-2h": {"task": "demo.echo", "schedule": interval_schedule(run_every=timedelta(hours=2)), "args": [], "kwargs": {}},
+    }
+    sync_periodic_schedules(session, app)
+
+    # 5 minutes away from the nearest computed occurrence (08:00) — well
+    # outside the default 60s tolerance. Confirms tolerance-window
+    # matching doesn't degrade into "match anything nearby" and silently
+    # show an unrelated pause against a schedule occurrence it was never
+    # meant for.
+    far_target = datetime(2026, 8, 15, 8, 5, 0, tzinfo=timezone.utc)
+    pause_occurrence(session, "demo-every-2h", far_target, action="skip", created_by="alice")
+
+    start = datetime(2026, 8, 15, 6, 0, tzinfo=timezone.utc)
+    result = list_upcoming_with_overrides(session, app, "demo-every-2h", count=3, from_time=start, eta_tolerance_seconds=60)
+
+    assert all(r["action"] is None for r in result)
+    assert all(r["consumed"] is False for r in result)
