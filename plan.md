@@ -46,6 +46,7 @@
 | 15 | Dashboard — audit log + static bundling wire-up | 10, 12 |
 | 16 | Django demo project | 1–15 |
 | 17 | Docs site (MkDocs Material) | 1–15 |
+| 18 | Dashboard — periodic schedules list screen (added mid-run, closes a spec gap) | 10, 12, 15 |
 
 ---
 
@@ -72,6 +73,7 @@ plus anything worth surfacing outside that ledger.
 - [ ] **Task 15: Dashboard — audit log + static bundling wire-up** — not started.
 - [x] **Task 16: Django demo project** — commit `24ed13e` (dispatched in parallel with Task 13; Redis not available in this sandbox, so verification used `task_always_eager` + REST API checks instead of a live worker/beat — README still documents the full real flow). Review: Approved, clean. Fixed a real bug in the plan's own `settings.py` example (bare-int schedule value breaks the occurrences endpoint — needs a real `celery.schedules.schedule()` instance).
 - [x] **Task 17: Docs site (MkDocs Material)** — commit `6d45fb2` (dispatched in parallel with Task 15). Documented from real source, not the original plan text — every spot-checked claim across all 6 pages verified accurate against actual code, including non-obvious deviations from earlier fix rounds. Review: Approved, clean.
+- [ ] **Task 18: Dashboard — periodic schedules list screen** — not started. **Added mid-run**: spec §4.6 requires a "periodic schedules list" v1 screen; the original Task 12-15 breakdown never planned one, only the per-schedule occurrence view (Task 14). Discovered by Task 15's implementer while wiring the nav bar — there was nothing to link "Schedules" to. Without this, the fully-correct pause/cancel headline feature is unreachable from the UI without hand-typing a URL.
 
 ---
 
@@ -3411,6 +3413,228 @@ Expected: builds with no warnings/errors.
 ```bash
 git add mkdocs.yml docs pyproject.toml
 git commit -m "docs: MkDocs Material site covering quickstart, decorator, REST API, dashboard, config"
+```
+
+---
+
+### Task 18: Dashboard — periodic schedules list screen (closes a spec gap found during Task 15)
+
+**Why this task exists:** spec §4.6 lists "periodic schedules list" as a required v1 screen, but the original Tasks 12–15 breakdown only ever planned the *per-schedule* occurrence view (`/schedules/:name`, Task 14) — never a screen to discover schedule names in the first place. Task 15's implementer found this while building the nav bar (no page to link "Schedules" to) and correctly declined to silently paper over it. Without this, the headline pause/cancel-a-future-occurrence feature is fully built and fully correct but effectively unreachable from the UI — a user would have to already know a schedule's exact name and hand-type the URL. This closes that gap.
+
+**Files:**
+- Modify: `src/celery_manager/control/schedules.py` — add `list_periodic_schedules`
+- Modify: `src/celery_manager/api/routes/schedules.py` — add `GET /api/schedules`
+- Create: `frontend/src/pages/ScheduleList.tsx`
+- Modify: `frontend/src/api/schedules.ts` — add `listSchedules`
+- Modify: `frontend/src/App.tsx` — add `/schedules` route
+- Modify: `frontend/src/App.tsx`'s nav (added in Task 15) — add the "Schedules" link
+- Test: `tests/unit/test_control_schedules.py`
+- Test: `tests/unit/test_api_schedules.py`
+
+**Interfaces:**
+- Consumes: `PeriodicSchedule` (Task 2); `sync_periodic_schedules` (Task 6, already populates this table from `beat_schedule` at `create_app` startup — this task only adds a read path, no new sync logic).
+- Produces: `list_periodic_schedules(session) -> list[PeriodicSchedule]`
+- Produces: `GET /api/schedules` → `[{"name", "task_name", "schedule_spec", "enabled"}, ...]`, ordered by name.
+- Produces: `frontend/src/api/schedules.ts` export `listSchedules(): Promise<ScheduleSummary[]>`.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# append to tests/unit/test_control_schedules.py
+def test_list_periodic_schedules_returns_all_ordered_by_name():
+    session = _session()
+    session.add(PeriodicSchedule(name="zzz-last", task_name="demo.echo", schedule_spec="1h"))
+    session.add(PeriodicSchedule(name="aaa-first", task_name="demo.echo", schedule_spec="2h"))
+    session.commit()
+
+    result = list_periodic_schedules(session)
+
+    assert [s.name for s in result] == ["aaa-first", "zzz-last"]
+
+
+def test_list_periodic_schedules_empty_when_none_configured():
+    session = _session()
+    assert list_periodic_schedules(session) == []
+```
+
+Add `list_periodic_schedules` to the existing import line at the top of the file.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/unit/test_control_schedules.py -v -k list_periodic_schedules`
+Expected: FAIL — `ImportError` (name not yet exported)
+
+- [ ] **Step 3: Add `list_periodic_schedules` to `src/celery_manager/control/schedules.py`**
+
+Append to the file:
+
+```python
+def list_periodic_schedules(session) -> list[PeriodicSchedule]:
+    """Every configured periodic schedule, for the dashboard's schedule-list
+    screen — populated by sync_periodic_schedules() at create_app startup,
+    this is a pure read."""
+    return session.query(PeriodicSchedule).order_by(PeriodicSchedule.name).all()
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/unit/test_control_schedules.py -v -k list_periodic_schedules`
+Expected: PASS (2 tests)
+
+- [ ] **Step 5: Write the failing API test**
+
+```python
+# append to tests/unit/test_api_schedules.py
+def test_list_schedules_endpoint_returns_synced_schedules():
+    client = _client_and_session()
+    response = client.get("/api/schedules")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["name"] == "demo-every-2h"
+    assert body[0]["task_name"] == "demo.echo"
+    assert body[0]["enabled"] is True
+
+
+def test_list_schedules_endpoint_requires_auth():
+    from celery import Celery
+    from celery_manager.api.app import create_app
+    from celery_manager.config import CeleryManagerConfig
+    from fastapi.testclient import TestClient
+
+    config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    app, _ = create_app(config)
+    response = TestClient(app).get("/api/schedules")
+    assert response.status_code == 401
+```
+
+- [ ] **Step 6: Run test to verify it fails**
+
+Run: `pytest tests/unit/test_api_schedules.py -v -k list_schedules`
+Expected: FAIL — `404 Not Found` (route doesn't exist yet)
+
+- [ ] **Step 7: Add the route to `src/celery_manager/api/routes/schedules.py`**
+
+Add `list_periodic_schedules` to the existing `control.schedules` import, then append:
+
+```python
+@router.get("")
+def list_schedules(request: Request, username: str = Depends(get_current_user)):
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        schedules = list_periodic_schedules(session)
+        return [
+            {"name": s.name, "task_name": s.task_name, "schedule_spec": s.schedule_spec, "enabled": s.enabled}
+            for s in schedules
+        ]
+```
+
+- [ ] **Step 8: Run tests to verify they pass**
+
+Run: `pytest tests/unit/test_api_schedules.py -v`
+Expected: PASS (all tests in the file, including the 2 new ones)
+
+- [ ] **Step 9: Add `listSchedules` to `frontend/src/api/schedules.ts`**
+
+Append:
+
+```typescript
+export interface ScheduleSummary {
+  name: string;
+  task_name: string;
+  schedule_spec: string;
+  enabled: boolean;
+}
+
+export async function listSchedules(): Promise<ScheduleSummary[]> {
+  const response = await fetch(`${BASE}/schedules`, { credentials: "include" });
+  if (!response.ok) throw new Error("failed to load schedules");
+  return response.json();
+}
+```
+
+- [ ] **Step 10: Write `frontend/src/pages/ScheduleList.tsx`**
+
+```tsx
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { listSchedules, ScheduleSummary } from "../api/schedules";
+
+export function ScheduleList() {
+  const [schedules, setSchedules] = useState<ScheduleSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listSchedules()
+      .then(setSchedules)
+      .catch(() => setError("Couldn't load schedules."));
+  }, []);
+
+  if (error) return <p className="cm-error" role="alert">{error}</p>;
+  if (schedules === null) return <p className="cm-loading">Loading…</p>;
+
+  return (
+    <div className="cm-page">
+      <header className="cm-page-header">
+        <p className="cm-page-eyebrow">celery-manager</p>
+        <h1 className="cm-page-title">Periodic schedules</h1>
+      </header>
+      {schedules.length === 0 ? (
+        <p className="cm-empty-state">No periodic schedules configured yet.</p>
+      ) : (
+        <ul className="cm-schedule-list">
+          {schedules.map((s) => (
+            <li key={s.name} className="cm-schedule-list-row">
+              <Link to={`/schedules/${s.name}`} className="cm-schedule-list-name">
+                {s.name}
+              </Link>
+              <span className="cm-schedule-list-meta">{s.task_name} · {s.schedule_spec}</span>
+              {!s.enabled && <span className="cm-badge">disabled</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+```
+
+Style `.cm-schedule-list*` using the existing design tokens (`--cm-color-*`, `--cm-space-*`, etc. established in Tasks 12–15) — this is a continuation of the same design system, not a new visual decision. Follow `TaskList.tsx`'s row/link conventions for consistency.
+
+- [ ] **Step 11: Wire the route and nav link into `App.tsx`**
+
+Read the file's current content first (last touched by Task 15). Add:
+
+```tsx
+import { ScheduleList } from "./pages/ScheduleList";
+```
+
+Add inside `<Routes>`, alongside the existing `/schedules/:name` route:
+
+```tsx
+        <Route path="/schedules" element={<ScheduleList />} />
+```
+
+In the nav component Task 15 added, add a "Schedules" link pointing to `/schedules`, following the same `aria-current`/active-state pattern as the existing "Tasks"/"Audit Log" links.
+
+- [ ] **Step 12: Rebuild and copy static output**
+
+Run: `cd frontend && npm run build && rm -rf ../src/celery_manager/dashboard/static && cp -r dist ../src/celery_manager/dashboard/static`
+
+- [ ] **Step 13: Manual verification**
+
+Confirm `/#/schedules` lists the seeded/synced periodic schedule(s), links through correctly to `/#/schedules/<name>`, the nav's "Schedules" link is now reachable and shows the correct active state, and an empty-schedules case renders the empty state. Use a real browser check (Playwright) as prior dashboard tasks did.
+
+- [ ] **Step 14: Run the full test suite**
+
+Run: `pytest tests/ -v`
+Expected: PASS (all tests, no regressions)
+
+- [ ] **Step 15: Commit**
+
+```bash
+git add src/celery_manager/control/schedules.py src/celery_manager/api/routes/schedules.py frontend/src src/celery_manager/dashboard/static tests/unit/test_control_schedules.py tests/unit/test_api_schedules.py
+git commit -m "feat: periodic schedules list screen, closing the discoverability gap for per-occurrence pause/cancel"
 ```
 
 ---
