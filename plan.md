@@ -990,10 +990,12 @@ git commit -m "feat: core API for listing, starting, and cancelling tasks"
 - Test: `tests/unit/test_control_schedules.py`
 
 **Interfaces:**
-- Consumes: `PeriodicSchedule`, `ScheduleOverride` (Task 2).
+- Consumes: `PeriodicSchedule`, `ScheduleOverride` (Task 2); host `Celery` app.
 - Produces: `upcoming_occurrences(schedule: PeriodicSchedule, celery_schedule, count: int = 10, from_time: datetime | None = None) -> list[datetime]` — takes a `celery.schedules.schedule`/`crontab` instance (the actual schedule object, since `schedule_spec` on our model is just the display string) and returns the next N run times.
 - Produces: `pause_occurrence(session, schedule_name: str, target_time: datetime, action: str, created_by: str) -> ScheduleOverride`
 - Produces: `list_overrides(session, schedule_name: str) -> list[ScheduleOverride]`
+- Produces: `sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]` — reads the host app's `celery_app.conf.beat_schedule` and upserts a `PeriodicSchedule` row per entry, keyed by the beat_schedule dict key as `name`. Without this, `periodic_schedules` stays empty and the dashboard has nothing to show — called once at REST API startup (Task 10 wires this into `create_app`).
+- Produces: `list_upcoming_with_overrides(session, celery_app, schedule_name: str, count: int = 10, from_time: datetime | None = None) -> list[dict]` — the actual data the dashboard's future-schedule view needs: every upcoming occurrence (computed via `upcoming_occurrences`, using the live schedule object from `celery_app.conf.beat_schedule`), each annotated with `action`/`consumed` from any matching override. **Not just already-overridden rows** — `list_overrides` alone (used directly in Task 10's first draft below) only returns occurrences someone already acted on, which would leave the dashboard with nothing to pause. This function is what the REST endpoint in Task 10 actually calls.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1006,7 +1008,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from celery_manager.db.models import Base, PeriodicSchedule, ScheduleOverride
-from celery_manager.control.schedules import upcoming_occurrences, pause_occurrence, list_overrides
+from celery_manager.control.schedules import (
+    upcoming_occurrences,
+    pause_occurrence,
+    list_overrides,
+    sync_periodic_schedules,
+    list_upcoming_with_overrides,
+)
 
 
 def _session():
@@ -1062,6 +1070,50 @@ def test_pause_occurrence_is_idempotent_for_same_target():
     pause_occurrence(session, "demo-every-2h", target, action="skip", created_by="alice")
 
     assert len(list_overrides(session, "demo-every-2h")) == 1
+
+
+def test_sync_periodic_schedules_upserts_from_beat_schedule():
+    from unittest.mock import MagicMock
+    from celery import Celery
+
+    session = _session()
+    app = MagicMock(spec=Celery)
+    app.conf.beat_schedule = {
+        "demo-every-2h": {"task": "demo.echo", "schedule": interval_schedule(run_every=timedelta(hours=2)), "args": [], "kwargs": {}},
+    }
+
+    synced = sync_periodic_schedules(session, app)
+
+    assert len(synced) == 1
+    assert synced[0].name == "demo-every-2h"
+    assert synced[0].task_name == "demo.echo"
+
+    # calling again does not duplicate the row
+    sync_periodic_schedules(session, app)
+    assert session.query(PeriodicSchedule).count() == 1
+
+
+def test_list_upcoming_with_overrides_merges_computed_occurrences_and_overrides():
+    from unittest.mock import MagicMock
+    from celery import Celery
+
+    session = _session()
+    app = MagicMock(spec=Celery)
+    app.conf.beat_schedule = {
+        "demo-every-2h": {"task": "demo.echo", "schedule": interval_schedule(run_every=timedelta(hours=2)), "args": [], "kwargs": {}},
+    }
+    sync_periodic_schedules(session, app)
+
+    start = datetime(2026, 8, 15, 6, 0, tzinfo=timezone.utc)
+    first_occurrence = datetime(2026, 8, 15, 8, 0, tzinfo=timezone.utc)
+    pause_occurrence(session, "demo-every-2h", first_occurrence, action="skip", created_by="alice")
+
+    result = list_upcoming_with_overrides(session, app, "demo-every-2h", count=3, from_time=start)
+
+    assert len(result) == 3
+    assert result[0] == {"target_time": first_occurrence, "action": "skip", "consumed": False}
+    assert result[1]["action"] is None
+    assert result[1]["consumed"] is False
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1131,12 +1183,51 @@ def list_overrides(session, schedule_name: str) -> list[ScheduleOverride]:
         .order_by(ScheduleOverride.target_time)
         .all()
     )
+
+
+def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
+    """Upsert periodic_schedules from the host app's beat_schedule config.
+    Call once at REST API startup (see Task 10) so the dashboard's list of
+    schedules always reflects what's actually configured to run."""
+    synced = []
+    for name, entry in celery_app.conf.beat_schedule.items():
+        row = session.query(PeriodicSchedule).filter_by(name=name).one_or_none()
+        if row is None:
+            row = PeriodicSchedule(name=name)
+            session.add(row)
+        row.task_name = entry["task"]
+        row.schedule_spec = str(entry["schedule"])
+        row.enabled = True
+        synced.append(row)
+    session.commit()
+    return synced
+
+
+def list_upcoming_with_overrides(session, celery_app, schedule_name: str, count: int = 10, from_time: datetime | None = None) -> list[dict]:
+    """The data the dashboard's future-schedule view renders: every
+    upcoming occurrence, each annotated with any existing override."""
+    periodic = session.query(PeriodicSchedule).filter_by(name=schedule_name).one_or_none()
+    entry = celery_app.conf.beat_schedule.get(schedule_name)
+    if periodic is None or entry is None:
+        return []
+
+    occurrences = upcoming_occurrences(periodic, entry["schedule"], count=count, from_time=from_time)
+    overrides_by_time = {o.target_time: o for o in list_overrides(session, schedule_name)}
+
+    return [
+        {
+            "target_time": t,
+            "action": overrides_by_time[t].action if t in overrides_by_time else None,
+            "consumed": overrides_by_time[t].consumed if t in overrides_by_time else False,
+        }
+        for t in occurrences
+    ]
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_control_schedules.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -1697,25 +1788,28 @@ def test_retry_task_endpoint():
 
 ```python
 # tests/unit/test_api_schedules.py
-from datetime import datetime, timezone
-from unittest.mock import patch
+from datetime import timedelta
 
 from fastapi.testclient import TestClient
 from celery import Celery
+from celery.schedules import schedule as interval_schedule
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
-from celery_manager.db.models import PeriodicSchedule
 
 
 def _client_and_session():
-    config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    celery_app = Celery("test")
+    celery_app.conf.beat_schedule = {
+        "demo-every-2h": {"task": "demo.echo", "schedule": interval_schedule(run_every=timedelta(hours=2))},
+    }
+    config = CeleryManagerConfig(celery_app=celery_app, db_url="sqlite:///:memory:", secret_key="test-secret")
+    # create_app() calls sync_periodic_schedules() at startup (Task 10 Step 5),
+    # which is what populates periodic_schedules from beat_schedule above.
     app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")
-        session.add(PeriodicSchedule(name="demo-every-2h", task_name="demo.echo", schedule_spec="2h"))
-        session.commit()
     client = TestClient(app)
     client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
     return client
@@ -1841,7 +1935,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from celery_manager.api.deps import get_current_user
-from celery_manager.control.schedules import pause_occurrence, list_overrides
+from celery_manager.control.schedules import pause_occurrence, list_upcoming_with_overrides
 
 router = APIRouter(prefix="/api/schedules")
 
@@ -1861,19 +1955,32 @@ def pause(name: str, payload: PauseRequest, request: Request, username: str = De
 
 @router.get("/{name}/occurrences")
 def occurrences(name: str, request: Request, username: str = Depends(get_current_user)):
+    """Every upcoming occurrence for this schedule (not just already-paused
+    ones) so the dashboard has something to act on — see
+    list_upcoming_with_overrides in Task 6."""
+    celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
-        overrides = list_overrides(session, name)
-        return [{"target_time": o.target_time, "action": o.action, "consumed": o.consumed} for o in overrides]
+        return list_upcoming_with_overrides(session, celery_app, name)
 ```
 
-- [ ] **Step 5: Wire the new routers into `create_app`**
+- [ ] **Step 5: Wire the new routers into `create_app`, and sync schedules on startup**
 
-In `src/celery_manager/api/app.py`, add the import and registration:
+In `src/celery_manager/api/app.py`, add the imports:
 
 ```python
 from celery_manager.api.routes import auth as auth_routes, tasks as task_routes, schedules as schedule_routes
+from celery_manager.control.schedules import sync_periodic_schedules
 ```
+
+After `configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds)`, add:
+
+```python
+    with session_factory() as session:
+        sync_periodic_schedules(session, config.celery_app)
+```
+
+(This is what populates `periodic_schedules` from the host app's `beat_schedule` — without it, `/api/schedules/{name}/occurrences` has no row to look up. See Task 6.)
 
 and after `app.include_router(auth_routes.router)`:
 
@@ -1882,10 +1989,27 @@ and after `app.include_router(auth_routes.router)`:
     app.include_router(schedule_routes.router)
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 6: Add an occurrences-listing test to `tests/unit/test_api_schedules.py`**
+
+Append:
+
+```python
+def test_list_occurrences_endpoint_shows_computed_upcoming_runs():
+    client = _client_and_session()
+    response = client.get("/api/schedules/demo-every-2h/occurrences")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) > 0
+    assert "target_time" in body[0]
+    assert body[0]["action"] is None
+```
+
+This exercises `sync_periodic_schedules` (called at `create_app` startup in Step 5) together with `list_upcoming_with_overrides` (Task 6) — both driven by the `beat_schedule` the fixture already sets on `celery_app.conf` above.
+
+- [ ] **Step 7: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_api_tasks.py tests/unit/test_api_schedules.py -v`
-Expected: PASS (6 tests)
+Expected: PASS (7 tests)
 
 - [ ] **Step 7: Commit**
 
