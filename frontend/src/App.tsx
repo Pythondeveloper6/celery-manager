@@ -1,10 +1,40 @@
 import { useCallback, useEffect, useState } from "react";
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import { whoami } from "./api/client";
 import { Login } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { ScheduleOccurrences } from "./pages/ScheduleOccurrences";
+import { AuditLog } from "./pages/AuditLog";
+
+// The one persistent chrome element across every authenticated screen —
+// everything under it (TaskList, TaskDetail, ScheduleOccurrences,
+// AuditLog) still owns its own cm-page-header eyebrow/title, so this bar
+// stays deliberately thin: brand mark + wordmark, and links for the two
+// screens a user can always jump to directly. Schedule occurrences are
+// keyed by schedule name (`/schedules/:name`) with no list endpoint yet,
+// so there's no single stable destination to link to — adding a fake one
+// here would be exactly the kind of placeholder navigation the project
+// avoids elsewhere; that's a gap for a future "schedules list" task, not
+// something to paper over with a guessed link.
+function AppNav() {
+  return (
+    <nav className="cm-app-nav" aria-label="Primary">
+      <span className="cm-app-nav-brand">
+        <span className="cm-brand-mark" aria-hidden="true" />
+        celery-manager
+      </span>
+      <div className="cm-app-nav-links">
+        <NavLink to="/" end className="cm-app-nav-link">
+          Tasks
+        </NavLink>
+        <NavLink to="/audit" className="cm-app-nav-link">
+          Audit Log
+        </NavLink>
+      </div>
+    </nav>
+  );
+}
 
 export function App() {
   const [username, setUsername] = useState<string | null>(null);
@@ -67,10 +97,12 @@ export function App() {
   // the "#".
   return (
     <HashRouter>
+      <AppNav />
       <Routes>
         <Route path="/" element={<TaskList />} />
         <Route path="/tasks/:taskId" element={<TaskDetail />} />
         <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
+        <Route path="/audit" element={<AuditLog />} />
       </Routes>
     </HashRouter>
   );
