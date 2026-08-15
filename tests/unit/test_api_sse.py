@@ -7,6 +7,7 @@ from celery import Celery
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
+from celery_manager.api.sse import EventBus
 
 
 def test_stream_emits_published_event():
@@ -75,5 +76,79 @@ def test_stream_emits_published_event():
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
+
+    asyncio.run(run())
+
+
+# --- I1 (partial): EventBus.publish is called from the events listener's
+# thread, not the thread running the event loop that owns the subscriber
+# queues. asyncio.Queue is not thread-safe and put_nowait from a foreign
+# thread does not wake the loop awaiting it. ---
+
+
+def test_publish_from_a_foreign_thread_wakes_the_waiting_consumer_promptly():
+    """The bug is not "raises an error" — it's "the event loop is never woken".
+
+    A bare `queue.put_nowait()` from a foreign thread marks the waiter's
+    future done via `loop.call_soon`, which does NOT write to the loop's
+    self-pipe. A loop parked in `select()` therefore keeps sleeping until some
+    unrelated timer fires. So asserting mere eventual delivery is not enough —
+    a generous timeout hides the bug entirely. This asserts delivery is
+    *prompt*: the publisher sleeps first so the loop is genuinely parked, and
+    the event must arrive well before the only other scheduled wakeup.
+    """
+    import threading
+    import time
+
+    bus = EventBus()
+    publish_delay = 0.3
+    # The only timer on the loop. With the fix, delivery happens at
+    # ~publish_delay. Without it, the loop sleeps until this fires instead.
+    only_other_wakeup = 10.0
+
+    async def consume():
+        queue = bus.subscribe()
+
+        def publisher():
+            time.sleep(publish_delay)  # let the loop actually park in select()
+            bus.publish({"task_id": "t9", "type": "task-succeeded"})
+
+        threading.Thread(target=publisher, daemon=True).start()
+
+        started = time.monotonic()
+        event = await asyncio.wait_for(queue.get(), timeout=only_other_wakeup)
+        return event, time.monotonic() - started
+
+    received, elapsed = asyncio.run(consume())
+    assert received == {"task_id": "t9", "type": "task-succeeded"}
+    assert elapsed < 3.0, f"consumer woke after {elapsed:.1f}s — the loop was not woken by publish()"
+
+
+def test_publish_reaches_every_subscriber_and_stops_after_unsubscribe():
+    async def run():
+        bus = EventBus()
+        first = bus.subscribe()
+        second = bus.subscribe()
+
+        bus.publish({"n": 1})
+        assert await asyncio.wait_for(first.get(), timeout=5) == {"n": 1}
+        assert await asyncio.wait_for(second.get(), timeout=5) == {"n": 1}
+
+        bus.unsubscribe(first)
+        bus.publish({"n": 2})
+        assert await asyncio.wait_for(second.get(), timeout=5) == {"n": 2}
+        assert first.empty()
+
+    asyncio.run(run())
+
+
+def test_publish_before_any_subscriber_is_buffered_and_replayed():
+    """Pre-existing behaviour the thread-safety rework must not regress."""
+
+    async def run():
+        bus = EventBus()
+        bus.publish({"n": "early"})  # no subscribers yet, and no running-loop context needed
+        queue = bus.subscribe()
+        assert await asyncio.wait_for(queue.get(), timeout=5) == {"n": "early"}
 
     asyncio.run(run())
