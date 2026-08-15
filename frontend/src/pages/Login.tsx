@@ -47,6 +47,7 @@ export function Login({ onSuccess }: { onSuccess: (username: string) => void }) 
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
+            disabled={loading}
             required
           />
         </div>
@@ -61,6 +62,7 @@ export function Login({ onSuccess }: { onSuccess: (username: string) => void }) 
             autoComplete="current-password"
             aria-describedby={error ? errorId : undefined}
             aria-invalid={error ? true : undefined}
+            disabled={loading}
             required
           />
         </div>
