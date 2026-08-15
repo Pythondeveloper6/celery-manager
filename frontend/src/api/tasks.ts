@@ -1,0 +1,41 @@
+const BASE = "/api";
+
+export interface TaskSummary {
+  task_id: string;
+  task_name: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface TaskDetail extends TaskSummary {
+  args: string;
+  kwargs: string;
+  exception: string | null;
+  traceback: string | null;
+  log_output: string | null;
+}
+
+export async function listTasks(params: { status?: string; task_name?: string } = {}): Promise<TaskSummary[]> {
+  const query = new URLSearchParams(params as Record<string, string>).toString();
+  const response = await fetch(`${BASE}/tasks${query ? `?${query}` : ""}`, { credentials: "include" });
+  if (!response.ok) throw new Error("Couldn't load tasks.");
+  return response.json();
+}
+
+export async function getTask(taskId: string): Promise<TaskDetail> {
+  const response = await fetch(`${BASE}/tasks/${taskId}`, { credentials: "include" });
+  if (!response.ok) throw new Error(response.status === 404 ? "Task not found." : "Couldn't load this task.");
+  return response.json();
+}
+
+export interface TaskEvent {
+  task_id: string;
+  type: string;
+}
+
+export function subscribeToUpdates(onEvent: (event: TaskEvent) => void): () => void {
+  const source = new EventSource(`${BASE}/stream`, { withCredentials: true });
+  source.onmessage = (message) => onEvent(JSON.parse(message.data));
+  return () => source.close();
+}

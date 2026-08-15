@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { HashRouter, Route, Routes } from "react-router-dom";
 import { whoami } from "./api/client";
 import { Login } from "./pages/Login";
+import { TaskList } from "./pages/TaskList";
+import { TaskDetail } from "./pages/TaskDetail";
 
 export function App() {
   const [username, setUsername] = useState<string | null>(null);
@@ -54,11 +57,19 @@ export function App() {
 
   if (!username) return <Login onSuccess={setUsername} />;
 
+  // HashRouter, not BrowserRouter: the backend serves the built SPA via a
+  // plain StaticFiles(html=True) mount with no catch-all fallback route, so
+  // a real (non-JS-driven) request for e.g. /tasks/abc 404s at the server
+  // before React ever runs. Routing on the URL fragment keeps every
+  // deep link, refresh, and bookmark resolving to the same "/" request the
+  // server already serves, while React Router still owns everything after
+  // the "#".
   return (
-    <div className="cm-app-placeholder">
-      <p>
-        Signed in as <strong>{username}</strong> &mdash; dashboard screens land in Tasks 13-15.
-      </p>
-    </div>
+    <HashRouter>
+      <Routes>
+        <Route path="/" element={<TaskList />} />
+        <Route path="/tasks/:taskId" element={<TaskDetail />} />
+      </Routes>
+    </HashRouter>
   );
 }
