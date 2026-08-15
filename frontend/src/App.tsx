@@ -4,6 +4,7 @@ import { whoami } from "./api/client";
 import { Login } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
+import { ScheduleOccurrences } from "./pages/ScheduleOccurrences";
 
 export function App() {
   const [username, setUsername] = useState<string | null>(null);
@@ -69,6 +70,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<TaskList />} />
         <Route path="/tasks/:taskId" element={<TaskDetail />} />
+        <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
       </Routes>
     </HashRouter>
   );

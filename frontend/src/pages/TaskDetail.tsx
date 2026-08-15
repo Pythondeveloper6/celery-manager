@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getTask, type TaskDetail as TaskDetailData } from "../api/tasks";
+import { getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
 
 function formatPayload(raw: string): string {
   try {
@@ -14,15 +14,36 @@ export function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const [task, setTask] = useState<TaskDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = useState<{ newTaskId: string } | null>(null);
 
   useEffect(() => {
     setTask(null);
     setError(null);
+    setRetrying(false);
+    setRetryError(null);
+    setRetryNotice(null);
     if (!taskId) return;
     getTask(taskId)
       .then(setTask)
       .catch((err) => setError(err instanceof Error ? err.message : "Task not found."));
   }, [taskId]);
+
+  async function handleRetry() {
+    if (!task) return;
+    setRetrying(true);
+    setRetryError(null);
+    setRetryNotice(null);
+    try {
+      const { new_task_id } = await retryTask(task.task_id);
+      setRetryNotice({ newTaskId: new_task_id });
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : "Retry failed.");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   return (
     <div className="cm-page cm-detail-page">
@@ -46,8 +67,28 @@ export function TaskDetail() {
             <span className="cm-status-badge" data-status={task.status}>
               {task.status}
             </span>
+            {task.status === "failed" && (
+              <button type="button" className="cm-btn cm-btn-solid" onClick={handleRetry} disabled={retrying}>
+                {retrying ? "Retrying…" : "Retry"}
+              </button>
+            )}
           </header>
           <p className="cm-task-id cm-detail-task-id">{task.task_id}</p>
+
+          {retryNotice && (
+            <p className="cm-notice" role="status">
+              Retried as a new run &mdash;{" "}
+              <Link to={`/tasks/${retryNotice.newTaskId}`} className="cm-back-link">
+                view {retryNotice.newTaskId}
+              </Link>
+              .
+            </p>
+          )}
+          {retryError && (
+            <p className="cm-error" role="alert">
+              {retryError}
+            </p>
+          )}
 
           <dl className="cm-detail-meta">
             <div>

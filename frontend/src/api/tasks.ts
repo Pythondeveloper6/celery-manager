@@ -29,6 +29,23 @@ export async function getTask(taskId: string): Promise<TaskDetail> {
   return response.json();
 }
 
+export async function retryTask(taskId: string): Promise<{ new_task_id: string }> {
+  const response = await fetch(`${BASE}/tasks/${taskId}/retry`, { method: "POST", credentials: "include" });
+  if (!response.ok) throw new Error("Retry failed.");
+  return response.json();
+}
+
+export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids: string[] }> {
+  const response = await fetch(`${BASE}/tasks/retry-bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
+  if (!response.ok) throw new Error("Bulk retry failed.");
+  return response.json();
+}
+
 export interface TaskEvent {
   task_id: string;
   type: string;

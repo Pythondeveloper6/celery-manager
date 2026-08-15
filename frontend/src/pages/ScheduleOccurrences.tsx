@@ -1,0 +1,182 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { listOccurrences, pauseOccurrence, type Occurrence } from "../api/schedules";
+
+const ACTION_LABEL: Record<string, string> = {
+  skip: "Skip",
+  cancel: "Cancel",
+  reschedule: "Reschedule",
+};
+
+function formatTargetTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+// An occurrence's `consumed` flag only flips once its scheduled time has
+// actually passed (see api/schedules.ts) — every row this view shows is
+// still in the future, so "resolved" only fires defensively if the API
+// ever returns a stale one. "paused" covers both skip and cancel: either
+// way, a human has already decided this occurrence's fate.
+function occurrenceState(o: Occurrence): "pending" | "paused" | "resolved" {
+  if (o.consumed) return "resolved";
+  if (o.action) return "paused";
+  return "pending";
+}
+
+export function ScheduleOccurrences() {
+  const { name } = useParams<{ name: string }>();
+  const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ key: string; action: "skip" | "cancel" } | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (!name) return;
+    try {
+      const results = await listOccurrences(name);
+      setOccurrences(results);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't load upcoming occurrences.");
+    }
+  }, [name]);
+
+  useEffect(() => {
+    setOccurrences(null);
+    setNotice(null);
+    setRowErrors({});
+    refresh();
+  }, [refresh]);
+
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
+
+  async function handlePause(o: Occurrence, action: "skip" | "cancel") {
+    if (!name) return;
+    const key = o.target_time;
+    setPending({ key, action });
+    setRowErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      await pauseOccurrence(name, o.target_time, action);
+      await refresh();
+      setNotice(`${ACTION_LABEL[action]} recorded for the run at ${formatTargetTime(o.target_time)}.`);
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+      noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+    } catch (err) {
+      setRowErrors((prev) => ({
+        ...prev,
+        [key]: err instanceof Error ? err.message : "Couldn't update this occurrence. Try again.",
+      }));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="cm-page">
+      <Link to="/" className="cm-back-link">
+        &larr; All tasks
+      </Link>
+
+      <header className="cm-page-header">
+        <div className="cm-page-header-titles">
+          <p className="cm-page-eyebrow">
+            <span className="cm-brand-mark" aria-hidden="true" />
+            schedule
+          </p>
+          <h1 className="cm-page-title">{name}</h1>
+        </div>
+      </header>
+
+      {notice && (
+        <p className="cm-notice" role="status">
+          {notice}
+        </p>
+      )}
+
+      {error ? (
+        <p className="cm-error" role="alert">
+          {error}
+        </p>
+      ) : occurrences === null ? (
+        <p className="cm-loading">
+          <span className="cm-live-dot" aria-hidden="true" />
+          Loading upcoming runs&hellip;
+        </p>
+      ) : occurrences.length === 0 ? (
+        <p className="cm-empty-state">No upcoming occurrences to show yet.</p>
+      ) : (
+        <ul className="cm-occurrence-list">
+          {occurrences.map((o) => {
+            const key = o.target_time;
+            const state = occurrenceState(o);
+            const busy = pending?.key === key;
+            const rowError = rowErrors[key];
+
+            return (
+              <li key={key} className="cm-occurrence-row" data-state={state} data-action={o.action ?? undefined}>
+                <div className="cm-occurrence-main">
+                  <span className="cm-occurrence-time">{formatTargetTime(o.target_time)}</span>
+                  {state === "paused" && o.action && (
+                    <span className="cm-occurrence-badge" data-action={o.action}>
+                      {ACTION_LABEL[o.action] ?? o.action}
+                    </span>
+                  )}
+                  {state === "resolved" && <span className="cm-occurrence-badge cm-occurrence-badge-resolved">already resolved</span>}
+                </div>
+
+                {state !== "resolved" && (
+                  <div className="cm-occurrence-actions">
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-outline"
+                      aria-pressed={o.action === "skip"}
+                      disabled={busy}
+                      onClick={() => handlePause(o, "skip")}
+                    >
+                      {busy && pending?.action === "skip" ? "Skipping…" : o.action === "skip" ? "Skipped" : "Skip this run"}
+                    </button>
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-outline"
+                      aria-pressed={o.action === "cancel"}
+                      disabled={busy}
+                      onClick={() => handlePause(o, "cancel")}
+                    >
+                      {busy && pending?.action === "cancel" ? "Cancelling…" : o.action === "cancel" ? "Cancelled" : "Cancel this run"}
+                    </button>
+                  </div>
+                )}
+
+                {rowError && (
+                  <p className="cm-error cm-occurrence-row-error" role="alert">
+                    {rowError}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
