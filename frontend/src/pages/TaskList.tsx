@@ -41,8 +41,11 @@ export function TaskList() {
   // away while fresher data is on the way.
   const hasLoadedRef = useRef(false);
 
-  const refresh = useCallback(async () => {
-    if (hasLoadedRef.current) setRefreshing(true);
+  // `silent` skips the `refreshing` dim. Background polling (below) uses it
+  // so the panel doesn't pulse every few seconds for a fetch the user never
+  // asked for; user-initiated and SSE-driven refreshes still show the dim.
+  const refresh = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (hasLoadedRef.current && !silent) setRefreshing(true);
     try {
       const current = statusRef.current;
       const results = await listTasks(current === "all" ? {} : { status: current });
@@ -62,6 +65,20 @@ export function TaskList() {
   }, [status, refresh]);
 
   useEffect(() => subscribeToUpdates(() => refresh()), [refresh]);
+
+  // Polling fallback, deliberately *alongside* the SSE subscription above
+  // rather than instead of it. The EventBus that /api/stream reads from lives
+  // in the API process's memory, but the documented deployment runs the
+  // events listener as a separate OS process — which cannot publish into it.
+  // So in a real deployment SSE connects and then delivers nothing, and this
+  // poll is what actually keeps the list live. When SSE *does* deliver
+  // (single-process setups, and once the backlog's cross-process fix lands),
+  // both paths simply call the same refresh and the poll is redundant rather
+  // than harmful. See plan.md's Backlog, "Cross-process SSE delivery".
+  useEffect(() => {
+    const interval = setInterval(() => refresh({ silent: true }), 5000);
+    return () => clearInterval(interval);
+  }, [refresh]);
 
   // Switching filters clears the selection outright (simplest mental
   // model: a selection belongs to the list you made it in) and also
