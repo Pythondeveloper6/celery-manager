@@ -37,6 +37,25 @@ def test_pause_occurrence_endpoint_creates_override():
     assert response.json()["action"] == "skip"
 
 
+def test_pause_occurrence_endpoint_writes_an_audit_row():
+    """I2: pausing/cancelling a future occurrence is the product's headline
+    operator action and had no audit trail at all — only retry did."""
+    client = _client_and_session()
+    response = client.post(
+        "/api/schedules/demo-every-2h/occurrences/pause",
+        json={"target_time": "2026-08-15T20:00:00+00:00", "action": "skip"},
+    )
+    assert response.status_code == 200
+
+    rows = [r for r in client.get("/api/audit").json() if r["action"] == "pause_occurrence"]
+    assert len(rows) == 1
+    assert rows[0]["username"] == "alice"
+    assert rows[0]["target_type"] == "schedule"
+    assert rows[0]["target_id"] == "demo-every-2h"
+    assert "2026-08-15T20:00:00" in rows[0]["details"]
+    assert "skip" in rows[0]["details"]
+
+
 def test_list_occurrences_endpoint_shows_computed_upcoming_runs():
     client = _client_and_session()
     response = client.get("/api/schedules/demo-every-2h/occurrences")

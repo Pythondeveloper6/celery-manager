@@ -21,15 +21,46 @@ def get_task_run(session, task_id: str) -> TaskRun | None:
     return session.query(TaskRun).filter_by(task_id=task_id).one_or_none()
 
 
-def start_task(celery_app: Celery, task_name: str, args: list, kwargs: dict) -> str:
-    """Dispatch a task on demand (e.g. from the dashboard's 'run now' action)."""
+def start_task(
+    celery_app: Celery,
+    task_name: str,
+    args: list,
+    kwargs: dict,
+    session=None,
+    username: str | None = None,
+) -> str:
+    """Dispatch a task on demand (e.g. from the dashboard's 'run now' action).
+
+    Pass `session` and `username` to record the operator action in the audit
+    log, the way `retry_task` already does. Both are optional because
+    `retry_task` calls this internally and records its own, more specific
+    `retry` entry — auditing here unconditionally would double-log every
+    retry as a retry *and* a start.
+    """
     result = celery_app.send_task(task_name, args=args, kwargs=kwargs)
+    if session is not None and username is not None:
+        record_audit(
+            session, username, "start", "task", result.id,
+            {"task_name": task_name, "args": args, "kwargs": kwargs},
+        )
     return result.id
 
 
-def cancel_task(celery_app: Celery, task_id: str, terminate: bool = False) -> None:
-    """Revoke a queued task, or terminate it if already running (terminate=True)."""
+def cancel_task(
+    celery_app: Celery,
+    task_id: str,
+    terminate: bool = False,
+    session=None,
+    username: str | None = None,
+) -> None:
+    """Revoke a queued task, or terminate it if already running (terminate=True).
+
+    Pass `session` and `username` to record the action in the audit log; see
+    `start_task` above for why they're optional.
+    """
     celery_app.control.revoke(task_id, terminate=terminate)
+    if session is not None and username is not None:
+        record_audit(session, username, "cancel", "task", task_id, {"terminate": terminate})
 
 
 def retry_task(celery_app: Celery, session, task_id: str, username: str, args: list | None = None, kwargs: dict | None = None) -> str:

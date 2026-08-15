@@ -55,14 +55,23 @@ class StartRequest(BaseModel):
 @router.post("/start")
 def start(payload: StartRequest, request: Request, username: str = Depends(get_current_user)):
     celery_app = request.app.state.cm_config.celery_app
-    task_id = start_task(celery_app, payload.task_name, payload.args, payload.kwargs)
+    session_factory = request.app.state.cm_session_factory
+    # session + username are what make this action land in the audit log,
+    # same as the retry route below.
+    with session_factory() as session:
+        task_id = start_task(
+            celery_app, payload.task_name, payload.args, payload.kwargs,
+            session=session, username=username,
+        )
     return {"task_id": task_id}
 
 
 @router.post("/{task_id}/cancel")
 def cancel(task_id: str, request: Request, terminate: bool = False, username: str = Depends(get_current_user)):
     celery_app = request.app.state.cm_config.celery_app
-    cancel_task(celery_app, task_id, terminate=terminate)
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        cancel_task(celery_app, task_id, terminate=terminate, session=session, username=username)
     return {"ok": True}
 
 
