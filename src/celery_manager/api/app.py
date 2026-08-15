@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.session import init_db, get_session_factory
 from celery_manager.decorator import configure as configure_decorator
 from celery_manager.api.routes import auth as auth_routes, tasks as task_routes, schedules as schedule_routes
 from celery_manager.control.schedules import sync_periodic_schedules
+from celery_manager.api.sse import EventBus, sse_stream
 
 
 def create_app(config: CeleryManagerConfig):
@@ -23,9 +25,14 @@ def create_app(config: CeleryManagerConfig):
     app = FastAPI(title="celery-manager")
     app.state.cm_config = config
     app.state.cm_session_factory = session_factory
+    app.state.cm_event_bus = EventBus()
 
     app.include_router(auth_routes.router)
     app.include_router(task_routes.router)
     app.include_router(schedule_routes.router)
+
+    @app.get("/api/stream")
+    def stream(request: Request):
+        return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
 
     return app, session_factory

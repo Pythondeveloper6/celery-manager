@@ -62,9 +62,10 @@ class EventListener:
     `celery-manager events` CLI command (Task 16 wires this up for the
     Django demo; see cli.py)."""
 
-    def __init__(self, config: CeleryManagerConfig, session_factory):
+    def __init__(self, config: CeleryManagerConfig, session_factory, event_bus=None):
         self._config = config
         self._session_factory = session_factory
+        self._event_bus = event_bus
 
     def run(self) -> None:
         app = self._config.celery_app
@@ -75,6 +76,8 @@ class EventListener:
             with self._session_factory() as session:
                 upsert_task_run(session, event)
                 session.commit()
+            if self._event_bus is not None:
+                self._event_bus.publish({"task_id": event.get("uuid"), "type": event.get("type")})
 
         with app.connection() as connection:
             receiver = app.events.Receiver(connection, handlers={"*": on_event})
