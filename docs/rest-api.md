@@ -125,3 +125,24 @@ unauthenticated clients.
 The dashboard's task list subscribes to this stream and refetches
 `/api/tasks` on every event rather than applying the event to its local
 state directly — see [Dashboard](dashboard.md).
+
+### Known limitation: SSE does not currently work across processes
+
+`EventBus` (`celery_manager.api.sse`) is an **in-memory** fan-out living
+inside the API process. The only thing that publishes to it is
+`EventListener`, which the documented deployment runs as a **separate OS
+process** (`celery-manager events`). A separate process cannot reach another
+process's in-memory queues, so in a standard deployment `/api/stream`
+connects successfully, stays open — and never delivers an event.
+
+Because of that, the dashboard's task list **also polls `/api/tasks` every 5
+seconds**, which is what actually keeps it current today. Updates are
+therefore near-live (a few seconds) rather than push-instant. Nothing is
+silently broken from a user's point of view, but don't build on `/api/stream`
+as a reliable delivery mechanism yet.
+
+The fix — backing the bus with Redis pub/sub, or running the listener
+in-process as a background task of the API app — is a tracked backlog item
+(see `plan.md`, "Cross-process SSE delivery"). It is also what would make SSE
+work across more than one API worker behind a load balancer, which has the
+same root cause.
