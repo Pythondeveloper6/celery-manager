@@ -11,13 +11,20 @@ into two things:
    traceback on failure.
 
 ```python
-from celery_manager.decorator import track
+import celery_manager
 
 @app.task(bind=True)
-@track(schedule_name="send-report-every-2-hours")
+@celery_manager.track(schedule_name="send-report-every-2-hours")
 def send_report(self):
     ...
 ```
+
+(`from celery_manager.decorator import track` also works and is equivalent —
+`celery_manager.track` is just the documented public alias.)
+
+This decorator only does its job in a process that has been wired with
+`celery_manager.setup(config)` — see [Wiring](#wiring--the-worker-process-must-call-celery_managersetup)
+below, which is the step most easily missed.
 
 `schedule_name` should match the name you use for this schedule in the
 dashboard's periodic schedules (i.e. the key under `beat_schedule` in your
@@ -29,16 +36,50 @@ listener picks up every task automatically) but don't support
 per-occurrence pause/cancel or full log capture — only the traceback
 Celery already provides on failure.
 
-## Wiring
+## Wiring — the worker process must call `celery_manager.setup()`
 
-`@track` needs a session factory before it can do anything, which
-`create_app()` sets up for you automatically (it calls
-`celery_manager.decorator.configure(session_factory,
-eta_tolerance_seconds=config.eta_tolerance_seconds)` during app startup).
-If a decorated task somehow runs in a process that never called
-`create_app()` or `configure()` directly, `@track` degrades gracefully: it
-runs the task body normally, with no log capture and no schedule-override
-check, rather than raising.
+`@track` needs a session factory before it can do anything, and that wiring
+is **per process**. Decorated tasks execute in your **Celery worker**
+process, so the worker is the process that has to be wired — not (only) the
+one that builds the dashboard app.
+
+**Call `celery_manager.setup(config)` at import time in the module that
+defines your tasks**, so it runs before any task does:
+
+```python
+import celery_manager
+from celery_manager.config import CeleryManagerConfig
+
+from myproject.celery import app
+
+celery_manager.setup(CeleryManagerConfig(
+    celery_app=app,
+    db_url="sqlite:///celery_manager.db",  # the same DB the dashboard reads
+    secret_key="a-real-secret-in-production",
+))
+
+
+@app.task(bind=True)
+@celery_manager.track(schedule_name="send-report-every-2-hours")
+def send_report(self):
+    ...
+```
+
+`setup()` does the whole per-process wiring (create the engine, ensure the
+tables exist, hand the decorator a session factory) and is idempotent, so
+it's safe if more than one module calls it. `create_app()` calls the same
+function internally, which is why the dashboard process doesn't need a
+separate `setup()` call — but the dashboard process is *not* where your
+tasks run, so wiring it does nothing for the worker.
+
+If a decorated task runs in a process that never called `setup()`, `@track`
+degrades gracefully rather than raising: the task body still runs normally,
+but **with no log capture and no schedule-override check** — meaning
+per-occurrence pause/cancel silently does nothing. Because that failure is
+invisible from the outside, the decorator logs a one-time `WARNING`
+(`celery_manager.decorator`) the first time a tracked task runs unconfigured.
+If you're not seeing pause/skip or captured logs, check the worker's log for
+that warning first.
 
 ## How the skip/cancel check works
 

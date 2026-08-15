@@ -3,27 +3,32 @@ import random
 import time
 
 from celery import shared_task
-
-from celery_manager.decorator import track
-from demo.celery import app as celery_app
-from celery_manager.config import CeleryManagerConfig
-from celery_manager.decorator import configure
-from celery_manager.db.session import init_db, get_session_factory
 from django.conf import settings
 
-_config = CeleryManagerConfig(
+import celery_manager
+from celery_manager.config import CeleryManagerConfig
+from demo.celery import app as celery_app
+
+# This module is imported by the Celery WORKER process, which is where the
+# @celery_manager.track() tasks below actually execute — so this is the
+# process that has to be wired. create_app() (run_dashboard.py) wires the
+# dashboard process only; without the call below, the worker's decorators
+# would silently no-op and neither per-occurrence pause/skip nor log capture
+# would ever engage. One call, at import time, before any task can run.
+#
+# celery_manager.setup() is idempotent and does the whole job (engine +
+# create_all + handing the decorator a session factory).
+celery_manager.setup(CeleryManagerConfig(
     celery_app=celery_app,
     db_url=settings.CELERY_MANAGER_DB_URL,
     secret_key=settings.CELERY_MANAGER_SECRET_KEY,
-)
-_engine = init_db(_config)
-configure(get_session_factory(_engine), eta_tolerance_seconds=_config.eta_tolerance_seconds)
+))
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True)
-@track()
+@celery_manager.track()
 def send_welcome_email(self, user_email: str):
     logger.info("sending welcome email to %s", user_email)
     time.sleep(1)
@@ -31,7 +36,7 @@ def send_welcome_email(self, user_email: str):
 
 
 @shared_task(bind=True)
-@track(schedule_name="send-demo-report-every-2-hours")
+@celery_manager.track(schedule_name="send-demo-report-every-2-hours")
 def send_report(self):
     logger.info("generating demo report")
     if random.random() < 0.3:

@@ -7,8 +7,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from celery_manager.config import CeleryManagerConfig
-from celery_manager.db.session import init_db, get_session_factory
-from celery_manager.decorator import configure as configure_decorator
+from celery_manager.runtime import setup as setup_runtime
 from celery_manager.api.routes import (
     auth as auth_routes,
     tasks as task_routes,
@@ -23,9 +22,12 @@ def create_app(config: CeleryManagerConfig):
     """Build the celery-manager FastAPI app. Returns (app, session_factory)
     — callers that need direct DB access (tests, the events listener CLI)
     use the session_factory; HTTP consumers just use the app."""
-    engine = init_db(config)
-    session_factory = get_session_factory(engine)
-    configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds)
+    # Single shared entry point for "wire celery-manager into this process"
+    # (init_db + session factory + decorator configure) rather than an inline
+    # copy of it, so the API process and the worker process — which must call
+    # `celery_manager.setup(config)` itself, see runtime.setup's docstring —
+    # can never drift out of sync.
+    session_factory = setup_runtime(config)
 
     with session_factory() as session:
         sync_periodic_schedules(session, config.celery_app)
