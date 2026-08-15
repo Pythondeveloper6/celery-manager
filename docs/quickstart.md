@@ -68,15 +68,30 @@ Every task shows up in the dashboard automatically once the events listener
 is running — no code changes required. If you also want per-occurrence
 schedule control (pause/cancel one future run of a periodic task) and full
 stdout/log capture on the task's detail page, apply `@track` above
-`@app.task`:
+`@app.task` — **and wire the worker process with `celery_manager.setup()`**:
 
 ```python
-from celery_manager.decorator import track
+# myproject/tasks.py — imported by the Celery worker
+import celery_manager
+from celery_manager.config import CeleryManagerConfig
+
+from myproject.celery import app
+
+# Required: this runs in the WORKER process, which is where tracked tasks
+# execute. create_app() wires the dashboard process only — without this call
+# the worker's @track decorators silently do nothing.
+celery_manager.setup(CeleryManagerConfig(
+    celery_app=app,
+    db_url="sqlite:///celery_manager.db",  # the same DB the dashboard uses
+    secret_key="a-real-secret-in-production",
+))
+
 
 @app.task(bind=True)
-@track(schedule_name="send-report-every-2-hours")
+@celery_manager.track(schedule_name="send-report-every-2-hours")
 def send_report(self):
     ...
 ```
 
+`setup()` is idempotent, so it's safe for several task modules to call it.
 See [The `@track` decorator](decorator.md) for details.

@@ -118,7 +118,7 @@ def _persist_run(task_id: str, **fields) -> None:
         with _session_factory() as session:
             _upsert_task_run(session, task_id, **fields)
             session.commit()
-    except Exception:  # noqa: BLE001 - deliberate: storage must not affect outcome
+    except Exception:  # deliberate: storage must never affect the task's outcome
         logger.exception(
             "celery-manager: could not persist the task_runs row for %s; "
             "the task's own outcome is unaffected.",
@@ -181,7 +181,7 @@ def track(schedule_name: str | None = None):
                         override.consumed = True
                         session.commit()
                         skipped = True
-            except Exception:  # noqa: BLE001 - see docstring above
+            except Exception:  # deliberate fail-open: see _persist_run's docstring
                 logger.exception(
                     "celery-manager: schedule-override check failed for %r; "
                     "running the task normally.",
