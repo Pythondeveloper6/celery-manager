@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timedelta, timezone
 
+from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride
 
 
@@ -117,6 +118,7 @@ def pause_occurrence(
         existing.action = action
         existing.target_time = target_time
         session.commit()
+        _audit_pause(session, created_by, schedule_name, target_time, action, updated=True)
         return existing
 
     override = ScheduleOverride(
@@ -128,7 +130,28 @@ def pause_occurrence(
     )
     session.add(override)
     session.commit()
+    _audit_pause(session, created_by, schedule_name, target_time, action, updated=False)
     return override
+
+
+def _audit_pause(session, username: str, schedule_name: str, target_time: datetime, action: str, updated: bool) -> None:
+    """Record a pause_occurrence in the audit log.
+
+    Pausing or cancelling a future occurrence is the product's headline
+    operator action (spec §2) and was the one control operation with no audit
+    trail at all — retry was the only audited action. Targets the schedule by
+    name (the stable identifier a user acts on); the specific occurrence and
+    the chosen action go in `details`, since a future occurrence has no id of
+    its own until it runs.
+    """
+    record_audit(
+        session,
+        username,
+        "pause_occurrence",
+        "schedule",
+        schedule_name,
+        {"target_time": target_time.isoformat(), "action": action, "updated_existing": updated},
+    )
 
 
 def list_overrides(session, schedule_name: str) -> list[ScheduleOverride]:
