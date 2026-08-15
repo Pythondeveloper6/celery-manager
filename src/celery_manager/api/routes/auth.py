@@ -24,7 +24,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
     if user is None:
         raise HTTPException(status_code=401, detail="invalid credentials")
     token = sign_session(config.secret_key, user.username)
-    response.set_cookie("session", token, httponly=True, samesite="lax")
+    response.set_cookie("session", token, httponly=True, samesite="lax", secure=config.cookie_secure)
     return {"username": user.username}
 
 

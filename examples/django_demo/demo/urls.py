@@ -10,6 +10,7 @@ _cm_config = CeleryManagerConfig(
     celery_app=celery_app,
     db_url=settings.CELERY_MANAGER_DB_URL,
     secret_key=settings.CELERY_MANAGER_SECRET_KEY,
+    cookie_secure=settings.CELERY_MANAGER_COOKIE_SECURE,
 )
 cm_app, _ = create_app(_cm_config)
 

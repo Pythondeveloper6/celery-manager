@@ -16,6 +16,8 @@ config = CeleryManagerConfig(
     celery_app=celery_app,
     db_url=settings.CELERY_MANAGER_DB_URL,
     secret_key=settings.CELERY_MANAGER_SECRET_KEY,
+    # False because this demo is served over plain HTTP — see settings.py.
+    cookie_secure=settings.CELERY_MANAGER_COOKIE_SECURE,
 )
 app, _ = create_app(config)
 

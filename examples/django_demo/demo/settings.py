@@ -147,3 +147,9 @@ CELERY_BEAT_SCHEDULE = {
 
 CELERY_MANAGER_DB_URL = "sqlite:///celery_manager_demo.db"
 CELERY_MANAGER_SECRET_KEY = "demo-secret-change-me"
+# This demo is served over plain HTTP (http://localhost:8001), and a browser
+# will not send a `Secure` cookie back over HTTP — so with celery-manager's
+# safe-by-default `cookie_secure=True` you would log in successfully and then
+# immediately appear logged out. False is correct *here only*: any deployment
+# reachable over anything but localhost HTTP should leave the default alone.
+CELERY_MANAGER_COOKIE_SECURE = False

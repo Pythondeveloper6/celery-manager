@@ -12,6 +12,7 @@ config = CeleryManagerConfig(
     db_url="sqlite:///celery_manager.db",
     secret_key="change-me",
     eta_tolerance_seconds=60,
+    cookie_secure=True,
 )
 ```
 
@@ -21,6 +22,7 @@ config = CeleryManagerConfig(
 | `db_url` | `str` | `"sqlite:///celery_manager.db"` | SQLAlchemy connection URL for celery-manager's own storage (task runs, schedules, overrides, users, audit log — see `celery_manager.db.models`). Any SQLAlchemy-supported backend works; swap to Postgres/MySQL/etc. for production. For `sqlite:///:memory:` specifically, the engine is built with `StaticPool` so every connection shares one in-memory database — needed for it to behave sensibly under FastAPI's threadpool (as used in the test suite); other SQLite URLs use `check_same_thread=False` instead. All every process that needs to see the same data (API app + events listener) must point at the same `db_url`. |
 | `secret_key` | `str` | `"change-me"` | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for 7 days). **Must** be overridden to a real, private secret in any deployment other than local development — anyone who knows the key can forge a valid session cookie for any username. Rotating it invalidates every existing session (users are signed out). |
 | `eta_tolerance_seconds` | `int` | `60` | How close a stored `ScheduleOverride.target_time` must be to "now" (in the `@track` decorator, at task-run time) or to a freshly recomputed occurrence timestamp (in `GET /api/schedules/{name}/occurrences`, at read time) for them to be treated as the same logical occurrence. See the trade-off below. |
+| `cookie_secure` | `bool` | `True` | Sets the `Secure` flag on the session cookie, so browsers only ever send it back over HTTPS. See below for why the default is `True` and when to change it. |
 
 ## Choosing `eta_tolerance_seconds`
 
@@ -60,6 +62,67 @@ than once a minute, consider a smaller value.
   beyond the connection-pooling adjustments described above. Recommended
   for anything beyond local development, and required if you're running
   more than one API process behind a load balancer.
+
+## `cookie_secure` and why it defaults to `True`
+
+The session cookie is a bearer credential: anyone who obtains it *is* the
+signed-in user for the remainder of that session, with full access to every
+control action the dashboard exposes (start, cancel/terminate, retry, pause a
+schedule occurrence). Without the `Secure` flag, a browser will happily send
+that cookie over plain HTTP, where anything on the network path can read it.
+
+celery-manager therefore sets `Secure` by default. This is a deliberate
+"safe unless you say otherwise" choice: a default of `False` would silently
+ship every deployment that never thought about the setting with a leakable
+credential, and nothing about the running system would look wrong.
+
+**Set `cookie_secure=False` only for local HTTP development.** Its failure
+mode is loud rather than dangerous, which is the point: over plain HTTP with
+the default left on, you will log in successfully and then immediately appear
+logged out, because the browser accepts the `Secure` cookie but refuses to
+send it back over an insecure connection. If that is what you are seeing on
+`http://localhost`, this setting is the cause:
+
+```python
+config = CeleryManagerConfig(
+    celery_app=your_celery_app,
+    secret_key="dev-only",
+    cookie_secure=False,  # local plain-HTTP development only
+)
+```
+
+The bundled Django demo (`examples/django_demo`) does exactly this — it runs
+over `http://localhost:8001` — via `CELERY_MANAGER_COOKIE_SECURE = False` in
+its `settings.py`. Do not carry that line into a real deployment.
+
+Terminating TLS at a proxy in front of celery-manager still counts as HTTPS
+from the browser's point of view, so keep the default on in that setup; the
+flag describes the browser-to-edge connection, not the edge-to-app hop.
+
+## Schema and upgrades
+
+`init_db()` creates every table it needs on first startup via SQLAlchemy's
+`Base.metadata.create_all`. That is the whole story for v1:
+
+- **There is no migration framework.** No Alembic, no versioned migration
+  history, no `celery-manager migrate` command.
+- `create_all` only ever *creates missing tables*. It never alters an
+  existing table — so if a future version of celery-manager adds or changes a
+  column, starting the new version against an older database will not update
+  the schema, and you will get errors about missing columns rather than an
+  automatic upgrade.
+- **Upgrading across a schema change may require manual work**: either
+  hand-writing the DDL (`ALTER TABLE ...`) to match the new models in
+  `celery_manager.db.models`, or dropping and recreating celery-manager's
+  database. Recreating it is usually acceptable — the tables hold
+  observability history (task runs, the audit log), your schedule overrides,
+  and dashboard user accounts, none of which your application depends on to
+  keep running — but you would lose that history and have to recreate users.
+- Release notes will call out any schema change explicitly. Back up the
+  database before upgrading if the history matters to you.
+
+Adopting a real migration framework is a Phase 2 backlog item (see
+`plan.md`).
 
 ## `secret_key` in production
 
