@@ -27,9 +27,9 @@ bearer tokens, or scopes — one authenticated user can do everything.
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
 | `GET` | `/api/tasks` | required | Query params: `status` (optional, e.g. `queued`/`started`/`succeeded`/`failed`/`retried`/`skipped`/`revoked`), `task_name` (optional, exact match). No pagination params exposed at the route (the underlying `list_task_runs` supports `limit`/`offset`, defaulting to `limit=50, offset=0`, but the route doesn't currently forward them from the query string). | `200` — list of `{"task_id", "task_name", "status", "started_at", "finished_at"}`, newest first (ordered by internal row id descending). |
-| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
-| `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}}` | `200 {"task_id": str}`. Dispatches immediately via `celery_app.send_task(...)` — no validation that `task_name` is a registered task; a bad name fails at the broker/worker level, not here. |
-| `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)`. `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Does not check that `task_id` exists in celery-manager's own storage. |
+| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "started_at", "finished_at", "runtime_seconds"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener, the timings from the decorator, and any of them may be `null` for a run that hasn't started or wasn't seen by both. `404 {"detail": "not found"}` if no run with that `task_id` exists. |
+| `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}}` | `200 {"task_id": str}`. Dispatches immediately via `celery_app.send_task(...)` and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}`) — no validation that `task_name` is a registered task; a bad name fails at the broker/worker level, not here. |
+| `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Does not check that `task_id` exists in celery-manager's own storage. |
 | `POST` | `/api/tasks/{task_id}/retry` | required | — | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`). `404`-equivalent: raises `ValueError` if no run is found for `task_id` — currently **unhandled** at the route level, so this surfaces as a `500`, not a clean `404`. |
 | `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. Same unhandled-`ValueError`-on-missing-id caveat as above — one missing `task_id` anywhere in the list fails the whole batch as a `500`, including entries already retried before it. |
 
@@ -95,10 +95,19 @@ behavior until the feature actually exists.
 | `GET` | `/api/audit` | required | Query param `limit` (int, default `50`) | `200` — list of `{"username", "action", "target_type", "target_id", "details", "created_at"}`, newest first (ordered by internal row id descending). `details` is a JSON-encoded string or `null`. |
 
 Audit rows are written server-side whenever a control action is taken on a
-user's behalf — currently just task retry and bulk retry (`action="retry"`,
-`target_type="task"`), via `celery_manager.control.audit.record`. There is
-no endpoint to write an audit entry directly; entries are always a
-side-effect of another action.
+user's behalf, via `celery_manager.control.audit.record`. There is no
+endpoint to write an audit entry directly; entries are always a side-effect
+of another action. Every control action is covered:
+
+| `action` | `target_type` | `target_id` | Written by |
+|---|---|---|---|
+| `start` | `task` | the newly dispatched task id | `POST /api/tasks/start` |
+| `cancel` | `task` | the task id being revoked | `POST /api/tasks/{task_id}/cancel` |
+| `retry` | `task` | the *original* task id | `POST /api/tasks/{task_id}/retry` and `/api/tasks/retry-bulk` (one row per task) |
+| `pause_occurrence` | `schedule` | the schedule name | `POST /api/schedules/{name}/occurrences/pause` |
+
+A retry records only `retry`, never an additional `start`, even though it
+dispatches through the same `start_task` call underneath.
 
 ## Live updates (SSE)
 

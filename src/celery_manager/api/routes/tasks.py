@@ -43,6 +43,18 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
             "exception": run.exception,
             "traceback": run.traceback,
             "log_output": run.log_output,
+            # Operational detail already stored on TaskRun (by the events
+            # listener for worker/queue, by the decorator for the timings) but
+            # never surfaced here — so the dashboard's detail view could not
+            # answer "which worker ran this, off which queue, and how long did
+            # it take". The list endpoint returned started_at/finished_at while
+            # this one didn't, which also made the frontend's TaskDetail type
+            # (extending TaskSummary) claim fields the response never sent.
+            "queue": run.queue,
+            "worker": run.worker,
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+            "runtime_seconds": run.runtime_seconds,
         }
 
 

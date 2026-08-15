@@ -10,6 +10,29 @@ function formatPayload(raw: string): string {
   }
 }
 
+// Same em-dash-for-absent convention TaskList uses, so a task that never
+// started reads consistently across both screens rather than showing "null".
+function formatTimestamp(value: string | null): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds < 1) return `${Math.round(seconds * 1000)} ms`;
+  if (seconds < 60) return `${seconds.toFixed(2)} s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${Math.round(seconds % 60)}s`;
+}
+
 export function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const [task, setTask] = useState<TaskDetailData | null>(null);
@@ -89,6 +112,34 @@ export function TaskDetail() {
               {retryError}
             </p>
           )}
+
+          {/* Where and when it ran. Reuses the existing cm-detail-meta
+              definition-list rather than introducing a new block, so this
+              sits in the same visual family as Args/Kwargs below. Every
+              value falls back to an em dash, so a queued-but-never-started
+              task renders as a complete row set rather than a ragged one. */}
+          <dl className="cm-detail-meta">
+            <div>
+              <dt>Worker</dt>
+              <dd>{task.worker ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Queue</dt>
+              <dd>{task.queue ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Started</dt>
+              <dd>{formatTimestamp(task.started_at)}</dd>
+            </div>
+            <div>
+              <dt>Finished</dt>
+              <dd>{formatTimestamp(task.finished_at)}</dd>
+            </div>
+            <div>
+              <dt>Runtime</dt>
+              <dd>{formatDuration(task.runtime_seconds)}</dd>
+            </div>
+          </dl>
 
           <dl className="cm-detail-meta">
             <div>

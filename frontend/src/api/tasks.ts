@@ -8,12 +8,19 @@ export interface TaskSummary {
   finished_at: string | null;
 }
 
+// Extends TaskSummary honestly now: GET /api/tasks/{id} really does return
+// started_at/finished_at (it previously didn't, so this type claimed two
+// fields that were always undefined at runtime), plus the operational detail
+// below that TaskRun has always stored but the endpoint never sent.
 export interface TaskDetail extends TaskSummary {
   args: string;
   kwargs: string;
   exception: string | null;
   traceback: string | null;
   log_output: string | null;
+  queue: string | null;
+  worker: string | null;
+  runtime_seconds: number | null;
 }
 
 export async function listTasks(params: { status?: string; task_name?: string } = {}): Promise<TaskSummary[]> {
