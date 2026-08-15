@@ -3,8 +3,30 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timedelta, timezone
 
+from celery.schedules import maybe_schedule
+
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride
+
+
+def _entry_schedule(entry: dict):
+    """The `celery.schedules` object for one `beat_schedule` entry.
+
+    Idiomatic Celery config lets `schedule` be a bare number of seconds or a
+    `timedelta`, not just a `schedule()`/`crontab()` instance — Celery's own
+    beat normalizes it internally via `maybe_schedule()`, so users reasonably
+    write `"schedule": 30.0` or `"schedule": timedelta(hours=2)`. We read
+    these entries directly, so without the same normalization anything that
+    isn't already a schedule object blew up with
+    `AttributeError: 'float' object has no attribute 'nowfun'` — surfacing as
+    a 500 from `GET /api/schedules/{name}/occurrences`. Normalizing here, in
+    the one place both readers go through, keeps them in step.
+
+    `app` is deliberately not passed through to `maybe_schedule`: it would
+    mutate `.app` on the host's long-lived, shared schedule objects, which
+    `upcoming_occurrences` goes out of its way to avoid doing.
+    """
+    return maybe_schedule(entry["schedule"])
 
 
 def upcoming_occurrences(schedule: PeriodicSchedule, celery_schedule, count: int = 10, from_time: datetime | None = None) -> list[datetime]:
@@ -174,7 +196,7 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
             row = PeriodicSchedule(name=name)
             session.add(row)
         row.task_name = entry["task"]
-        row.schedule_spec = str(entry["schedule"])
+        row.schedule_spec = str(_entry_schedule(entry))
         row.enabled = True
         synced.append(row)
     session.commit()
@@ -219,7 +241,7 @@ def list_upcoming_with_overrides(
     if periodic is None or entry is None:
         return []
 
-    occurrences = upcoming_occurrences(periodic, entry["schedule"], count=count, from_time=from_time)
+    occurrences = upcoming_occurrences(periodic, _entry_schedule(entry), count=count, from_time=from_time)
     pool = [o for o in list_overrides(session, schedule_name) if not o.consumed]
     window = timedelta(seconds=eta_tolerance_seconds)
 

@@ -134,11 +134,10 @@ CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
 CELERY_BEAT_SCHEDULE = {
     "send-demo-report-every-2-hours": {
         "task": "tasks_app.tasks.send_report",
-        # A `celery.schedules.schedule` instance, not a bare number of
-        # seconds: celery-manager's schedule-occurrences view (and beat
-        # itself) call `.remaining_estimate()` on this value directly, so
-        # it must already be a real schedule object, not a plain int that
-        # only gets normalized once beat's own scheduler starts.
+        # An explicit `celery.schedules.schedule` instance. A bare number of
+        # seconds or a `timedelta` works too — celery-manager normalizes
+        # either through `celery.schedules.maybe_schedule()` the same way
+        # beat does — but spelling it out documents the interval's meaning.
         "schedule": _interval_schedule(run_every=timedelta(hours=2)),
         "args": (),
     },

@@ -254,3 +254,67 @@ def test_list_periodic_schedules_returns_all_ordered_by_name():
 def test_list_periodic_schedules_empty_when_none_configured():
     session = _session()
     assert list_periodic_schedules(session) == []
+
+
+# --- I3: bare-number / timedelta beat_schedule entries ---
+#
+# Idiomatic Celery config allows `"schedule": 30.0` or
+# `"schedule": timedelta(hours=2)` — beat normalizes those internally via
+# maybe_schedule(). celery-manager read entry["schedule"] raw, so anything
+# that wasn't already a schedule object crashed with
+# `AttributeError: 'float' object has no attribute 'nowfun'`, i.e. a 500 from
+# GET /api/schedules/{name}/occurrences.
+
+
+def _app_with_bare_schedules():
+    from unittest.mock import MagicMock
+    from celery import Celery
+
+    app = MagicMock(spec=Celery)
+    app.conf.beat_schedule = {
+        "bare-number": {"task": "demo.echo", "schedule": 30.0},
+        "bare-timedelta": {"task": "demo.echo", "schedule": timedelta(hours=2)},
+    }
+    return app
+
+
+def test_sync_periodic_schedules_accepts_bare_number_and_timedelta():
+    session = _session()
+    app = _app_with_bare_schedules()
+
+    synced = sync_periodic_schedules(session, app)
+
+    assert {s.name for s in synced} == {"bare-number", "bare-timedelta"}
+    # Normalized for display too, rather than storing a bare "30.0".
+    specs = {s.name: s.schedule_spec for s in synced}
+    assert "30.00 seconds" in specs["bare-number"]
+    assert "2.00 hours" in specs["bare-timedelta"]
+
+
+def test_upcoming_occurrences_does_not_crash_on_a_bare_number_schedule():
+    session = _session()
+    app = _app_with_bare_schedules()
+    sync_periodic_schedules(session, app)
+    start = datetime(2026, 8, 15, 6, 0, tzinfo=timezone.utc)
+
+    result = list_upcoming_with_overrides(session, app, "bare-number", count=3, from_time=start)
+
+    assert [r["target_time"] for r in result] == [
+        datetime(2026, 8, 15, 6, 0, 30, tzinfo=timezone.utc),
+        datetime(2026, 8, 15, 6, 1, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 15, 6, 1, 30, tzinfo=timezone.utc),
+    ]
+
+
+def test_upcoming_occurrences_does_not_crash_on_a_bare_timedelta_schedule():
+    session = _session()
+    app = _app_with_bare_schedules()
+    sync_periodic_schedules(session, app)
+    start = datetime(2026, 8, 15, 6, 0, tzinfo=timezone.utc)
+
+    result = list_upcoming_with_overrides(session, app, "bare-timedelta", count=2, from_time=start)
+
+    assert [r["target_time"] for r in result] == [
+        datetime(2026, 8, 15, 8, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 15, 10, 0, tzinfo=timezone.utc),
+    ]
