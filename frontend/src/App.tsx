@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
+import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
 import { whoami } from "./api/client";
 import { Login } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
@@ -36,6 +36,36 @@ function AppNav() {
         </NavLink>
       </div>
     </nav>
+  );
+}
+
+// Unmatched hash paths used to render the nav chrome above a completely
+// blank body, which reads as a broken app rather than a bad URL. Reuses the
+// same cm-page / cm-panel / cm-empty-state shell every other screen uses so
+// it stays part of the design system rather than a bolted-on message.
+function NotFound() {
+  return (
+    <div className="cm-page">
+      <header className="cm-page-header">
+        <div className="cm-page-header-titles">
+          <p className="cm-page-eyebrow">
+            <span className="cm-brand-mark" aria-hidden="true" />
+            celery-manager
+          </p>
+          <h1 className="cm-page-title">Page not found</h1>
+        </div>
+      </header>
+
+      <div className="cm-panel">
+        <p className="cm-empty-state">
+          There's nothing at this address.{" "}
+          <Link to="/" className="cm-back-link">
+            Go back to Tasks
+          </Link>
+          .
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -81,7 +111,7 @@ export function App() {
             {checkError}
           </p>
 
-          <button type="submit" onClick={runCheck}>
+          <button type="button" onClick={runCheck}>
             Retry
           </button>
         </div>
@@ -107,6 +137,7 @@ export function App() {
         <Route path="/schedules" element={<ScheduleList />} />
         <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
         <Route path="/audit" element={<AuditLog />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </HashRouter>
   );

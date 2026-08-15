@@ -18,13 +18,13 @@ export interface Occurrence {
 }
 
 export async function listOccurrences(name: string): Promise<Occurrence[]> {
-  const response = await fetch(`${BASE}/schedules/${name}/occurrences`, { credentials: "include" });
+  const response = await fetch(`${BASE}/schedules/${encodeURIComponent(name)}/occurrences`, { credentials: "include" });
   if (!response.ok) throw new Error("Couldn't load upcoming occurrences.");
   return response.json();
 }
 
 export async function pauseOccurrence(name: string, targetTime: string, action: "skip" | "cancel"): Promise<void> {
-  const response = await fetch(`${BASE}/schedules/${name}/occurrences/pause`, {
+  const response = await fetch(`${BASE}/schedules/${encodeURIComponent(name)}/occurrences/pause`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",

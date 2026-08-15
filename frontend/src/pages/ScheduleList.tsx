@@ -57,7 +57,7 @@ export function ScheduleList() {
           <ul className="cm-schedule-list">
             {schedules.map((s) => (
               <li key={s.name} className="cm-schedule-list-row">
-                <Link to={`/schedules/${s.name}`} className="cm-schedule-list-link">
+                <Link to={`/schedules/${encodeURIComponent(s.name)}`} className="cm-schedule-list-link">
                   <span className="cm-schedule-list-name">{s.name}</span>
                   <span className="cm-schedule-list-meta">
                     {s.task_name} &middot; {s.schedule_spec}
