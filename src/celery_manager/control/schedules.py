@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride
@@ -20,25 +21,29 @@ def upcoming_occurrences(schedule: PeriodicSchedule, celery_schedule, count: int
     arbitrary `from_time` cursor with the actual current time and drifts
     with however much wall-clock time has passed since the call. To get
     a deterministic sequence of occurrences starting from `from_time`,
-    we pin the schedule's `nowfun` to the loop cursor for the duration of
-    each estimate — a supported BaseSchedule extension point — so
-    "now" and "last_run_at" agree and the estimate resolves to the next
-    occurrence after the cursor. The original `nowfun` is restored
-    afterward so the caller's schedule object is left unmutated.
+    we pin `nowfun` to the loop cursor for each estimate — a supported
+    BaseSchedule extension point — so "now" and "last_run_at" agree and
+    the estimate resolves to the next occurrence after the cursor.
+
+    `celery_schedule` objects come from the host app's `beat_schedule`
+    config and are long-lived and shared across requests/threads (FastAPI
+    sync routes run in a threadpool — see Task 9). Mutating `nowfun` in
+    place on the shared object would race: a second thread computing
+    occurrences for the same schedule could overwrite `nowfun` between
+    this thread's set-and-call. To avoid that entirely, we operate on a
+    private shallow copy for the duration of this call, so no shared
+    state is ever mutated and there is nothing to restore.
     """
     from_time = from_time or datetime.now(timezone.utc)
     occurrences: list[datetime] = []
     last_run_at = from_time
-    original_nowfun = celery_schedule.nowfun
-    try:
-        for _ in range(count):
-            celery_schedule.nowfun = lambda cursor=last_run_at: cursor
-            remaining = celery_schedule.remaining_estimate(last_run_at)
-            next_run = last_run_at + remaining
-            occurrences.append(next_run)
-            last_run_at = next_run
-    finally:
-        celery_schedule.nowfun = original_nowfun
+    local_schedule = copy.copy(celery_schedule)
+    for _ in range(count):
+        local_schedule.nowfun = lambda cursor=last_run_at: cursor
+        remaining = local_schedule.remaining_estimate(last_run_at)
+        next_run = last_run_at + remaining
+        occurrences.append(next_run)
+        last_run_at = next_run
     return occurrences
 
 
