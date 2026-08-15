@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -13,7 +14,14 @@ router = APIRouter(prefix="/api/schedules")
 
 class PauseRequest(BaseModel):
     target_time: datetime
-    action: str  # skip | cancel | reschedule
+    # Deliberately narrower than ScheduleOverride.action's column, which also
+    # permits "reschedule". Nothing downstream implements reschedule — the
+    # decorator only ever acts on "skip"/"cancel" — so accepting the value
+    # here persisted an override that silently did nothing while the
+    # dashboard cheerfully displayed the occurrence as paused. Rejecting it
+    # at the boundary (Pydantic returns 422) is honest; storing a lie is not.
+    # Widen this the day reschedule is actually implemented, not before.
+    action: Literal["skip", "cancel"]
 
 
 @router.post("/{name}/occurrences/pause")

@@ -37,8 +37,8 @@ bearer tokens, or scopes — one authenticated user can do everything.
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|"reschedule"\|null, "consumed": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
-| `POST` | `/api/schedules/{name}/occurrences/pause` | required | `{"target_time": datetime, "action": "skip"\|"cancel"\|"reschedule"}` | `200 {"id": int, "action": str, "target_time": datetime}`. Records (or updates) an override for the occurrence closest to `target_time`. |
+| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
+| `POST` | `/api/schedules/{name}/occurrences/pause` | required | `{"target_time": datetime, "action": "skip"\|"cancel"}` (any other `action` value is a `422`) | `200 {"id": int, "action": str, "target_time": datetime}`. Records (or updates) an override for the occurrence closest to `target_time`. |
 
 ### Occurrence-matching nuances worth knowing
 
@@ -78,13 +78,15 @@ inserting a second row — this is what keeps the read side from ever having
 two overlapping, ambiguous rows for what a user would consider the same
 occurrence (e.g. re-deciding the action after a page reload).
 
-`action="reschedule"` is accepted and stored by the pause endpoint and
-represented in the occurrence response and dashboard types, but nothing in
-the decorator or elsewhere currently *acts* on a `reschedule` override
-beyond the `skip`/`cancel` semantics described in
-[the decorator page](decorator.md) — there is no reschedule-to-a-new-time
-behavior implemented yet, despite the `ScheduleOverride.reschedule_to`
-column existing in the schema.
+`action` accepts only `"skip"` and `"cancel"`. Anything else — including
+`"reschedule"` — is rejected with a `422`. The `ScheduleOverride` table's
+`action` column and its `reschedule_to` column still permit a reschedule
+value at the schema level, but no reschedule-to-a-new-time behavior is
+implemented anywhere: the decorator acts on `skip`/`cancel` only (see
+[the decorator page](decorator.md)). The endpoint used to accept and store
+`"reschedule"`, which then displayed in the dashboard as a paused occurrence
+while doing nothing at all — rejecting it at the boundary is the honest
+behavior until the feature actually exists.
 
 ## Audit log
 

@@ -111,8 +111,10 @@ from the database as UTC rather than as local time — this only matters if
 you're querying `schedule_overrides` yourself; the decorator and API
 handle it transparently.
 
-`reschedule` is a recognized `action` value on `ScheduleOverride` (and
-appears in the API/dashboard types), but the decorator's skip check only
-special-cases `skip` and `cancel` — a `reschedule` override does not
-currently change what the decorator does when the task's original
-occurrence comes around.
+`reschedule` exists as a value the `ScheduleOverride.action` column permits
+(alongside the unused `reschedule_to` column), but the decorator's skip check
+only special-cases `skip` and `cancel` — a `reschedule` override would not
+change what the decorator does when the task's original occurrence comes
+around. Because of that, the pause endpoint now rejects `action="reschedule"`
+with a `422` rather than storing an override that does nothing while
+displaying as paused.
