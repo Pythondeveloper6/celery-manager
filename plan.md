@@ -1097,18 +1097,29 @@ def test_list_upcoming_with_overrides_merges_computed_occurrences_and_overrides(
     from unittest.mock import MagicMock
     from celery import Celery
 
-    session = _session()
+    # Two independent Session objects on the same engine — mirrors two
+    # separate HTTP requests each opening their own session via
+    # session_factory() (Task 10's routes). This is deliberate: it's what
+    # actually exercises SQLite's tzinfo-dropping round-trip (a session
+    # that only ever reads back objects it inserted itself, via SQLAlchemy's
+    # identity map, never re-parses the stored value and would hide the bug
+    # _as_aware_utc fixes).
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+
     app = MagicMock(spec=Celery)
     app.conf.beat_schedule = {
         "demo-every-2h": {"task": "demo.echo", "schedule": interval_schedule(run_every=timedelta(hours=2)), "args": [], "kwargs": {}},
     }
-    sync_periodic_schedules(session, app)
+    with Session() as write_session:
+        sync_periodic_schedules(write_session, app)
+        first_occurrence = datetime(2026, 8, 15, 8, 0, tzinfo=timezone.utc)
+        pause_occurrence(write_session, "demo-every-2h", first_occurrence, action="skip", created_by="alice")
 
     start = datetime(2026, 8, 15, 6, 0, tzinfo=timezone.utc)
-    first_occurrence = datetime(2026, 8, 15, 8, 0, tzinfo=timezone.utc)
-    pause_occurrence(session, "demo-every-2h", first_occurrence, action="skip", created_by="alice")
-
-    result = list_upcoming_with_overrides(session, app, "demo-every-2h", count=3, from_time=start)
+    read_session = Session()
+    result = list_upcoming_with_overrides(read_session, app, "demo-every-2h", count=3, from_time=start)
 
     assert len(result) == 3
     assert result[0] == {"target_time": first_occurrence, "action": "skip", "consumed": False}
@@ -1203,6 +1214,17 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
     return synced
 
 
+def _as_aware_utc(dt: datetime) -> datetime:
+    """SQLite drops tzinfo on DateTime(timezone=True) round-trip through a
+    fresh session (confirmed in Task 3's decorator work) — every write in
+    this codebase uses datetime.now(timezone.utc) / tz-aware values, so a
+    naive read-back is always UTC. Normalize before using a DB-sourced
+    datetime as a dict key or in a Python-level comparison; SQL-level
+    filter_by comparisons (e.g. in pause_occurrence above) don't need this,
+    only post-fetch Python equality/hashing does."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def list_upcoming_with_overrides(session, celery_app, schedule_name: str, count: int = 10, from_time: datetime | None = None) -> list[dict]:
     """The data the dashboard's future-schedule view renders: every
     upcoming occurrence, each annotated with any existing override."""
@@ -1212,7 +1234,7 @@ def list_upcoming_with_overrides(session, celery_app, schedule_name: str, count:
         return []
 
     occurrences = upcoming_occurrences(periodic, entry["schedule"], count=count, from_time=from_time)
-    overrides_by_time = {o.target_time: o for o in list_overrides(session, schedule_name)}
+    overrides_by_time = {_as_aware_utc(o.target_time): o for o in list_overrides(session, schedule_name)}
 
     return [
         {
@@ -2002,6 +2024,27 @@ def test_list_occurrences_endpoint_shows_computed_upcoming_runs():
     assert len(body) > 0
     assert "target_time" in body[0]
     assert body[0]["action"] is None
+
+
+def test_paused_occurrence_shows_as_paused_on_next_request():
+    # Each TestClient request opens its own session via session_factory()
+    # (see Task 10 Step 5's create_app wiring) — this deliberately checks
+    # the pause takes effect across two separate requests/sessions, not
+    # just within one, since that's what a real browser does and it's the
+    # exact scenario Task 6's _as_aware_utc normalization exists for.
+    client = _client_and_session()
+    occurrences = client.get("/api/schedules/demo-every-2h/occurrences").json()
+    target_time = occurrences[0]["target_time"]
+
+    pause_response = client.post(
+        "/api/schedules/demo-every-2h/occurrences/pause",
+        json={"target_time": target_time, "action": "skip"},
+    )
+    assert pause_response.status_code == 200
+
+    refreshed = client.get("/api/schedules/demo-every-2h/occurrences").json()
+    assert refreshed[0]["action"] == "skip"
+    assert refreshed[0]["consumed"] is False
 ```
 
 This exercises `sync_periodic_schedules` (called at `create_app` startup in Step 5) together with `list_upcoming_with_overrides` (Task 6) — both driven by the `beat_schedule` the fixture already sets on `celery_app.conf` above.
@@ -2009,7 +2052,7 @@ This exercises `sync_periodic_schedules` (called at `create_app` startup in Step
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_api_tasks.py tests/unit/test_api_schedules.py -v`
-Expected: PASS (7 tests)
+Expected: PASS (8 tests)
 
 - [ ] **Step 7: Commit**
 
