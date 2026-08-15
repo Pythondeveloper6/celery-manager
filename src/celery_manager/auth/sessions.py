@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from itsdangerous import BadSignature, URLSafeTimedSerializer
+from itsdangerous import BadData, URLSafeTimedSerializer
 
 _SALT = "celery-manager-session"
 
@@ -14,6 +14,6 @@ def verify_session(secret_key: str, token: str, max_age_seconds: int = 60 * 60 *
     serializer = URLSafeTimedSerializer(secret_key, salt=_SALT)
     try:
         data = serializer.loads(token, max_age=max_age_seconds)
-    except BadSignature:
+    except BadData:
         return None
     return data.get("username")

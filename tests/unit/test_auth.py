@@ -36,3 +36,20 @@ def test_session_round_trip():
 def test_session_rejects_wrong_secret():
     token = sign_session("test-secret", "alice")
     assert verify_session("different-secret", token) is None
+
+
+def test_session_rejects_malformed_token():
+    assert verify_session("test-secret", "not-a-valid-token") is None
+
+
+def test_session_rejects_valid_signature_with_corrupted_payload():
+    # A token whose signature validates against the secret but whose payload is not
+    # valid base64/JSON (e.g. corrupted or truncated in transit) must be rejected via
+    # BadData/BadPayload, not raised uncaught, per verify_session's `str | None` contract.
+    from itsdangerous import URLSafeTimedSerializer
+
+    serializer = URLSafeTimedSerializer("test-secret", salt="celery-manager-session")
+    signer = serializer.make_signer()
+    corrupted_token = signer.sign("not-valid-base64-payload!!").decode("utf-8")
+
+    assert verify_session("test-secret", corrupted_token) is None
