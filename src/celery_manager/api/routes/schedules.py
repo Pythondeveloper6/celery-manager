@@ -19,8 +19,12 @@ class PauseRequest(BaseModel):
 @router.post("/{name}/occurrences/pause")
 def pause(name: str, payload: PauseRequest, request: Request, username: str = Depends(get_current_user)):
     session_factory = request.app.state.cm_session_factory
+    eta_tolerance_seconds = request.app.state.cm_config.eta_tolerance_seconds
     with session_factory() as session:
-        override = pause_occurrence(session, name, payload.target_time, payload.action, created_by=username)
+        override = pause_occurrence(
+            session, name, payload.target_time, payload.action,
+            created_by=username, eta_tolerance_seconds=eta_tolerance_seconds,
+        )
     return {"id": override.id, "action": override.action, "target_time": override.target_time}
 
 

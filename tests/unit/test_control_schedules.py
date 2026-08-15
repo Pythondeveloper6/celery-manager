@@ -177,3 +177,63 @@ def test_list_upcoming_with_overrides_does_not_match_outside_tolerance():
 
     assert all(r["action"] is None for r in result)
     assert all(r["consumed"] is False for r in result)
+
+
+def test_pause_occurrence_converges_repeated_calls_with_drifted_target_time_to_one_row():
+    session = _session()
+    session.add(PeriodicSchedule(name="demo-every-2h", task_name="demo.echo", schedule_spec="2h"))
+    session.commit()
+
+    # Simulates a user re-deciding on "the same" occurrence after a page
+    # reload: the dashboard recomputed occurrence timestamps in between,
+    # so the second pause request's target_time has drifted a few seconds
+    # from the first — but it should still be recognized as the same
+    # occurrence and update the one row, not create a second.
+    first_target = datetime(2026, 8, 15, 20, 0, 0, tzinfo=timezone.utc)
+    second_target = first_target + timedelta(seconds=5)
+
+    pause_occurrence(session, "demo-every-2h", first_target, action="skip", created_by="alice")
+    # Assert against the second call's own return value (exactly how the
+    # real route uses pause_occurrence's result — see api/routes/schedules.py)
+    # rather than re-querying via list_overrides: an unreferenced ORM
+    # instance is eligible for GC as soon as nothing holds it, and a
+    # subsequent query that has to re-fetch from SQLite hits the same
+    # well-known tzinfo-dropping round-trip _as_aware_utc exists for —
+    # a pre-existing, unrelated quirk of this same-session, not something
+    # this test is about.
+    updated = pause_occurrence(session, "demo-every-2h", second_target, action="cancel", created_by="alice")
+
+    # The most recent request wins: both the action and the target_time
+    # are updated on the existing row, rather than the first request's
+    # values sticking around alongside (or instead of) the second's.
+    assert updated.action == "cancel"
+    assert updated.target_time == second_target
+    assert len(list_overrides(session, "demo-every-2h")) == 1
+
+
+def test_list_upcoming_with_overrides_does_not_double_match_closely_spaced_occurrences():
+    from unittest.mock import MagicMock
+    from celery import Celery
+
+    session = _session()
+    app = MagicMock(spec=Celery)
+    app.conf.beat_schedule = {
+        "demo-every-90s": {"task": "demo.echo", "schedule": interval_schedule(run_every=timedelta(seconds=90)), "args": [], "kwargs": {}},
+    }
+    sync_periodic_schedules(session, app)
+
+    start = datetime(2026, 8, 15, 6, 0, 0, tzinfo=timezone.utc)
+    # Occurrences land at 06:01:30, 06:03:00, 06:04:30 — only 90s apart,
+    # well under 2x the default 60s tolerance. A single override sitting
+    # at the midpoint between the first two (45s from each) falls within
+    # tolerance of BOTH — without claim/dedup this would show as two
+    # paused rows for one actual pause.
+    near_boundary = start + timedelta(seconds=90 + 45)  # 06:02:15
+    pause_occurrence(session, "demo-every-90s", near_boundary, action="skip", created_by="alice")
+
+    result = list_upcoming_with_overrides(session, app, "demo-every-90s", count=3, from_time=start, eta_tolerance_seconds=60)
+
+    matched = [r for r in result if r["action"] == "skip"]
+    assert len(matched) == 1
+    # The earlier (chronologically first) occurrence claims the override.
+    assert matched[0]["target_time"] == start + timedelta(seconds=90)
