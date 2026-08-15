@@ -9,7 +9,12 @@ from fastapi.staticfiles import StaticFiles
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.session import init_db, get_session_factory
 from celery_manager.decorator import configure as configure_decorator
-from celery_manager.api.routes import auth as auth_routes, tasks as task_routes, schedules as schedule_routes
+from celery_manager.api.routes import (
+    auth as auth_routes,
+    tasks as task_routes,
+    schedules as schedule_routes,
+    audit as audit_routes,
+)
 from celery_manager.control.schedules import sync_periodic_schedules
 from celery_manager.api.sse import EventBus, sse_stream
 
@@ -33,6 +38,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(auth_routes.router)
     app.include_router(task_routes.router)
     app.include_router(schedule_routes.router)
+    app.include_router(audit_routes.router)
 
     @app.get("/api/stream")
     def stream(request: Request):

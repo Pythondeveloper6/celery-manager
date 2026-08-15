@@ -524,6 +524,86 @@ textarea:focus-visible,
 }
 
 /* ==========================================================================
+   App nav — the one persistent chrome element across every authenticated
+   screen (Task 15). Deliberately thin: a slim instrument-panel strip
+   pinned above whatever `.cm-page` the current route renders, not a
+   second dashboard header competing with each screen's own eyebrow/title.
+   The active link's underline reuses --cm-color-accent (the app's single
+   "this is the current interactive thing" signal) rather than a filled
+   pill, so it reads as a trace/tab rather than another button.
+   ========================================================================== */
+
+.cm-app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cm-space-4);
+  padding: var(--cm-space-3) var(--cm-space-5);
+  background-color: var(--cm-color-bg-elevated);
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-app-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  white-space: nowrap;
+}
+
+.cm-app-nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-5);
+}
+
+.cm-app-nav-link {
+  position: relative;
+  padding: 0.35rem 0;
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text-muted);
+  text-decoration: none;
+  transition: color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-app-nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--cm-radius-full);
+  background-color: var(--cm-color-accent);
+  opacity: 0;
+  transform: scaleX(0.6);
+  transition: opacity var(--cm-duration-fast) var(--cm-ease), transform var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-app-nav-link:hover {
+  color: var(--cm-color-text);
+}
+
+.cm-app-nav-link[aria-current="page"] {
+  color: var(--cm-color-text);
+}
+
+.cm-app-nav-link[aria-current="page"]::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+/* ==========================================================================
    Dashboard shell (shared by task list / detail; Task 13)
    ========================================================================== */
 
@@ -1167,4 +1247,69 @@ textarea:focus-visible,
 .cm-occurrence-row-error {
   flex: 1 0 100%;
   margin-top: var(--cm-space-1);
+}
+
+/* ==========================================================================
+   Audit log (Task 15) — reuses the exact table structure and cell tokens
+   the task table established (same th/td rhythm, same hover row) rather
+   than inventing a second table language for the same "scannable rows of
+   records" job.
+   ========================================================================== */
+
+.cm-audit-log {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cm-audit-log th {
+  padding: 0 0 var(--cm-space-2);
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-audit-log td {
+  padding: var(--cm-space-3) 0;
+  border-bottom: 1px solid var(--cm-color-border);
+  vertical-align: middle;
+}
+
+.cm-audit-log tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cm-audit-log tbody tr:hover td {
+  background-color: var(--cm-color-surface-sunken);
+}
+
+.cm-audit-user {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+}
+
+/* A manual action, not a task outcome — deliberately not reusing the
+   status-badge palette (that's reserved for the seven TaskRun states) so
+   "a human did this" never gets mistaken for "a task reached this
+   state." Mono + accent keeps it legible as a distinct signal without
+   introducing a new hue. */
+.cm-audit-action {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cm-color-accent);
+}
+
+.cm-audit-target {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-faint);
 }
