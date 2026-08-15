@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from celery import Celery
 
+from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
 
 
@@ -29,11 +32,6 @@ def cancel_task(celery_app: Celery, task_id: str, terminate: bool = False) -> No
     celery_app.control.revoke(task_id, terminate=terminate)
 
 
-import json as _json
-
-from celery_manager.control.audit import record as _record_audit
-
-
 def retry_task(celery_app: Celery, session, task_id: str, username: str, args: list | None = None, kwargs: dict | None = None) -> str:
     """Re-run a task, by default with its original args/kwargs; pass
     args/kwargs to override them."""
@@ -41,11 +39,11 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     if run is None:
         raise ValueError(f"no task run found for {task_id}")
 
-    final_args = args if args is not None else _json.loads(run.args or "[]")
-    final_kwargs = kwargs if kwargs is not None else _json.loads(run.kwargs or "{}")
+    final_args = args if args is not None else json.loads(run.args or "[]")
+    final_kwargs = kwargs if kwargs is not None else json.loads(run.kwargs or "{}")
 
     new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
-    _record_audit(session, username, "retry", "task", task_id, {"new_task_id": new_id})
+    record_audit(session, username, "retry", "task", task_id, {"new_task_id": new_id})
     return new_id
 
 

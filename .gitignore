@@ -8,3 +8,4 @@ celery_manager.db
 frontend/node_modules/
 frontend/dist/
 .pytest_cache/
+venv/
