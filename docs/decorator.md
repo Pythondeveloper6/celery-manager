@@ -29,6 +29,24 @@ def send_report(self):
 (`from celery_manager.decorator import track` also works and is equivalent —
 `celery_manager.track` is just the documented public alias.)
 
+`bind=True` is **not** required. It is used throughout these docs because a
+bound task is what lets you call `self.retry()`, and because it is the more
+common shape for the kind of task worth tracking — but `@track` works on an
+ordinary unbound task too, and records it under its real name and task id:
+
+```python
+@app.task                       # no bind=True
+@celery_manager.track()
+def send_welcome_email(address):
+    ...
+```
+
+Under the hood the decorator identifies the bound `Task` by type and falls
+back to Celery's `current_task` when there isn't one, rather than assuming the
+first positional argument is the task. That distinction matters: assuming it
+meant an unbound task's first argument was silently treated as the task
+object, which is how this used to fail.
+
 This decorator only does its job in a process that has been wired with
 `celery_manager.setup(config)` — see [Wiring](#wiring-the-worker-process-must-call-celery_managersetup)
 below, which is the step most easily missed.
