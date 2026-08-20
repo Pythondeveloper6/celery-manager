@@ -24,32 +24,212 @@
    ========================================================================== */
 
 /* ==========================================================================
-   Control rail
-   ========================================================================== */
+   Layout: rail + deck
+   ==========================================================================
 
-.cm-tasks-controls {
+   One idea carries the screen: the narrow left rail is what you *set*, the
+   wide deck beside it is what you *read*. Nothing that takes input lives in
+   the deck; nothing that merely reports state lives in the rail. That split
+   is why the ledger, the bulk bar, the mode bar and the live/paused
+   indicator all stay with the table.
+
+   Sized fluidly, never to a fixed page width: `.cm-page`'s max-width is
+   owned by tokens.css and is being widened, so the rail is a clamp and the
+   deck takes whatever is left. `minmax(0, 1fr)` on the deck column is
+   load-bearing — it is the grid form of the min-width:0 fix noted below,
+   and without it a table wider than the column blows the grid open and the
+   whole page scrolls sideways. */
+
+.cm-tasks-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--cm-space-5);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .cm-tasks-layout {
+    grid-template-columns: clamp(15rem, 19vw, 18.5rem) minmax(0, 1fr);
+  }
+}
+
+.cm-tasks-deck {
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-4);
+  min-width: 0;
+}
+
+/* ==========================================================================
+   Filter rail
+   ========================================================================== */
+
+.cm-tasks-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-5);
   padding: var(--cm-space-4);
   background-color: var(--cm-color-surface-sunken);
   border: 1px solid var(--cm-color-border);
   border-radius: var(--cm-radius-lg);
 }
 
-/* The hairline is the hierarchy: status above it (primary), everything
-   else below it (secondary). Cheaper and quieter than a second panel. */
-/* Top-aligned, not bottom-aligned: only the search field carries a hint
-   line beneath its input, so aligning on the bottom edge would push the
-   date and group controls a hint's-height lower than the box they sit
-   beside. Aligning the *labels* instead lines every input up on one row. */
-.cm-tasks-controls-secondary {
+/* Sticky only where there is both a column to stick in and enough height to
+   make it worth doing. The min-height guard is the answer to "two competing
+   sticky contexts": the nav is already sticky at top:0, and on a short
+   viewport a sticky rail underneath it would eat what little scroll room is
+   left, so below 34rem tall the rail simply scrolls with the page.
+
+   --cm-tasks-rail-top clears the sticky nav. It tracks .cm-app-nav's height
+   (space-3 padding twice plus one line of nav text) and is declared here
+   because tokens.css is owned elsewhere; it is a local constant, not a
+   guess — measured against the rendered nav. */
+@media (min-width: 64rem) and (min-height: 34rem) {
+  .cm-tasks-rail {
+    --cm-tasks-rail-top: 3.75rem;
+    position: sticky;
+    top: calc(var(--cm-tasks-rail-top) + var(--cm-space-4));
+    max-height: calc(100dvh - var(--cm-tasks-rail-top) - var(--cm-space-6));
+    overflow-y: auto;
+  }
+}
+
+.cm-tasks-rail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+}
+
+.cm-tasks-rail-title {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-tasks-clear-all {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  color: var(--cm-color-accent);
+  border-radius: var(--cm-radius-sm);
+  transition: color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-clear-all:hover {
+  color: var(--cm-color-accent-hover);
+  text-decoration: underline;
+}
+
+/* Active filters. The one thing a rail buys over a top bar: every filter
+   narrowing the list, visible at once, each removable on its own. Accent
+   tokens because dismissing one is an interaction, and because these must
+   never be mistaken for the red/amber/green status vocabulary sitting a few
+   centimetres to the right. */
+.cm-tasks-active {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--cm-space-4);
-  padding-top: var(--cm-space-4);
+  gap: var(--cm-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cm-tasks-active-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cm-space-2);
+  max-width: 100%;
+  padding: 0.2rem 0.5rem;
+  background-color: var(--cm-color-accent-soft);
+  border: 1px solid var(--cm-color-accent);
+  border-radius: var(--cm-radius-full);
+  transition: background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-active-chip:hover {
+  background-color: var(--cm-color-surface);
+}
+
+/* Label in the UI face, value in mono — the system's existing rule that mono
+   marks data. It also makes a chip readable at a glance as "Status: failed"
+   rather than as one undifferentiated blob. */
+.cm-tasks-active-label {
+  flex: none;
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-tasks-active-value {
+  overflow: hidden;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-tasks-active-x {
+  flex: none;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  line-height: 1;
+  color: var(--cm-color-text-faint);
+}
+
+.cm-tasks-active-chip:hover .cm-tasks-active-x {
+  color: var(--cm-color-accent);
+}
+
+.cm-tasks-rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  min-width: 0;
+}
+
+.cm-tasks-rail-section-title {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+/* Date range folds away: four rows of rail height for the control people
+   touch least would push "Group by" below the fold on a laptop. */
+.cm-tasks-details {
   border-top: 1px solid var(--cm-color-border);
+  padding-top: var(--cm-space-4);
+}
+
+.cm-tasks-details-summary {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  cursor: pointer;
+  border-radius: var(--cm-radius-sm);
+  transition: color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-details-summary:hover {
+  color: var(--cm-color-text);
+}
+
+.cm-tasks-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  padding-top: var(--cm-space-3);
 }
 
 .cm-tasks-field {
@@ -57,20 +237,6 @@
   flex-direction: column;
   gap: var(--cm-space-2);
   min-width: 0;
-}
-
-/* Search earns the most room and is the first thing to grow; the two date
-   fields hold a fixed comfortable width; group-by is a small selector. */
-.cm-tasks-field-search {
-  flex: 3 1 15rem;
-}
-
-.cm-tasks-field-date {
-  flex: 0 1 9.5rem;
-}
-
-.cm-tasks-field-group {
-  flex: 1 1 9rem;
 }
 
 .cm-tasks-field > label {
@@ -123,6 +289,15 @@
   padding-right: 2rem;
 }
 
+/* `type="search"` renders its own clear affordance in WebKit, which sat
+   right next to ours — two X's, one of which the app doesn't control.
+   Ours stays because it is styled, labelled for screen readers, and present
+   in every engine. */
+.cm-tasks-search .cm-tasks-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 .cm-tasks-search-clear {
   position: absolute;
   top: 50%;
@@ -154,14 +329,45 @@
   color: var(--cm-color-text-faint);
 }
 
-/* The button has no label above it, so it needs the height of one pushed
-   under it to sit on the same line as the inputs. Derived from the label's
-   own type tokens rather than eyeballed, so it stays correct if the label
-   scale changes. */
-.cm-tasks-controls-actions {
-  display: flex;
-  margin-top: calc(var(--cm-text-xs) * var(--cm-leading-normal) + var(--cm-space-2));
-  margin-left: auto;
+/* ==========================================================================
+   Collapse toggle (below the two-column breakpoint only)
+   ========================================================================== */
+
+/* A stacked disclosure rather than an overlay drawer: an overlay needs a
+   scrim, a focus trap and an Escape handler to be correct, and every one of
+   those is a way to trap a keyboard user in a filter panel. Stacking is
+   fully accessible with no machinery. */
+.cm-tasks-filters-toggle {
+  display: none;
+  align-items: center;
+  gap: var(--cm-space-2);
+  align-self: flex-start;
+  padding: 0.45rem 0.85rem;
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease), color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-filters-toggle:hover {
+  border-color: var(--cm-color-accent);
+  color: var(--cm-color-accent);
+}
+
+@media (max-width: 63.99rem) {
+  .cm-tasks-filters-toggle {
+    display: inline-flex;
+  }
+
+  /* display:none, not visibility/height tricks — a closed panel must leave
+     the accessibility tree, not sit in it as invisible focusable inputs. */
+  .cm-tasks-layout[data-filters-open="false"] .cm-tasks-rail {
+    display: none;
+  }
 }
 
 /* ==========================================================================
@@ -231,26 +437,27 @@
   min-width: 44rem;
 }
 
-/* Doubled up as `.cm-task-table.cm-tasks-table` on purpose. This file is
-   imported from TaskList.tsx and therefore lands *before* tokens.css in the
-   bundle, so a plain `.cm-tasks-table td` (0,1,1) loses the tie to
-   tokens.css's later `.cm-task-table td { padding: … 0 }` (0,1,1) — the
-   shorthand there would silently reset this padding-right back to zero.
-   Winning on specificity makes the rule independent of bundle order.
-   Caught by measuring the built CSS, not by reading it. */
-.cm-task-table.cm-tasks-table th,
-.cm-task-table.cm-tasks-table td {
-  padding-right: var(--cm-space-4);
-}
+/* No column-gutter rule here on purpose. This file used to carry a
+   `.cm-task-table.cm-tasks-table td { padding-right }` override, because
+   tasks.css bundles *before* tokens.css and a same-specificity rule there
+   would have won the tie and zeroed the gutter. tokens.css now sets that
+   gutter itself, at the same 1rem, with a :last-child reset and deliberately
+   no :first-child rule — so there is nothing left to override. Restating it
+   here would just be two rules that can drift to different values. If the
+   gutter needs to change, change it in tokens.css for every table at once.
+*/
 
-.cm-task-table.cm-tasks-table th:last-child,
-.cm-task-table.cm-tasks-table td:last-child {
-  padding-right: 0;
-}
-
+/* `width: 1%` is the table-layout idiom for "shrink to your content": the
+   auto algorithm hands every spare pixel to the one column without it,
+   which is Task — the only column whose content is genuinely variable
+   length. Without this, a 1,200px-wide deck spreads four columns evenly and
+   leaves a 400px gulf between a run's duration and the time it started, so
+   reading across a row stops being possible. Found by looking at the real
+   layout at 1680px, not by reading the CSS. */
 .cm-tasks-col-status,
 .cm-tasks-col-runtime,
 .cm-tasks-col-started {
+  width: 1%;
   white-space: nowrap;
 }
 
@@ -308,7 +515,10 @@
    and the row's status badge one signal in one hue.
    ========================================================================== */
 
-.cm-run-cell {
+/* The cell stays a real table-cell (see the note in RuntimeCell); the flex
+   column lives one level in. Doing this on the <td> itself knocked the cell
+   out of the table's formatting context and staggered the row rules. */
+.cm-run-cell-inner {
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-1);
@@ -395,6 +605,52 @@
    Pagination footer + empty states
    ========================================================================== */
 
+/* ==========================================================================
+   Mode: live vs history
+   ==========================================================================
+
+   The rule this design answers: a user must never wonder why the list
+   stopped updating. So the paused state is stated in two places at once —
+   the page header's indicator (which would otherwise be a pulsing "Live" dot
+   telling a lie) and this bar directly above the results, carrying the way
+   back. Accent tokens, the same grammar as .cm-bulk-bar in tokens.css:
+   both mean "you are in a mode, and here is the action that leaves it".
+   ========================================================================== */
+
+.cm-tasks-mode-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-3) var(--cm-space-4);
+  background-color: var(--cm-color-accent-soft);
+  border: 1px solid var(--cm-color-accent);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-tasks-mode-text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+}
+
+/* Same size and position as .cm-live-dot in tokens.css, deliberately without
+   the pulse and without the accent fill: stillness is the signal. A hollow
+   ring reads as "stopped" next to the filled, breathing live dot. */
+.cm-tasks-paused-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 2px solid var(--cm-color-text-faint);
+  border-radius: var(--cm-radius-full);
+}
+
 .cm-tasks-more {
   display: flex;
   flex-direction: column;
@@ -404,6 +660,41 @@
   margin-top: var(--cm-space-2);
   border-top: 1px solid var(--cm-color-border);
   text-align: center;
+}
+
+/* Quiet secondary route into history mode, offered alongside "Load more"
+   when the table is deep enough that clicking ten times is the wrong
+   answer. Deliberately a text button, not a second solid one: two equal
+   buttons would make the common case ambiguous. */
+.cm-tasks-link-btn {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  color: var(--cm-color-accent);
+  border-radius: var(--cm-radius-sm);
+  transition: color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-link-btn:hover {
+  color: var(--cm-color-accent-hover);
+  text-decoration: underline;
+}
+
+.cm-tasks-pager-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cm-space-3);
+}
+
+.cm-tasks-pager-position {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
 }
 
 .cm-tasks-more-note {
@@ -430,6 +721,25 @@
   color: var(--cm-color-text-muted);
 }
 
+/* Names the filters doing the narrowing, right in the empty state. Reuses
+   the rail's label/value pair so the same fact looks the same in both
+   places — the user should recognise these as the chips they set. */
+.cm-tasks-empty-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--cm-space-2) var(--cm-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cm-tasks-empty-filters li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cm-space-2);
+}
+
 .cm-tasks-empty-body {
   max-width: 32rem;
   font-size: var(--cm-text-sm);
@@ -447,18 +757,27 @@
    ========================================================================== */
 
 @media (max-width: 40rem) {
-  /* Two date fields side by side under 640px leave ~8ch each. Let them
-     take a full row apiece instead of shrinking into uselessness. */
-  .cm-tasks-field-date {
-    flex: 1 1 100%;
-  }
-
-  .cm-tasks-controls-actions {
-    margin-left: 0;
-    width: 100%;
-  }
-
   .cm-tasks-notes {
     text-align: left;
+  }
+
+  /* The ledger's count and its caveats stop sharing a line; stacking them
+     keeps the count readable instead of squeezing it to three words wide. */
+  .cm-tasks-ledger {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  /* A pager that wraps mid-control is a maze. Give the two buttons a row and
+     the position line its own, so "where am I" always reads as one phrase. */
+  .cm-tasks-pager-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .cm-tasks-pager-position {
+    order: -1;
+    width: 100%;
+    text-align: center;
   }
 }
