@@ -1,7 +1,7 @@
 # The `@track` decorator
 
 Apply `celery_manager.decorator.track()` above `@app.task` to opt a task
-into two things:
+into three things:
 
 1. **Per-occurrence schedule control** — if someone pauses/cancels a
    specific future run from the dashboard, this decorator is what makes
@@ -9,6 +9,11 @@ into two things:
 2. **Full log capture** — stdout/stderr and `logging` calls made during
    the task are captured and shown on the task's detail page, not just the
    traceback on failure.
+3. **Visibility while the task is still running** — the decorator records a
+   `started` row *before* it calls your function, so an in-flight task is
+   visible even with no events-listener process running, and
+   [`report_progress()`](progress.md) has a row to write to. See
+   [The `started` row](#the-started-row-written-before-your-task-body).
 
 ```python
 import celery_manager
@@ -23,7 +28,7 @@ def send_report(self):
 `celery_manager.track` is just the documented public alias.)
 
 This decorator only does its job in a process that has been wired with
-`celery_manager.setup(config)` — see [Wiring](#wiring--the-worker-process-must-call-celery_managersetup)
+`celery_manager.setup(config)` — see [Wiring](#wiring-the-worker-process-must-call-celery_managersetup)
 below, which is the step most easily missed.
 
 `schedule_name` should match the name you use for this schedule in the
@@ -34,7 +39,9 @@ name — fine as long as you only have one schedule per task.
 Tasks *without* `@track` are still visible in the dashboard (the events
 listener picks up every task automatically) but don't support
 per-occurrence pause/cancel or full log capture — only the traceback
-Celery already provides on failure.
+Celery already provides on failure. ([`report_progress()`](progress.md) is
+the exception: it works on an undecorated task too, via
+`celery.current_task`.)
 
 ## Wiring — the worker process must call `celery_manager.setup()`
 
@@ -74,12 +81,56 @@ tasks run, so wiring it does nothing for the worker.
 
 If a decorated task runs in a process that never called `setup()`, `@track`
 degrades gracefully rather than raising: the task body still runs normally,
-but **with no log capture and no schedule-override check** — meaning
-per-occurrence pause/cancel silently does nothing. Because that failure is
+but **with no log capture, no schedule-override check, and no `task_runs`
+row of its own** — meaning per-occurrence pause/cancel silently does nothing
+and `report_progress()` has nowhere to write. Because that failure is
 invisible from the outside, the decorator logs a one-time `WARNING`
 (`celery_manager.decorator`) the first time a tracked task runs unconfigured.
 If you're not seeing pause/skip or captured logs, check the worker's log for
 that warning first.
+
+## The `started` row written before your task body
+
+Before calling your function, `@track` writes (or upserts) a `task_runs` row
+with `status="started"`, the task name, its args/kwargs, the schedule name,
+and `started_at`. The terminal `succeeded`/`failed` row is written afterwards
+as before.
+
+This exists because the decorator used to write *only* when a task finished.
+A long-running task was therefore invisible in the dashboard unless the
+separate events-listener process happened to be running, and
+[`report_progress()`](progress.md) had no row to write to until the run was
+already over — which defeats live progress entirely.
+
+What makes it safe:
+
+- **Against itself.** The `started` write and the terminal write happen in
+  the same thread, in sequence, around the body. The final
+  `succeeded`/`failed` always lands after the `started` and therefore wins.
+  There is no "late started" window inside the decorator.
+- **Against the events listener.** The listener treats `started` as an
+  ordinary lifecycle status it may overwrite — only `skipped` is in its
+  decorator-owned guard — and every event it could apply here
+  (`task-started`, `task-succeeded`, `task-failed`) is emitted by the worker
+  at or after the moment this row is written. `started` is deliberately
+  *not* added to that guard: doing so would stop the listener applying the
+  real terminal status to a run whose decorator write failed, which is
+  strictly worse.
+
+!!! note "One retry wrinkle, accepted rather than fixed"
+    Celery reuses the task id across retry attempts. So attempt N+1 rewrites
+    `started` over the listener's `retried` — correct, the row should show
+    the attempt now in flight — but the *previous* attempt's `finished_at`,
+    `runtime_seconds`, and `progress_*` values stay on the row, because the
+    upsert skips `None` values and therefore cannot clear a field. The row
+    self-corrects the moment the new attempt finishes. Until then, a
+    retrying task can briefly show a stale runtime.
+
+**Cost: one extra INSERT/UPDATE and commit per tracked run.** That is
+accepted deliberately — it is one write against a run that is about to do
+real work, and it buys visibility of every in-flight task without requiring
+the events listener at all. Like every other write in this decorator, a
+failure is logged and dropped: it can never change your task's outcome.
 
 ## How the skip/cancel check works
 

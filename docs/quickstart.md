@@ -105,3 +105,24 @@ def send_report(self):
 
 `setup()` is idempotent, so it's safe for several task modules to call it.
 See [The `@track` decorator](decorator.md) for details.
+
+## Report live progress (optional)
+
+Once the worker is wired, a task can publish its own progress to the
+dashboard while it is still running:
+
+```python
+from celery_manager import report_progress
+
+
+@app.task(bind=True)
+@celery_manager.track()
+def import_customers(self, rows):
+    for i, row in enumerate(rows):
+        handle(row)
+        report_progress(i + 1, len(rows), f"row {i + 1}")
+```
+
+Database writes are throttled to one every 0.5 seconds per run, so this is
+safe inside a tight loop, and the call never raises into your task. Omit
+`total` for open-ended work. See [Live progress](progress.md).
