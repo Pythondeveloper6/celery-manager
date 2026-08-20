@@ -9,3 +9,11 @@ frontend/node_modules/
 frontend/dist/
 .pytest_cache/
 venv/
+
+# Browser-automation output from UI verification runs (screenshots,
+# accessibility snapshots, console logs). Regenerated on demand; never a
+# deliverable.
+.playwright-mcp/
+
+# MkDocs build output — the docs site is built from docs/ on demand.
+site/
