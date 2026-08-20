@@ -12,11 +12,15 @@
    marks data — credentials, identifiers, meta text — the way a terminal
    would.
 
-   Tokens are defined for light mode on :root and overridden for dark mode
-   under `prefers-color-scheme: dark`. Every colour, spacing, radius and
-   type value used by components in this file (and by screens added in
-   later tasks) should come from a custom property here — no ad hoc hex
-   values in component files.
+   Tokens are defined for light mode on bare :root and overridden for dark
+   mode twice: once behind `prefers-color-scheme: dark` (guarded so an
+   explicit light choice wins) and once behind `:root[data-theme="dark"]`
+   (so an explicit dark choice wins on a light-set OS). See the "Dark mode"
+   block below. No token's only definition lives inside a media query, so a
+   value is always resolvable no matter what the OS says. Every colour,
+   spacing, radius and type value used by components in this file (and by
+   screens added in later tasks) should come from a custom property here —
+   no ad hoc hex values in component files.
    ========================================================================== */
 
 @tailwind base;
@@ -42,6 +46,23 @@
   --cm-color-accent-active: #064e50;
   --cm-color-accent-contrast: #ffffff;
   --cm-color-accent-soft: #e3f2f1;
+
+  /* Accent *as foreground text* — a separate token from --cm-color-accent
+     even though the two are identical out of the box. --cm-color-accent is
+     a fill (button backgrounds, borders, the brand dot) where the paired
+     --cm-color-accent-contrast guarantees legibility; --cm-color-accent-text
+     is the same signal painted straight onto a surface, where nothing
+     guarantees anything. That distinction is dormant for the built-in
+     phosphor cyan and load-bearing the moment a deployment sets its own
+     brand accent (see branding.tsx): a pale brand colour still works as a
+     button fill with dark text on it, but would be unreadable as link text
+     on white, so branding derives a darkened/lightened variant for these
+     two and leaves the fill alone.
+     Built-in values, measured: #0a7478 on the darkest light-mode backdrop
+     it can land on (--cm-color-surface-sunken #eaedef) = 4.72:1; the hover
+     step #086063 on the same = 6.24:1. Both clear AA for body text. */
+  --cm-color-accent-text: #0a7478;
+  --cm-color-accent-text-hover: #086063;
 
   --cm-color-danger: #c22b3a;
   --cm-color-danger-bg: #fbeaea;
@@ -140,6 +161,27 @@
   --cm-radius-lg: 10px;
   --cm-radius-full: 999px;
 
+  /* ---- page geometry ----------------------------------------------------
+     One max-width and one horizontal padding, shared by .cm-page and the
+     sticky nav strip, so the wordmark and the content under it sit on the
+     same left edge at every viewport width. Both use border-box (see the
+     reset), so the padding is *inside* the max-width on both — that is what
+     makes the two edges agree above 1600px, where the page is centred.
+
+     1600px, not the 960px this started at: 960 is a reading column and the
+     main screen here is a dense task table with a progress bar, a duration,
+     a search box, a date range and a group-by control. On a 1440px laptop
+     the page now fills the window; on a 27" monitor it stops at 1600 rather
+     than stretching table rows to a width nobody can track across. Prose
+     stays narrow where it belongs — the login card is still 380px. */
+  --cm-page-max: 1600px;
+  --cm-page-pad-x: var(--cm-space-4);
+
+  /* A readable line/field length, for the parts of a wide page that are a
+     form or a sentence rather than a table. The page stays full width so
+     every left edge still lines up; only the content column stops. */
+  --cm-measure: 48rem;
+
   /* ---- motion ----------------------------------------------------------- */
   --cm-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --cm-duration-fast: 120ms;
@@ -147,8 +189,35 @@
   --cm-duration-pulse: 2600ms;
 }
 
+/* ==========================================================================
+   Dark mode
+   ==========================================================================
+
+   Resolved from an explicit `data-theme` attribute on <html> first, and only
+   then from the OS setting:
+
+     * bare `:root` above carries the complete light palette, so every token
+       has a definition that survives no matter what any media query says;
+     * the media block below is guarded with `:not([data-theme="light"])`, so
+       a user who picks Light stays light on a dark-set OS;
+     * `:root[data-theme="dark"]` repeats the palette so a user who picks
+       Dark stays dark on a light-set OS.
+
+   No attribute at all means "follow the OS", which is the default and the
+   third state of the switch in the nav.
+
+   The two declaration lists are intentionally identical: CSS cannot apply
+   one list to both a media query and a selector, and the alternative
+   (indirecting every dark value through a second `--cm-dark-*` token) costs
+   more lines than it saves and hides the real values one hop away. They are
+   kept adjacent so a change to one is visibly a change to the other in the
+   same diff. src/theme.ts owns writing the attribute; the inline script in
+   index.html sets it before first paint so a chosen dark theme never flashes
+   white.
+   ========================================================================== */
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     /* ---- colour: dark mode -------------------------------------------- */
     --cm-color-bg: #0b0f14;
     --cm-color-bg-elevated: #10161d;
@@ -167,6 +236,12 @@
     --cm-color-accent-active: #2ab5b2;
     --cm-color-accent-contrast: #05201f;
     --cm-color-accent-soft: rgba(53, 214, 210, 0.12);
+
+    /* Same fill/text split as light mode. Measured: #35d6d2 on the
+       lightest dark-mode backdrop it can land on (--cm-color-surface
+       #121820) = 9.94:1; the hover step #5ce3df on the same = 12.1:1. */
+    --cm-color-accent-text: #35d6d2;
+    --cm-color-accent-text-hover: #5ce3df;
 
     --cm-color-danger: #ff6b73;
     --cm-color-danger-bg: rgba(255, 107, 115, 0.12);
@@ -211,7 +286,97 @@
 
     --cm-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 48px -20px rgba(0, 0, 0, 0.6);
     --cm-focus-ring: 0 0 0 3px rgba(53, 214, 210, 0.35);
+
+    /* Tells the browser to paint native widgets (scrollbars, date pickers,
+       the colour swatch on the settings screen) dark. index.html's <meta
+       name="color-scheme"> covers the very first paint; this covers the
+       case where the OS is dark and no explicit choice was ever made. */
+    color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  /* ---- colour: dark mode -------------------------------------------- */
+  --cm-color-bg: #0b0f14;
+  --cm-color-bg-elevated: #10161d;
+  --cm-color-surface: #121820;
+  --cm-color-surface-sunken: #0e141b;
+
+  --cm-color-border: #232c36;
+  --cm-color-border-strong: #5a6875;
+
+  --cm-color-text: #e7ecef;
+  --cm-color-text-muted: #9aa7b0;
+  --cm-color-text-faint: #64717a;
+
+  --cm-color-accent: #35d6d2;
+  --cm-color-accent-hover: #5ce3df;
+  --cm-color-accent-active: #2ab5b2;
+  --cm-color-accent-contrast: #05201f;
+  --cm-color-accent-soft: rgba(53, 214, 210, 0.12);
+
+  /* Same fill/text split as light mode. Measured: #35d6d2 on the
+     lightest dark-mode backdrop it can land on (--cm-color-surface
+     #121820) = 9.94:1; the hover step #5ce3df on the same = 12.1:1. */
+  --cm-color-accent-text: #35d6d2;
+  --cm-color-accent-text-hover: #5ce3df;
+
+  --cm-color-danger: #ff6b73;
+  --cm-color-danger-bg: rgba(255, 107, 115, 0.12);
+  --cm-color-danger-border: rgba(255, 107, 115, 0.35);
+
+  --cm-color-success: #4fd98b;
+  --cm-color-warn: #f2b33d;
+
+  /* ---- task status badges (dark) ------------------------------- */
+  --cm-color-status-queued: var(--cm-color-text-muted);
+  --cm-color-status-queued-bg: var(--cm-color-surface-sunken);
+  --cm-color-status-queued-border: var(--cm-color-border);
+
+  --cm-color-status-started: #9aa4ff;
+  --cm-color-status-started-bg: rgba(154, 164, 255, 0.12);
+  --cm-color-status-started-border: rgba(154, 164, 255, 0.35);
+
+  --cm-color-status-succeeded: #4fd98b;
+  --cm-color-status-succeeded-bg: rgba(79, 217, 139, 0.12);
+  --cm-color-status-succeeded-border: rgba(79, 217, 139, 0.35);
+
+  --cm-color-status-failed: var(--cm-color-danger);
+  --cm-color-status-failed-bg: var(--cm-color-danger-bg);
+  --cm-color-status-failed-border: var(--cm-color-danger-border);
+
+  --cm-color-status-retried: #f2b33d;
+  --cm-color-status-retried-bg: rgba(242, 179, 61, 0.12);
+  --cm-color-status-retried-border: rgba(242, 179, 61, 0.35);
+
+  --cm-color-status-skipped: var(--cm-color-text-faint);
+  --cm-color-status-skipped-bg: var(--cm-color-surface-sunken);
+  --cm-color-status-skipped-border: var(--cm-color-border);
+
+  --cm-color-status-revoked: var(--cm-color-text-muted);
+  --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
+  --cm-color-status-revoked-border: var(--cm-color-border-strong);
+
+  /* ---- schedule-occurrence pause state (dark, Task 14) ----------- */
+  --cm-color-occurrence-skip: #f2b33d;
+  --cm-color-occurrence-skip-bg: rgba(242, 179, 61, 0.12);
+  --cm-color-occurrence-skip-border: rgba(242, 179, 61, 0.35);
+
+  --cm-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 48px -20px rgba(0, 0, 0, 0.6);
+  --cm-focus-ring: 0 0 0 3px rgba(53, 214, 210, 0.35);
+
+  /* Tells the browser to paint native widgets (scrollbars, date pickers,
+     the colour swatch on the settings screen) dark. index.html's <meta
+     name="color-scheme"> covers the very first paint; this covers the
+     case where the OS is dark and no explicit choice was ever made. */
+  color-scheme: dark;
+}
+
+/* The counterpart to `color-scheme: dark` above: an explicit Light choice on
+   a dark-set OS has to say so, or native widgets stay dark under a light
+   page. */
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 /* ==========================================================================
@@ -345,6 +510,8 @@ textarea:focus-visible,
 .cm-login-header h1 {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
   gap: var(--cm-space-2);
   font-family: var(--cm-font-display);
   font-size: var(--cm-text-2xl);
@@ -533,22 +700,40 @@ textarea:focus-visible,
    pill, so it reads as a trace/tab rather than another button.
    ========================================================================== */
 
+/* The strip itself is full-bleed — its background and bottom rule run the
+   whole width of the window, the way an instrument panel's fascia does.
+   Only its *contents* are constrained, by the same max-width and padding
+   .cm-page uses, so the wordmark lines up with the page title beneath it
+   instead of floating off to the left of it on a wide monitor. */
 .cm-app-nav {
   position: sticky;
   top: 0;
   z-index: 10;
+  background-color: var(--cm-color-bg-elevated);
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-app-nav-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--cm-space-4);
-  padding: var(--cm-space-3) var(--cm-space-5);
-  background-color: var(--cm-color-bg-elevated);
-  border-bottom: 1px solid var(--cm-color-border);
+  flex-wrap: wrap;
+  gap: var(--cm-space-3) var(--cm-space-4);
+  max-width: var(--cm-page-max);
+  margin: 0 auto;
+  padding: var(--cm-space-3) var(--cm-page-pad-x);
 }
 
 .cm-app-nav-brand {
   display: flex;
   align-items: center;
+  /* Lets the cell shrink below its content width so .cm-brand-name's
+     ellipsis can engage. Without it a flex item's min-width is auto, i.e.
+     min-content — and a 64-character configured brand name (the server's
+     cap) pushed the nav wider than a 375px window instead of truncating.
+     Caught by measuring scrollWidth at 375px with a long name set, not by
+     reading the rule. */
+  min-width: 0;
   gap: var(--cm-space-2);
   font-family: var(--cm-font-mono);
   font-size: var(--cm-text-xs);
@@ -609,12 +794,16 @@ textarea:focus-visible,
 
 .cm-page {
   min-height: 100dvh;
-  max-width: 960px;
+  max-width: var(--cm-page-max);
   margin: 0 auto;
-  padding: var(--cm-space-6) var(--cm-space-5) var(--cm-space-8);
+  /* 1rem of side chrome, down from 1.5rem, and 1rem above the header, down
+     from 2rem: on a console the frame around the data is the least valuable
+     pixels on the screen. The 2rem at the bottom is scroll runway so the
+     last row isn't jammed against the window edge. */
+  padding: var(--cm-space-4) var(--cm-page-pad-x) var(--cm-space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--cm-space-5);
+  gap: var(--cm-space-4);
 }
 
 .cm-page-header {
@@ -678,16 +867,20 @@ textarea:focus-visible,
   animation: cm-pulse var(--cm-duration-pulse) var(--cm-ease) infinite;
 }
 
+/* Accent painted straight onto a surface — the --cm-color-accent-text pair
+   rather than the fill pair, so a custom brand accent can't turn the
+   dashboard's links into low-contrast text. Identical to --cm-color-accent
+   for the built-in palette. */
 .cm-back-link {
   align-self: flex-start;
   font-family: var(--cm-font-body);
   font-size: var(--cm-text-sm);
   font-weight: 600;
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
 }
 
 .cm-back-link:hover {
-  color: var(--cm-color-accent-hover);
+  color: var(--cm-color-accent-text-hover);
 }
 
 /* ==========================================================================
@@ -696,7 +889,8 @@ textarea:focus-visible,
    ========================================================================== */
 
 .cm-panel {
-  padding: var(--cm-space-5);
+  /* A frame around a table, not a card of prose — 1rem, down from 1.5rem. */
+  padding: var(--cm-space-4);
   background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
   border-radius: var(--cm-radius-lg);
@@ -775,8 +969,15 @@ textarea:focus-visible,
   border-collapse: collapse;
 }
 
+/* Column gutters as padding-*right* only, so the first column stays flush
+   with the panel's content edge and no :first-child rule is needed. That
+   matters for more than tidiness: TaskList's own `.cm-task-table
+   .cm-tasks-table` overrides (styles/tasks.css) win on specificity with the
+   same 1rem value, and a :first-child rule here would tie with them on
+   specificity and start deciding by bundle order instead. Same value, same
+   shape, no fight. */
 .cm-task-table th {
-  padding: 0 0 var(--cm-space-2);
+  padding: 0 var(--cm-space-4) var(--cm-space-2) 0;
   font-family: var(--cm-font-body);
   font-size: var(--cm-text-xs);
   font-weight: 600;
@@ -788,9 +989,16 @@ textarea:focus-visible,
 }
 
 .cm-task-table td {
-  padding: var(--cm-space-3) 0;
+  padding: var(--cm-space-3) var(--cm-space-4) var(--cm-space-3) 0;
   border-bottom: 1px solid var(--cm-color-border);
   vertical-align: middle;
+}
+
+/* Trailing gutter on the last column would push a right-hand action or
+   timestamp away from the panel edge for no reason. */
+.cm-task-table th:last-child,
+.cm-task-table td:last-child {
+  padding-right: 0;
 }
 
 .cm-task-table tbody tr:last-child td {
@@ -810,7 +1018,7 @@ textarea:focus-visible,
 }
 
 .cm-task-link:hover .cm-task-name {
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
   text-decoration: underline;
 }
 
@@ -902,8 +1110,13 @@ textarea:focus-visible,
    Task detail
    ========================================================================== */
 
+/* Was capped at 760px, a reading width. Nothing on this screen is prose:
+   it is a meta grid, a traceback and a log, all of which are easier to read
+   wide, and a 760px column centred under a 1600px nav put the task name at a
+   different left edge from the wordmark above it. It now shares the page
+   width; the blocks inside keep their own max-heights. */
 .cm-detail-page {
-  max-width: 760px;
+  max-width: var(--cm-page-max);
 }
 
 .cm-detail-header {
@@ -1072,8 +1285,8 @@ textarea:focus-visible,
 }
 
 .cm-btn-outline:hover:not(:disabled) {
-  border-color: var(--cm-color-accent);
-  color: var(--cm-color-accent);
+  border-color: var(--cm-color-accent-text);
+  color: var(--cm-color-accent-text);
 }
 
 /* The action matching an occurrence's current override — pressed state
@@ -1262,7 +1475,7 @@ textarea:focus-visible,
 }
 
 .cm-audit-log th {
-  padding: 0 0 var(--cm-space-2);
+  padding: 0 var(--cm-space-4) var(--cm-space-2) 0;
   font-family: var(--cm-font-body);
   font-size: var(--cm-text-xs);
   font-weight: 600;
@@ -1274,9 +1487,14 @@ textarea:focus-visible,
 }
 
 .cm-audit-log td {
-  padding: var(--cm-space-3) 0;
+  padding: var(--cm-space-3) var(--cm-space-4) var(--cm-space-3) 0;
   border-bottom: 1px solid var(--cm-color-border);
   vertical-align: middle;
+}
+
+.cm-audit-log th:last-child,
+.cm-audit-log td:last-child {
+  padding-right: 0;
 }
 
 .cm-audit-log tbody tr:last-child td {
@@ -1305,7 +1523,7 @@ textarea:focus-visible,
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
 }
 
 .cm-audit-target {
@@ -1364,7 +1582,7 @@ textarea:focus-visible,
 }
 
 .cm-schedule-list-link:hover .cm-schedule-list-name {
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
   text-decoration: underline;
 }
 
@@ -1404,4 +1622,344 @@ textarea:focus-visible,
   background-color: var(--cm-color-surface-sunken);
   border: 1px solid var(--cm-color-border-strong);
   border-radius: var(--cm-radius-full);
+}
+
+/* ==========================================================================
+   Brand surface — wordmark, logo, and the theme switch (Task 19)
+   ==========================================================================
+   A deployment can replace the wordmark and the brand dot with its own name
+   and logo (see src/branding.tsx). Everything below is the chrome that has
+   to keep working when it does: a name up to 64 characters long, and an
+   image of unknown aspect ratio dropped where a 10px dot used to be.
+   ========================================================================== */
+
+/* The nav's own brand cell can't grow, so a long configured name truncates
+   there rather than pushing the links off the bar. The login card lets the
+   same name wrap instead (it has a whole line to itself). */
+.cm-brand-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Height-constrained, width-free: the operator's logo is whatever aspect
+   ratio it is, and the one thing that must not happen is a tall image
+   stretching the nav strip. max-width stops a very wide banner from eating
+   the links. */
+.cm-brand-logo {
+  display: block;
+  flex: none;
+  height: 18px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+}
+
+.cm-brand-logo-lg {
+  height: 30px;
+  max-width: 220px;
+}
+
+/* The nav's right-hand cluster: route links and the theme switch. Grouped so
+   the pair moves as one unit when the bar wraps on a narrow window. */
+.cm-app-nav-end {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cm-space-4);
+}
+
+/* --------------------------------------------------------------------------
+   Segmented control — a three-position switch recessed into the panel, which
+   is what a theme preference actually is: not a button that toggles
+   something, but a selector whose current position has to be readable at a
+   glance without being clicked. The well (surface-sunken + border) groups the
+   three options into one instrument; the selected option takes the same solid
+   accent fill .cm-filter-bar already uses for "this is the chosen one", so
+   the dashboard has exactly one visual grammar for selection.
+   Unselected labels are --cm-color-text-muted on --cm-color-surface-sunken:
+   5.28:1 light, 7.52:1 dark. Selected is --cm-color-accent-contrast on
+   --cm-color-accent: 5.55:1 light, 9.49:1 dark.
+   -------------------------------------------------------------------------- */
+
+.cm-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background-color: var(--cm-color-surface-sunken);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-full);
+}
+
+.cm-segmented-option {
+  padding: 0.25rem 0.65rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  background-color: transparent;
+  border-radius: var(--cm-radius-full);
+  transition: color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-segmented-option:hover {
+  color: var(--cm-color-text);
+}
+
+.cm-segmented-option[aria-pressed="true"] {
+  color: var(--cm-color-accent-contrast);
+  background-color: var(--cm-color-accent);
+}
+
+/* Has to out-rank .cm-segmented-option:hover, or hovering the selected
+   option repaints muted-on-accent — the same trap .cm-btn-outline documents
+   above. */
+.cm-segmented-option[aria-pressed="true"]:hover {
+  color: var(--cm-color-accent-contrast);
+  background-color: var(--cm-color-accent-hover);
+}
+
+/* The global button:focus-visible rule squares corners to --cm-radius-sm,
+   which on a pill reads as a rendering glitch. Keep the ring, keep the pill. */
+.cm-segmented-option:focus-visible {
+  border-radius: var(--cm-radius-full);
+}
+
+/* ==========================================================================
+   Settings screen (Task 19)
+   ========================================================================== */
+
+/* Panels on this screen carry a heading and a scope note before their body,
+   unlike the single-purpose panels elsewhere in the app. */
+.cm-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  margin-bottom: var(--cm-space-4);
+}
+
+.cm-panel-title {
+  font-family: var(--cm-font-display);
+  font-size: var(--cm-text-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: var(--cm-leading-tight);
+  color: var(--cm-color-text);
+}
+
+/* Who a change affects, stated where the change is made. Branding is one
+   row in the deployment's database; the theme is one key in this browser's
+   localStorage. Users assume both are personal, so the note is part of the
+   control, not documentation kept somewhere else. */
+.cm-scope-note {
+  max-width: var(--cm-measure);
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+  padding: var(--cm-space-2) var(--cm-space-3);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+  background-color: var(--cm-color-surface-sunken);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-scope-tag {
+  flex: none;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cm-color-text);
+}
+
+/* An error state that leaves the user somewhere to go. */
+.cm-panel-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cm-space-4);
+}
+
+/* Capped, unlike a table panel: a hex-colour field 1500px wide is a worse
+   control than a 700px one, and the eye has to travel the whole width to
+   get from a label to its input. */
+.cm-settings-form {
+  max-width: var(--cm-measure);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+}
+
+/* A <fieldset>, not a <div>: `disabled` on the fieldset disables every
+   control inside it in one go, so an in-flight save can't be edited out from
+   under itself. min-width:0 undoes the fieldset's default min-content floor,
+   which otherwise stops the inputs shrinking on a narrow window. */
+.cm-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.cm-fieldset:disabled {
+  opacity: 0.75;
+}
+
+.cm-input {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  background-color: var(--cm-color-surface);
+  color: var(--cm-color-text);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease), box-shadow var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-input::placeholder {
+  color: var(--cm-color-text-faint);
+}
+
+.cm-input:hover:not(:disabled) {
+  border-color: var(--cm-color-accent);
+}
+
+.cm-input:focus-visible {
+  border-color: var(--cm-color-accent);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-focus-ring);
+}
+
+.cm-input:disabled {
+  background-color: var(--cm-color-surface-sunken);
+  color: var(--cm-color-text-faint);
+  cursor: not-allowed;
+}
+
+.cm-input[aria-invalid="true"] {
+  border-color: var(--cm-color-danger);
+}
+
+.cm-field-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-field-inline .cm-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The native colour picker, dressed to match .cm-input. It is a convenience
+   next to the hex field, never the source of truth: the text input is what
+   gets submitted, so an operator can still paste a value or clear it. */
+.cm-colour-swatch {
+  flex: none;
+  width: 2.75rem;
+  height: 2.4rem;
+  padding: 2px;
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+  cursor: pointer;
+}
+
+.cm-colour-swatch:disabled {
+  cursor: not-allowed;
+}
+
+.cm-colour-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.cm-colour-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+/* Hints carry instructions people need to follow, so they use text-muted
+   (6.21:1 light / 7.24:1 dark) rather than the text-faint the meta lines
+   elsewhere in the file use for repeatable identifiers. */
+.cm-field-hint {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+/* Field-level rejection, sat under the field it belongs to, in the server's
+   own words. --cm-color-danger on --cm-color-surface: 5.67:1 light,
+   6.46:1 dark. */
+.cm-field-error {
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  color: var(--cm-color-danger);
+}
+
+.cm-settings-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cm-space-3);
+}
+
+/* --------------------------------------------------------------------------
+   Branding preview — the reason a branding screen exists. Built from the
+   real components (.cm-brand-mark, .cm-btn-solid, .cm-notice, .cm-badge)
+   with the derived accent tokens set inline on the container, so what shows
+   here is the same CSS the nav and the buttons will run, not a drawing of
+   it. The dot grid is the login shell's own backdrop, reused so the preview
+   reads as "the app", not as another form field.
+   -------------------------------------------------------------------------- */
+
+.cm-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-4);
+  background-color: var(--cm-color-bg);
+  background-image: radial-gradient(var(--cm-color-border) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -11px -11px;
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-preview-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-3) var(--cm-space-4);
+  background-color: var(--cm-color-bg-elevated);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-preview-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cm-space-3);
+}
+
+/* The measured numbers behind the preview, not a promise about them. */
+.cm-preview-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-1) var(--cm-space-4);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
 }

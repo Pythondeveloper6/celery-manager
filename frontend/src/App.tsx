@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
 import { whoami } from "./api/client";
+import { BrandMark, ThemeSwitch, useBranding } from "./branding";
 import { Login } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { ScheduleList } from "./pages/ScheduleList";
 import { ScheduleOccurrences } from "./pages/ScheduleOccurrences";
 import { AuditLog } from "./pages/AuditLog";
+import { Settings } from "./pages/Settings";
 
 // The one persistent chrome element across every authenticated screen —
 // everything under it (TaskList, TaskDetail, ScheduleList,
@@ -18,22 +20,39 @@ import { AuditLog } from "./pages/AuditLog";
 // a single stable destination to link to, closing the gap Task 15 left
 // rather than papering over it with a guessed link.
 function AppNav() {
+  const { settings } = useBranding();
   return (
     <nav className="cm-app-nav" aria-label="Primary">
-      <span className="cm-app-nav-brand">
-        <span className="cm-brand-mark" aria-hidden="true" />
-        celery-manager
-      </span>
-      <div className="cm-app-nav-links">
-        <NavLink to="/" end className="cm-app-nav-link">
-          Tasks
-        </NavLink>
-        <NavLink to="/schedules" className="cm-app-nav-link">
-          Schedules
-        </NavLink>
-        <NavLink to="/audit" className="cm-app-nav-link">
-          Audit Log
-        </NavLink>
+      {/* The strip is full-bleed so its rule spans the window; this inner rail
+          carries the same max-width and padding as .cm-page, so the wordmark
+          sits exactly above the page title rather than off to its left. */}
+      <div className="cm-app-nav-inner">
+        <span className="cm-app-nav-brand">
+          <BrandMark />
+          <span className="cm-brand-name">{settings.brand_name}</span>
+        </span>
+        <div className="cm-app-nav-end">
+          <div className="cm-app-nav-links">
+            <NavLink to="/" end className="cm-app-nav-link">
+              Tasks
+            </NavLink>
+            <NavLink to="/schedules" className="cm-app-nav-link">
+              Schedules
+            </NavLink>
+            <NavLink to="/audit" className="cm-app-nav-link">
+              Audit Log
+            </NavLink>
+            <NavLink to="/settings" className="cm-app-nav-link">
+              Settings
+            </NavLink>
+          </div>
+          {/* The theme switch lives in the persistent chrome, not only on the
+              settings screen: it is the one preference someone changes because
+              of the room they're in, and hunting for a settings page to do it
+              is three clicks too many. The settings screen carries the same
+              control, since that is where people go looking for it. */}
+          <ThemeSwitch />
+        </div>
       </div>
     </nav>
   );
@@ -44,13 +63,14 @@ function AppNav() {
 // same cm-page / cm-panel / cm-empty-state shell every other screen uses so
 // it stays part of the design system rather than a bolted-on message.
 function NotFound() {
+  const { settings } = useBranding();
   return (
     <div className="cm-page">
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <p className="cm-page-eyebrow">
-            <span className="cm-brand-mark" aria-hidden="true" />
-            celery-manager
+            <BrandMark />
+            {settings.brand_name}
           </p>
           <h1 className="cm-page-title">Page not found</h1>
         </div>
@@ -70,6 +90,7 @@ function NotFound() {
 }
 
 export function App() {
+  const { settings } = useBranding();
   const [username, setUsername] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -100,8 +121,8 @@ export function App() {
         <div className="cm-login-card">
           <div className="cm-login-header">
             <h1>
-              <span className="cm-brand-mark" aria-hidden="true" />
-              celery-manager
+              <BrandMark large />
+              {settings.brand_name}
             </h1>
             <p className="cm-login-tagline">Connection problem</p>
             <div className="cm-pulse-rule" aria-hidden="true" />
@@ -111,7 +132,7 @@ export function App() {
             {checkError}
           </p>
 
-          <button type="button" onClick={runCheck}>
+          <button type="button" className="cm-btn cm-btn-solid" onClick={runCheck}>
             Retry
           </button>
         </div>
@@ -137,6 +158,7 @@ export function App() {
         <Route path="/schedules" element={<ScheduleList />} />
         <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
         <Route path="/audit" element={<AuditLog />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </HashRouter>
