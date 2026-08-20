@@ -131,7 +131,8 @@ knows about, newest first.
 ## Audit log
 
 `/audit`. A read-only table of every manually-triggered control action —
-currently just task retries (single and bulk) — with **When**, **User**,
+task retries (single and bulk), on-demand starts, cancellations, and
+per-occurrence schedule pauses — with **When**, **User**,
 **Action**, and **Target** (`{target_type}:{target_id}`, e.g. `task:abc123`)
 columns, newest first, backed by `GET /api/audit`. There's no filtering or
 pagination control in the UI beyond the API's default 50-row limit
