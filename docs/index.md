@@ -10,6 +10,10 @@ occurrence of a periodic task without touching its schedule.
 - [REST API reference](rest-api.md)
 - [Dashboard walkthrough](dashboard.md)
 - [Configuration reference](configuration.md)
+- [Working on celery-manager](contributing.md) — tests, docs, and rebuilding
+  the dashboard bundle
+- [Changelog](https://github.com/pythondeveloper6/celery-manager/blob/main/CHANGELOG.md)
+  — including the one breaking API change so far
 
 ## What it does today
 

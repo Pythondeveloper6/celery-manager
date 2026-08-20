@@ -1,9 +1,14 @@
 # celery-manager Django demo
 
-A minimal Django project that wires up `celery-manager` against two demo
-Celery tasks: `send_welcome_email` (triggered on demand) and `send_report`
-(runs on a 2-hour periodic schedule and fails about 30% of the time, so you
-can see failure tracebacks and log capture in the dashboard).
+A minimal Django project that wires up `celery-manager` against four demo
+Celery tasks in `tasks_app/tasks.py`:
+
+| Task | What it demonstrates |
+|---|---|
+| `send_welcome_email(user_email)` | The plain case — triggered on demand, takes about a second. |
+| `import_customers(row_count=60)` | [Live progress](../../docs/progress.md) with a **known total**: a bar, a percentage and a projected finish while it runs. Takes `row_count / 2` seconds. |
+| `tail_event_stream(seconds=30)` | Live progress with **no total** — a running count and a message, no bar, because there is no denominator. |
+| `send_report()` | Runs on a 2-hour periodic schedule and fails about 30% of the time, so you can see failure tracebacks and log capture in the dashboard. Also the one with a `schedule_name`, so it is the one whose occurrences you can pause. |
 
 ## Full setup (Redis + worker + beat + events listener + dashboard)
 
@@ -37,7 +42,23 @@ as you'd run celery-manager against a production Django app.
    list is empty until something runs, so trigger `send_welcome_email` —
    see [Triggering a task](#triggering-a-task) below — and watch it appear
    in the task list as the worker processes it.
-8. Watch `send_report` fail ~30% of the time on its 2-hour schedule — a
+8. See a **live progress bar**. `import_customers` sleeps half a second per
+   row, so 60 rows is 30 seconds of watching a real bar move:
+
+   ```bash
+   python manage.py shell -c "
+   from tasks_app.tasks import import_customers
+   import_customers.delay(60)
+   "
+   ```
+
+   The row in the task list gets a bar, a percentage, its message ("row 12
+   of 60") and a projected time remaining; open its detail page for the
+   same thing plus an estimated finish time. Then try the no-total shape —
+   `tail_event_stream.delay(30)` — and note it deliberately gets a count and
+   a message and **no** bar, because there is nothing to fill. (The list row
+   shows only the message for that shape; the detail page shows the count.)
+9. Watch `send_report` fail ~30% of the time on its 2-hour schedule — a
    failed run shows its traceback and captured log output in the task detail
    view. Pause an upcoming `send-demo-report-every-2-hours` occurrence from
    **Schedules → send-demo-report-every-2-hours** to see that occurrence
@@ -114,7 +135,8 @@ attributing the start to `admin`.
   also the process that must be wired with `celery_manager.setup(config)` —
   `tasks_app/tasks.py` does that at import time, which is what makes the
   `@celery_manager.track()` decorators below it actually do their job
-  (per-occurrence pause/skip and log capture). Wiring only the dashboard
+  (per-occurrence pause/skip, log capture, and giving `report_progress()`
+  a row to write to). Wiring only the dashboard
   process is the classic mistake: tasks run *there* only in eager mode.
 - **`celery -A demo beat`** — the periodic scheduler; it's what enqueues
   `send_report` every 2 hours per `CELERY_BEAT_SCHEDULE`. Without beat,

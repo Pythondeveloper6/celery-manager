@@ -15,5 +15,13 @@ _cm_config = CeleryManagerConfig(
 cm_app, _ = create_app(_cm_config)
 
 urlpatterns = [
-    path("", lambda request: HttpResponse("Django demo app. Dashboard mounted at /dashboard/ (run via ASGI).")),
+    # The dashboard is deliberately NOT mounted here — `cm_app` above is built
+    # only to prove it constructs cleanly against Django's settings. WSGI
+    # cannot serve an ASGI app in-process, so the dashboard runs as its own
+    # uvicorn process (`run_dashboard.py`, port 8001). See the demo README's
+    # "Why a separate dashboard process".
+    path("", lambda request: HttpResponse(
+        "Django demo app. The celery-manager dashboard runs as a separate "
+        "process: python run_dashboard.py -> http://localhost:8001"
+    )),
 ]

@@ -17,3 +17,7 @@ venv/
 
 # MkDocs build output — the docs site is built from docs/ on demand.
 site/
+
+# macOS Finder metadata. Ignored here rather than relying on every
+# contributor having it in their global excludes.
+.DS_Store

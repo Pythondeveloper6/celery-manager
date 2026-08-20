@@ -39,6 +39,18 @@ list reflects whatever periodic tasks your app has configured.
 Run it with any ASGI server, e.g. `uvicorn your_module:app` (installing
 the `standalone` extra above if you don't already have uvicorn).
 
+!!! warning "Running on plain HTTP? You need `cookie_secure=False`"
+    This is the single most likely thing to stop you on your first run. The
+    session cookie is `Secure` by default, and a browser will accept a
+    `Secure` cookie over plain HTTP but **refuse to send it back** — so you
+    log in successfully and then immediately appear logged out, with nothing
+    in any log to explain it.
+
+    If you are developing against `http://localhost`, add
+    `cookie_secure=False` to the config above. Leave the default alone
+    anywhere reachable over anything else — see
+    [Configuration](configuration.md#cookie_secure-and-why-it-defaults-to-true).
+
 ## Run the events listener
 
 ```bash
@@ -70,14 +82,19 @@ create_user(Session(), "admin", "a-real-password")
 Passwords are hashed with bcrypt before being stored; there's no
 plaintext-password path anywhere in the auth code.
 
+There is no default account and no first-run setup screen, so **the
+dashboard is unusable until you run this** — it is the second thing that
+stops people on a first run. Run it once, in a shell with your `config` in
+scope; the users table lives in the same `db_url` as everything else.
+
 Then sign in at the dashboard URL.
 
 ## Opt a task into full tracking (optional)
 
 Every task shows up in the dashboard automatically once the events listener
 is running — no code changes required. If you also want per-occurrence
-schedule control (pause/cancel one future run of a periodic task) and full
-stdout/log capture on the task's detail page, apply `@track` above
+schedule control (pause/cancel one future run of a periodic task) and log
+capture on the task's detail page, apply `@track` above
 `@app.task` — **and wire the worker process with `celery_manager.setup()`**:
 
 ```python

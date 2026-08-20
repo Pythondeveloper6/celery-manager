@@ -34,11 +34,11 @@ exposes.
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
 | `GET` | `/api/tasks` | required | Query params: `status`, `task_name`, `q`, `date_from`, `date_to`, `limit` (default `50`), `offset` (default `0`) — all optional. See [Filtering, search and pagination](#filtering-search-and-pagination) below for exact semantics. | `200 {"items": [...], "total": int, "limit": int, "offset": int}` — **an envelope, not a bare array** (see the change note below). Each item is `{"task_id", "task_name", "status", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at"}`, newest first (ordered by internal row id descending). `total` is the number of runs matching the *same filters*, ignoring `limit`/`offset`. `limit`/`offset` are echoed back *after* clamping, so a client can see what it actually got. |
-| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "eta", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at", "retried_from_id", "retried_by"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener, the timings from the decorator, and any of them may be `null` for a run that hasn't started or wasn't seen by both. `retried_from_id` is the id of the run this one was dispatched as a retry of, or `null`; `retried_by` is a **list** of the ids dispatched as retries *of this run* (an operator can retry the same failed run more than once), `[]` if there are none. The four `progress_*` fields are `null` unless the task calls [`report_progress()`](progress.md). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
+| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "eta", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at", "retried_from_id", "retried_by"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener and the timings from the decorator, so any of them may be `null` for a run that hasn't started or wasn't seen by both. **`eta` is currently always `null`** — see the note below. `retried_from_id` is the id of the run this one was dispatched as a retry of, or `null`; `retried_by` is a **list** of the ids dispatched as retries *of this run* (an operator can retry the same failed run more than once), `[]` if there are none. The four `progress_*` fields are `null` unless the task calls [`report_progress()`](progress.md). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
 | `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}}` | `200 {"task_id": str}`. Dispatches immediately via `celery_app.send_task(...)` and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}`) — no validation that `task_name` is a registered task; a bad name fails at the broker/worker level, not here. |
 | `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Does not check that `task_id` exists in celery-manager's own storage. |
-| `POST` | `/api/tasks/{task_id}/retry` | required | — | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`). `404`-equivalent: raises `ValueError` if no run is found for `task_id` — currently **unhandled** at the route level, so this surfaces as a `500`, not a clean `404`. |
-| `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. Same unhandled-`ValueError`-on-missing-id caveat as above — one missing `task_id` anywhere in the list fails the whole batch as a `500`, including entries already retried before it. |
+| `POST` | `/api/tasks/{task_id}/retry` | required | — | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`). `404 {"detail": "not found"}` if no run exists for `task_id`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
+| `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. **Not partial-failure aware**: it stops at the first unknown id and returns `404 {"detail": "no task run found for <id>"}` for the whole batch — ids earlier in the list have already been dispatched and audited by then, and the response does not tell you which. Check the ids before sending them, or retry one at a time if that matters. |
 
 !!! warning "Changed: `GET /api/tasks` no longer returns a bare array"
     This endpoint used to return a JSON **array** of runs, hard-capped at 50
@@ -103,18 +103,23 @@ are inclusive (`>=` / `<=`). Two consequences:
   15th, if you prefer a half-open range). Truncating to a day server-side
   would be wrong for callers who legitimately want an hour-long window.
 
-!!! warning "Send date filters in UTC"
-    Everything in celery-manager's storage is written as UTC. On the default
-    SQLite backend, SQLAlchemy binds a datetime by its wall-clock parts and
-    **drops the offset**, so `date_from=2026-08-10T13:00:00+02:00` is
-    compared as `13:00`, not as the `11:00Z` it denotes. Send UTC (with or
-    without a `Z`) and there is nothing to get wrong.
+!!! note "Timezone handling on date filters"
+    Everything in celery-manager's storage is written as UTC, and on the
+    default SQLite backend SQLAlchemy binds a datetime by its wall-clock
+    parts, **dropping the offset**. `date_from=2026-08-10T13:00:00+02:00`
+    was therefore compared as `13:00` rather than as the `11:00Z` it denotes,
+    silently shifting the window by the caller's offset.
+
+    The route now converts an offset-carrying bound to UTC before it reaches
+    the query (`utc_bound` in `src/celery_manager/api/serialization.py`), so
+    any offset you send is honoured. A **naive** datetime is still taken to
+    mean UTC — that is this codebase's standing convention, and there is no
+    per-request timezone to interpret it against.
 
 ### Datetimes in task responses
 
-Every datetime the two task endpoints emit — `eta`, `started_at`,
-`finished_at`, `progress_updated_at` — now carries an explicit `+00:00`
-offset:
+Every datetime the task endpoints emit — `eta`, `started_at`,
+`finished_at`, `progress_updated_at` — carries an explicit `+00:00` offset:
 
 ```json
 "started_at": "2026-08-10T12:00:00+00:00"
@@ -125,10 +130,27 @@ values were always UTC, but SQLite drops `tzinfo` on a
 `DateTime(timezone=True)` round-trip, so the naive value reached JSON
 unmarked — and `new Date(...)` on an unmarked string parses it as **local**
 time, shifting every timestamp by the viewer's UTC offset. The API now
-stamps UTC back on at the boundary (`_utc` in
-`src/celery_manager/api/routes/tasks.py`). `null` still means null: a run
+stamps UTC back on at the boundary (`utc` in
+`src/celery_manager/api/serialization.py`). `null` still means null: a run
 that never started has no start time, and inventing one would be worse than
 omitting it.
+
+The same helper (`celery_manager.api.serialization.utc`) does the same job
+for the [audit log](#audit-log)'s `created_at`. The schedule routes don't
+need it: their `target_time` values are computed in memory from an aware
+"now" rather than read back from the database, so they never lose their
+offset in the first place.
+
+!!! warning "`eta` is always `null` today"
+    `task_runs.eta` exists as a column and `GET /api/tasks/{task_id}` serves
+    it, but **nothing ever writes it**. The events listener copies `name`,
+    `queue`, `hostname`, `args`, `kwargs`, `runtime`, `exception` and
+    `traceback` off each event and does not copy `eta`
+    (`src/celery_manager/events/listener.py`), and the decorator never sets
+    it either. So the field is reserved rather than usable: the dashboard's
+    Execution panel shows "No ETA set" for every run, including tasks
+    dispatched with a real `countdown`/`eta`. Don't build against it until
+    a writer exists.
 
 ### The same operations from Python
 
@@ -155,12 +177,42 @@ here — the clamp lives at the HTTP boundary, and a Python caller is trusted
 to ask for more. `list_retries_of` returns the retry runs oldest-first (the
 API's `retried_by` list is these ids). `update_settings` validates, audits,
 and raises `ValueError` on bad input — which is what the route turns into a
-`422`.
+`422`. `retry_task` raises `control.TaskRunNotFound` (a `ValueError`
+subclass, so existing `except ValueError` callers keep working) for an
+unknown task id — which is what the route turns into a `404` — and a plain
+`ValueError` if the stored args can't be decoded. It also accepts explicit
+`args`/`kwargs`, which is the only way to retry a run whose stored arguments
+are undecodable.
+
+### Retrying a run the listener recorded
+
+`POST .../retry` re-dispatches the run's *stored* `args`/`kwargs`, and those
+are written in two different formats by two different writers. The decorator
+writes JSON (`json.dumps`); the events listener writes `str(event["args"])`,
+and Celery's event payload is already a Python **repr** — `"(5,)"`,
+`"{'b': 2}"`. So the retry path tries JSON first and
+`ast.literal_eval` (never `eval`) second.
+
+When neither works, or the decoded value is the wrong type, the retry is
+**refused** with an error naming the field rather than dispatched with
+guessed arguments — re-running somebody's task with silently dropped or
+reinterpreted arguments is far worse than an error. This is a real case, not
+a theoretical one: Celery truncates long values in its event reprs, so a task
+recorded only by the listener and called with large arguments can be
+genuinely undecodable. The fix is to pass `args`/`kwargs` explicitly to
+`control.retry_task()`; the HTTP endpoint has no way to supply them today.
+
+Note also that the decorator's own writes are lossy for values stdlib JSON
+cannot express (a `datetime` kwarg, which Celery's own serializer handles
+fine): those leaves are stored as their `repr` inside otherwise-valid JSON,
+so they stay searchable by `q=` but do not round-trip back to the original
+object on retry.
 
 ## Schedules
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
+| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool}`, ordered by `name`. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. |
 | `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
 | `POST` | `/api/schedules/{name}/occurrences/pause` | required | `{"target_time": datetime, "action": "skip"\|"cancel"}` (any other `action` value is a `422`) | `200 {"id": int, "action": str, "target_time": datetime}`. Records (or updates) an override for the occurrence closest to `target_time`. |
 
@@ -294,7 +346,17 @@ legitimate name like `Ops & Data`.
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| `GET` | `/api/audit` | required | Query param `limit` (int, default `50`) | `200` — list of `{"username", "action", "target_type", "target_id", "details", "created_at"}`, newest first (ordered by internal row id descending). `details` is a JSON-encoded string or `null`. |
+| `GET` | `/api/audit` | required | Query param `limit` (int, default `50`, **clamped into `1..500`** — the same `MAX_PAGE_SIZE` ceiling the task list uses) | `200` — list of `{"username", "action", "target_type", "target_id", "details", "created_at"}`, newest first (ordered by internal row id descending). `details` is a JSON-encoded string or `null`. `created_at` carries an explicit `+00:00` offset, like the task endpoints' datetimes. |
+
+There is no `offset` here, so `limit` is the only control: this endpoint
+shows the newest N entries and there is no way to page further back through
+the audit log over HTTP. Query the `audit_log` table directly if you need to.
+
+!!! note "Why `limit` is clamped at both ends"
+    The floor matters more than it looks. SQLite reads `LIMIT -1` as *no
+    limit*, so `?limit=-1` used to hand back the entire audit log in one
+    response. Clamping rather than rejecting matches the task list's
+    reasoning: a stale bookmark deserves a capped page, not a `400`.
 
 Audit rows are written server-side whenever a control action is taken on a
 user's behalf, via `celery_manager.control.audit.record`. There is no
