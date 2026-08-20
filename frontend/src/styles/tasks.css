@@ -1,0 +1,464 @@
+/* ==========================================================================
+   Task list — filters, grouping, pagination, and live run progress
+   ==========================================================================
+
+   An extension of the "signal panel" system in tokens.css, not a restyle.
+   Every value below resolves to a --cm-* custom property, so this file
+   inherits light/dark automatically from whatever tokens.css defines; there
+   are no literal colours here and no media query duplicating a palette.
+
+   Two ideas carry the screen:
+
+     1. A *control rail* above the table. Status stays where it has always
+        been — first thing under the title, because "show me the failures"
+        is the question people arrive with mid-incident. Search, dates and
+        grouping sit below a hairline on a sunken surface, reading as a
+        secondary instrument rather than competing with the status chips.
+
+     2. A *run lane* — the slim track in each running row's Runtime cell,
+        plus a matching 2px rail down the left edge of that row. Both are
+        drawn in --cm-color-status-started, the token the design system
+        already created for "in progress, and that is not an outcome". See
+        the note on .cm-run-lane below for why not accent and not the
+        red/amber/green triad.
+   ========================================================================== */
+
+/* ==========================================================================
+   Control rail
+   ========================================================================== */
+
+.cm-tasks-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  padding: var(--cm-space-4);
+  background-color: var(--cm-color-surface-sunken);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-lg);
+}
+
+/* The hairline is the hierarchy: status above it (primary), everything
+   else below it (secondary). Cheaper and quieter than a second panel. */
+/* Top-aligned, not bottom-aligned: only the search field carries a hint
+   line beneath its input, so aligning on the bottom edge would push the
+   date and group controls a hint's-height lower than the box they sit
+   beside. Aligning the *labels* instead lines every input up on one row. */
+.cm-tasks-controls-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--cm-space-4);
+  padding-top: var(--cm-space-4);
+  border-top: 1px solid var(--cm-color-border);
+}
+
+.cm-tasks-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  min-width: 0;
+}
+
+/* Search earns the most room and is the first thing to grow; the two date
+   fields hold a fixed comfortable width; group-by is a small selector. */
+.cm-tasks-field-search {
+  flex: 3 1 15rem;
+}
+
+.cm-tasks-field-date {
+  flex: 0 1 9.5rem;
+}
+
+.cm-tasks-field-group {
+  flex: 1 1 9rem;
+}
+
+.cm-tasks-field > label {
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-tasks-input,
+.cm-tasks-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-md);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease), box-shadow var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-input::placeholder {
+  color: var(--cm-color-text-faint);
+}
+
+.cm-tasks-input:hover,
+.cm-tasks-select:hover {
+  border-color: var(--cm-color-accent);
+}
+
+.cm-tasks-input:focus-visible,
+.cm-tasks-select:focus-visible {
+  border-color: var(--cm-color-accent);
+  box-shadow: var(--cm-focus-ring);
+}
+
+/* Reserve the right-hand gutter unconditionally rather than only when the
+   clear button is present — otherwise the caret jumps sideways the moment
+   the user types their first character. */
+.cm-tasks-search {
+  position: relative;
+  display: flex;
+}
+
+.cm-tasks-search .cm-tasks-input {
+  padding-right: 2rem;
+}
+
+.cm-tasks-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.3rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  line-height: 1;
+  color: var(--cm-color-text-faint);
+  border-radius: var(--cm-radius-full);
+  transition: color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-search-clear:hover {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-surface-sunken);
+}
+
+/* Says what the box actually searches, so it isn't a mystery field. */
+.cm-tasks-hint {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  line-height: var(--cm-leading-normal);
+  color: var(--cm-color-text-faint);
+}
+
+/* The button has no label above it, so it needs the height of one pushed
+   under it to sit on the same line as the inputs. Derived from the label's
+   own type tokens rather than eyeballed, so it stays correct if the label
+   scale changes. */
+.cm-tasks-controls-actions {
+  display: flex;
+  margin-top: calc(var(--cm-text-xs) * var(--cm-leading-normal) + var(--cm-space-2));
+  margin-left: auto;
+}
+
+/* ==========================================================================
+   Panel + ledger
+   ========================================================================== */
+
+/* min-width:0 is load-bearing, not defensive tidying: .cm-page is a column
+   flex container, and without it a flex item sizes to its min-content —
+   a table wider than the viewport would stretch the panel and make the
+   whole *page* scroll sideways instead of the table scrolling inside its
+   own .cm-table-scroll box. */
+.cm-tasks-panel {
+  min-width: 0;
+}
+
+.cm-tasks-panel .cm-table-scroll {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+}
+
+.cm-tasks-inline-error {
+  margin-bottom: var(--cm-space-4);
+}
+
+.cm-tasks-ledger {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cm-space-2) var(--cm-space-4);
+  padding-bottom: var(--cm-space-3);
+}
+
+.cm-tasks-ledger-count {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+}
+
+/* Caveats the user would otherwise have to infer from missing rows: the
+   date filter hiding never-started runs, and grouping only describing the
+   page in hand. Deliberately quiet — true, but not alarming. */
+.cm-tasks-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--cm-text-xs);
+  line-height: var(--cm-leading-normal);
+  color: var(--cm-color-text-faint);
+  text-align: right;
+}
+
+/* ==========================================================================
+   Table
+   ========================================================================== */
+
+/* Below this width the five columns stop being readable, so the table
+   scrolls horizontally inside .cm-table-scroll rather than compressing
+   the task name to two characters per line. */
+.cm-tasks-table {
+  min-width: 44rem;
+}
+
+/* Doubled up as `.cm-task-table.cm-tasks-table` on purpose. This file is
+   imported from TaskList.tsx and therefore lands *before* tokens.css in the
+   bundle, so a plain `.cm-tasks-table td` (0,1,1) loses the tie to
+   tokens.css's later `.cm-task-table td { padding: … 0 }` (0,1,1) — the
+   shorthand there would silently reset this padding-right back to zero.
+   Winning on specificity makes the rule independent of bundle order.
+   Caught by measuring the built CSS, not by reading it. */
+.cm-task-table.cm-tasks-table th,
+.cm-task-table.cm-tasks-table td {
+  padding-right: var(--cm-space-4);
+}
+
+.cm-task-table.cm-tasks-table th:last-child,
+.cm-task-table.cm-tasks-table td:last-child {
+  padding-right: 0;
+}
+
+.cm-tasks-col-status,
+.cm-tasks-col-runtime,
+.cm-tasks-col-started {
+  white-space: nowrap;
+}
+
+.cm-tasks-table .cm-task-id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The left rail: a running row is marked down its leading edge in the same
+   hue as its status badge and its progress lane, so "what is in flight
+   right now" is legible from a scan of the table's edge alone. */
+.cm-tasks-table tbody tr[data-running="true"] td:first-child {
+  box-shadow: inset 2px 0 0 0 var(--cm-color-status-started);
+}
+
+/* Group headers. A <th scope="colgroup"> inside its own <tbody>, so the
+   grouping is real table structure rather than fake rows. */
+.cm-tasks-table .cm-tasks-group-head th {
+  padding: var(--cm-space-3) var(--cm-space-3) var(--cm-space-2);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cm-color-text-muted);
+  background-color: var(--cm-color-surface-sunken);
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-tasks-group-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cm-space-2);
+}
+
+/* The count is per-group *within what is loaded* — the ledger note above
+   the table says so when there is more history behind it. */
+.cm-tasks-group-count {
+  font-weight: 500;
+  color: var(--cm-color-text-faint);
+  letter-spacing: 0.04em;
+}
+
+/* ==========================================================================
+   Run lane — live progress + elapsed time
+   ==========================================================================
+
+   Colour: the fill is --cm-color-status-started, not --cm-color-accent and
+   not the red/amber/green triad. tokens.css reserves accent for "the one
+   interactive colour" and the triad for task *outcomes*; a progress bar is
+   neither — it is only ever drawn on a row whose status is "started", and
+   "started" already has its own token created for exactly that reason
+   ("in progress isn't an outcome"). Using it makes the bar, the left rail
+   and the row's status badge one signal in one hue.
+   ========================================================================== */
+
+.cm-run-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  min-width: 9rem;
+  max-width: 16rem;
+}
+
+.cm-run-clock {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--cm-color-text-muted);
+}
+
+/* Tabular figures above matter more than usual here: without them a
+   ticking seconds counter jitters its own column every second. */
+.cm-run-clock[data-running="true"] {
+  color: var(--cm-color-text);
+  font-weight: 500;
+}
+
+.cm-run-lane {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  background-color: var(--cm-color-status-started-bg);
+  border: 1px solid var(--cm-color-status-started-border);
+  border-radius: var(--cm-radius-full);
+}
+
+.cm-run-lane-fill {
+  display: block;
+  height: 100%;
+  background-color: var(--cm-color-status-started);
+  border-radius: var(--cm-radius-full);
+  transition: width var(--cm-duration-base) var(--cm-ease);
+}
+
+/* Gone quiet. Deliberately *subdued* rather than alarming: a task that
+   hasn't reported for two minutes may be mid-chunk, not hung, so this
+   drains the colour out of the lane (neutral = the system's grammar for
+   "notable, no alarm") instead of borrowing the amber that means
+   "retried". The accompanying "no update for 2m 00s" text is what
+   actually tells the operator; the colour just stops implying liveness. */
+.cm-run-lane[data-stalled="true"] {
+  background-color: var(--cm-color-surface-sunken);
+  border-color: var(--cm-color-border-strong);
+}
+
+.cm-run-lane[data-stalled="true"] .cm-run-lane-fill {
+  background-color: var(--cm-color-text-faint);
+}
+
+.cm-run-meta {
+  display: block;
+  overflow: hidden;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-run-meta[data-stalled="true"] {
+  color: var(--cm-color-text-muted);
+}
+
+/* The bar's width transition is the only thing on this screen that
+   animates. tokens.css already neutralises transitions globally under
+   reduced motion with an `!important` blanket rule — measured: the
+   computed transition-duration here is 1e-06s under
+   `reducedMotion: reduce`, i.e. that global rule is what currently wins.
+   This local rule is kept as the explicit, specific statement of the same
+   intent, so narrowing the global blanket later can't silently
+   reintroduce a sliding bar for motion-sensitive users. */
+@media (prefers-reduced-motion: reduce) {
+  .cm-run-lane-fill {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Pagination footer + empty states
+   ========================================================================== */
+
+.cm-tasks-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cm-space-2);
+  padding-top: var(--cm-space-4);
+  margin-top: var(--cm-space-2);
+  border-top: 1px solid var(--cm-color-border);
+  text-align: center;
+}
+
+.cm-tasks-more-note {
+  max-width: 34rem;
+  font-size: var(--cm-text-xs);
+  line-height: var(--cm-leading-normal);
+  color: var(--cm-color-text-faint);
+}
+
+.cm-tasks-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-6) var(--cm-space-5);
+  text-align: center;
+  border: 1px dashed var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-tasks-empty-title {
+  font-size: var(--cm-text-base);
+  font-weight: 600;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-tasks-empty-body {
+  max-width: 32rem;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-faint);
+}
+
+.cm-tasks-retry {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--cm-space-4);
+}
+
+/* ==========================================================================
+   Narrow viewports
+   ========================================================================== */
+
+@media (max-width: 40rem) {
+  /* Two date fields side by side under 640px leave ~8ch each. Let them
+     take a full row apiece instead of shrinking into uselessness. */
+  .cm-tasks-field-date {
+    flex: 1 1 100%;
+  }
+
+  .cm-tasks-controls-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .cm-tasks-notes {
+    text-align: left;
+  }
+}
