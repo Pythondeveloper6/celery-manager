@@ -12,13 +12,23 @@ without touching your beat schedule or restarting anything.
 
 - **Task visibility** — every task run (decorated or not) with status, args,
   worker, queue, timings, exceptions, and full tracebacks.
+- **Full run history** — browse past runs beyond the newest page, search by
+  task name, task ID, or args/kwargs content, and filter by status and date
+  range.
+- **Live progress** — call `celery_manager.report_progress(current, total,
+  message)` inside a task body and watch the bar move, with elapsed time and
+  a projected finish while the task is still running.
 - **Log capture** — stdout and `logging` output from inside a task body,
   attached to that run and readable in the dashboard.
 - **Control** — start, cancel/terminate, retry, and bulk retry, from the UI
-  or the API.
+  or the API. Retries keep their lineage, so you can walk the chain.
 - **Per-occurrence schedule control** — skip or cancel one upcoming run of a
   periodic task, and see it stay paused.
 - **Audit log** — who did what, when, for every control action.
+- **Light and dark themes** — an explicit per-user choice, not just whatever
+  the OS says.
+- **Brandable** — set the product name, accent colour, and logo from a
+  settings screen; it applies for everyone on the deployment.
 - **Built-in auth** — bcrypt-hashed users and signed session cookies.
 - **No Node toolchain required** — the React dashboard ships prebuilt inside
   the Python package.
@@ -85,6 +95,7 @@ Full documentation lives in [`docs/`](docs/) (an MkDocs Material site — run
 
 - [Quickstart](docs/quickstart.md) — install through first sign-in.
 - [The `@track` decorator](docs/decorator.md) — wiring, skip/cancel, logs.
+- [Live progress](docs/progress.md) — reporting progress from inside a task.
 - [REST API](docs/rest-api.md) — every endpoint and payload.
 - [Dashboard](docs/dashboard.md) — the screens and what they do.
 - [Configuration](docs/configuration.md) — every config field, the schema

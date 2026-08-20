@@ -24,6 +24,36 @@ config = CeleryManagerConfig(
 | `eta_tolerance_seconds` | `int` | `60` | How close a stored `ScheduleOverride.target_time` must be to "now" (in the `@track` decorator, at task-run time) or to a freshly recomputed occurrence timestamp (in `GET /api/schedules/{name}/occurrences`, at read time) for them to be treated as the same logical occurrence. See the trade-off below. |
 | `cookie_secure` | `bool` | `True` | Sets the `Secure` flag on the session cookie, so browsers only ever send it back over HTTPS. See below for why the default is `True` and when to change it. |
 
+Those five fields are the whole dataclass — `CeleryManagerConfig` has no
+other options, and nothing else in celery-manager reads configuration from
+the environment.
+
+## Tunables that are *not* config fields
+
+Two limits that operators reasonably go looking for on `CeleryManagerConfig`
+are not there. They are module-level constants, deliberately: both are
+implementation limits with one sensible value, and threading them through the
+config would imply a per-deployment decision that neither really is.
+
+| Constant | Module | Value | What it does |
+|---|---|---|---|
+| `MIN_WRITE_INTERVAL_SECONDS` | `celery_manager.progress` | `0.5` | Minimum seconds between database writes for one run's [live progress](progress.md). The completing call ignores it. |
+| `MAX_PAGE_SIZE` | `celery_manager.control.tasks` | `500` | Ceiling that `GET /api/tasks` clamps a caller-supplied `limit` to. Applied at the HTTP boundary only — a Python caller of `list_task_runs` is trusted and may ask for more. |
+
+Both are plain module attributes read at call time, so a deployment with an
+unusually loaded database can raise the throttle by assigning to it before
+any task runs:
+
+```python
+from celery_manager import progress
+
+progress.MIN_WRITE_INTERVAL_SECONDS = 2.0
+```
+
+That is a supported escape hatch rather than a documented API — if you find
+yourself needing it in production, say so on the issue tracker and it can
+become a real setting.
+
 ## Choosing `eta_tolerance_seconds`
 
 Both the read side (matching a paused occurrence back to its row when the

@@ -25,6 +25,7 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - The decorator: decorator.md
+  - Live progress: progress.md
   - REST API: rest-api.md
   - Dashboard: dashboard.md
   - Configuration: configuration.md

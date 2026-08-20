@@ -11,10 +11,17 @@ design notes.
 
 All auth is cookie-based: `POST /api/auth/login` sets an `httponly`,
 `samesite=lax` session cookie (signed with `CeleryManagerConfig.secret_key`
-via `itsdangerous`, valid 7 days); every other endpoint below except login
-reads that cookie via the `get_current_user` dependency and returns
-**`401`** if it's missing, invalid, or expired. There are no API keys,
-bearer tokens, or scopes — one authenticated user can do everything.
+via `itsdangerous`, valid 7 days); every other endpoint below reads that
+cookie via the `get_current_user` dependency and returns **`401`** if it's
+missing, invalid, or expired. There are no API keys, bearer tokens, or
+scopes — one authenticated user can do everything.
+
+Two endpoints besides login and logout are not behind that dependency.
+[`GET /api/settings`](#settings-branding) is unauthenticated **on purpose** —
+the login screen has to render this deployment's branding before anyone has
+signed in — and [`GET /api/stream`](#live-updates-sse) simply has no auth
+dependency in its route definition; see the note there for what that
+exposes.
 
 | Method | Path | Auth | Request body | Response |
 |---|---|---|---|---|
@@ -26,12 +33,129 @@ bearer tokens, or scopes — one authenticated user can do everything.
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| `GET` | `/api/tasks` | required | Query params: `status` (optional, e.g. `queued`/`started`/`succeeded`/`failed`/`retried`/`skipped`/`revoked`), `task_name` (optional, exact match). No pagination params exposed at the route (the underlying `list_task_runs` supports `limit`/`offset`, defaulting to `limit=50, offset=0`, but the route doesn't currently forward them from the query string). | `200` — list of `{"task_id", "task_name", "status", "started_at", "finished_at"}`, newest first (ordered by internal row id descending). |
-| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "started_at", "finished_at", "runtime_seconds"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener, the timings from the decorator, and any of them may be `null` for a run that hasn't started or wasn't seen by both. `404 {"detail": "not found"}` if no run with that `task_id` exists. |
+| `GET` | `/api/tasks` | required | Query params: `status`, `task_name`, `q`, `date_from`, `date_to`, `limit` (default `50`), `offset` (default `0`) — all optional. See [Filtering, search and pagination](#filtering-search-and-pagination) below for exact semantics. | `200 {"items": [...], "total": int, "limit": int, "offset": int}` — **an envelope, not a bare array** (see the change note below). Each item is `{"task_id", "task_name", "status", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at"}`, newest first (ordered by internal row id descending). `total` is the number of runs matching the *same filters*, ignoring `limit`/`offset`. `limit`/`offset` are echoed back *after* clamping, so a client can see what it actually got. |
+| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "eta", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at", "retried_from_id", "retried_by"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener, the timings from the decorator, and any of them may be `null` for a run that hasn't started or wasn't seen by both. `retried_from_id` is the id of the run this one was dispatched as a retry of, or `null`; `retried_by` is a **list** of the ids dispatched as retries *of this run* (an operator can retry the same failed run more than once), `[]` if there are none. The four `progress_*` fields are `null` unless the task calls [`report_progress()`](progress.md). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
 | `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}}` | `200 {"task_id": str}`. Dispatches immediately via `celery_app.send_task(...)` and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}`) — no validation that `task_name` is a registered task; a bad name fails at the broker/worker level, not here. |
 | `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Does not check that `task_id` exists in celery-manager's own storage. |
 | `POST` | `/api/tasks/{task_id}/retry` | required | — | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`). `404`-equivalent: raises `ValueError` if no run is found for `task_id` — currently **unhandled** at the route level, so this surfaces as a `500`, not a clean `404`. |
 | `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. Same unhandled-`ValueError`-on-missing-id caveat as above — one missing `task_id` anywhere in the list fails the whole batch as a `500`, including entries already retried before it. |
+
+!!! warning "Changed: `GET /api/tasks` no longer returns a bare array"
+    This endpoint used to return a JSON **array** of runs, hard-capped at 50
+    rows, with no `offset` — so older history was simply unreachable, and a
+    client could not tell "50 results" from "the first 50 of 1,284". It now
+    returns an envelope:
+
+    ```json
+    {"items": [ ... ], "total": 1284, "limit": 50, "offset": 0}
+    ```
+
+    Callers must change `await res.json()` to `(await res.json()).items`.
+    The list items also gained `runtime_seconds` and the four `progress_*`
+    fields. This is a deliberate break, taken while the package is
+    unreleased at `0.1.0` and its only consumers are the bundled SPA and
+    this page — see the docstring on `list_tasks` in
+    `src/celery_manager/api/routes/tasks.py`.
+
+### Filtering, search and pagination
+
+All parameters are optional and combine with AND.
+
+| Param | Type | Default | Meaning |
+|---|---|---|---|
+| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`. An unknown value is not an error — it just matches nothing. |
+| `task_name` | `str` | — | **Exact** match on the registered task name. Not a prefix and not a substring: `task_name=send` does *not* match `myapp.send_mail`. Use `q` for partial names. |
+| `q` | `str` | — | Case-insensitive substring search across four columns — see below. |
+| `date_from` | datetime | — | `started_at >= date_from`. |
+| `date_to` | datetime | — | `started_at <= date_to`. |
+| `limit` | `int` | `50` | Page size, **clamped into `1..500`**. The ceiling is `celery_manager.control.tasks.MAX_PAGE_SIZE`. |
+| `offset` | `int` | `0` | Rows to skip, **floored at `0`**. |
+
+`limit`/`offset` are clamped rather than rejected: `?limit=10000000` is more
+often a stale bookmark than an attack, and a `400` would hand the caller a
+broken page instead of a capped one. The values in the response envelope are
+the clamped ones.
+
+**What `q` actually searches.** It is a substring match (SQL `ILIKE
+'%term%'`; on SQLite, a case-insensitive `LIKE`) OR-ed across four columns:
+`task_name`, `task_id`, `args`, and `kwargs`. Because `args`/`kwargs` are
+stored as *serialized JSON text*, this searches the JSON as a string:
+
+- `q=alice` finds a run whose kwargs are `{"user": "alice"}` — and also one
+  whose kwargs are `{"reviewer": "alice-bot"}`, and one whose *task name*
+  contains `alice`.
+- There is **no way to express `kwargs.user == "alice"`**. This is a
+  pragmatic text search, not a JSON query. That trade-off is accepted for
+  v1.
+- LIKE wildcards inside your term are escaped, so `q=100%` searches for a
+  literal `100%` rather than matching every row.
+
+**What the date filters mean.** Both bounds apply to `started_at`, and both
+are inclusive (`>=` / `<=`). Two consequences:
+
+- **A run that never started is excluded by either bound.** A queued run has
+  no `started_at`, and SQL comparisons against `NULL` are never true. This
+  is intended — a task that has not run did not run "within this range" —
+  but it does mean a date filter silently hides your queue.
+- **`date_to` is an instant, not a calendar day.** `date_to=2026-08-14`
+  parses as midnight, so it excludes everything that ran *during* the 14th.
+  For a whole day, send `2026-08-14T23:59:59.999999` (or the start of the
+  15th, if you prefer a half-open range). Truncating to a day server-side
+  would be wrong for callers who legitimately want an hour-long window.
+
+!!! warning "Send date filters in UTC"
+    Everything in celery-manager's storage is written as UTC. On the default
+    SQLite backend, SQLAlchemy binds a datetime by its wall-clock parts and
+    **drops the offset**, so `date_from=2026-08-10T13:00:00+02:00` is
+    compared as `13:00`, not as the `11:00Z` it denotes. Send UTC (with or
+    without a `Z`) and there is nothing to get wrong.
+
+### Datetimes in task responses
+
+Every datetime the two task endpoints emit — `eta`, `started_at`,
+`finished_at`, `progress_updated_at` — now carries an explicit `+00:00`
+offset:
+
+```json
+"started_at": "2026-08-10T12:00:00+00:00"
+```
+
+They previously serialized as `"2026-08-10T12:00:00"`, with no offset. The
+values were always UTC, but SQLite drops `tzinfo` on a
+`DateTime(timezone=True)` round-trip, so the naive value reached JSON
+unmarked — and `new Date(...)` on an unmarked string parses it as **local**
+time, shifting every timestamp by the viewer's UTC offset. The API now
+stamps UTC back on at the boundary (`_utc` in
+`src/celery_manager/api/routes/tasks.py`). `null` still means null: a run
+that never started has no start time, and inventing one would be worse than
+omitting it.
+
+### The same operations from Python
+
+The routes are thin wrappers over `celery_manager.control`, which takes an
+explicit SQLAlchemy session and is usable from a shell, a management command,
+or your own code:
+
+```python
+from celery_manager import control
+
+with Session() as session:
+    runs = control.list_task_runs(session, status="failed", q="alice", limit=100)
+    total = control.count_task_runs(session, status="failed", q="alice")
+    retries = control.list_retries_of(session, "some-task-id")
+
+    branding = control.get_settings(session)
+    control.update_settings(session, {"brand_accent": "#00ffcc"}, "admin")
+```
+
+`list_task_runs` and `count_task_runs` take exactly the same filter keywords
+and share one filter builder, so a total can never turn out to be a count of
+some other query than the page it labels. `MAX_PAGE_SIZE` is **not** applied
+here — the clamp lives at the HTTP boundary, and a Python caller is trusted
+to ask for more. `list_retries_of` returns the retry runs oldest-first (the
+API's `retried_by` list is these ids). `update_settings` validates, audits,
+and raises `ValueError` on bad input — which is what the route turns into a
+`422`.
 
 ## Schedules
 
@@ -88,6 +212,84 @@ implemented anywhere: the decorator acts on `skip`/`cancel` only (see
 while doing nothing at all — rejecting it at the boundary is the honest
 behavior until the feature actually exists.
 
+## Settings (branding)
+
+Deployment-wide dashboard branding, stored server-side in the `app_settings`
+table so one operator sets it and the whole team sees the same dashboard.
+Exactly three keys, and the set is closed.
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| `GET` | `/api/settings` | **none** | — | `200 {"brand_name": str, "brand_accent": str, "brand_logo_url": str}` — always all three keys, stored values overlaid on the defaults, so no client needs a fallback of its own. `updated_by`/`updated_at` are deliberately **not** returned. |
+| `PUT` | `/api/settings` | required | A JSON object with any subset of the three keys. Unknown keys are a `422` (pydantic `extra="forbid"`). | `200` — the full effective settings after the update. `422 {"detail": "<human-readable reason>"}` if any value fails validation. |
+
+`PUT` is a partial update: send only the key you are changing. A key that is
+absent from the body is left alone; a key sent as `null` is an explicit value
+and is rejected (it is not a string). Every *changed* key writes one audit
+row; keys submitted unchanged are skipped entirely, so the dashboard's
+settings form — which posts all three fields whether or not you edited them
+— does not bury real changes under no-ops. The whole payload is validated
+before anything is written, so a body with a good `brand_name` and a hostile
+`brand_logo_url` is rejected whole rather than half-applied.
+
+### Why `GET /api/settings` is unauthenticated
+
+Deliberately, and it is the reason the key set is closed. The **login
+screen** has to render this deployment's branding, and the login screen is by
+definition pre-auth; putting this behind `get_current_user` would mean the
+dashboard shows stock branding until the moment you sign in, which defeats
+the feature on the one screen an operator's users see most often.
+
+That is safe only because the payload is non-sensitive *by construction* — a
+product name, a hex colour, and an image URL, and nothing else, because
+`celery_manager.control.settings.DEFAULT_SETTINGS` is a closed allowlist.
+Adding a key to that dict is a **security decision**: anything in it is
+world-readable to anyone who can reach the dashboard. `updated_by` is
+omitted from the response for the same reason — it is a real username, and
+handing an anonymous visitor one turns password guessing from two unknowns
+into one.
+
+### Validation rules
+
+An operator who gets a `422` can read the exact reason off the `detail`
+string, but here is the whole ruleset.
+
+| Key | Accepted | Rejected (`422`) |
+|---|---|---|
+| `brand_name` | Any single-line string, trimmed, 1–64 characters. Empty or whitespace-only is **allowed** and means "reset to the default" — it is stored as the literal `celery-manager`. | Non-strings; anything longer than 64 characters after trimming; control characters or line breaks. |
+| `brand_accent` | `""` (use the built-in accent), or a hex colour — `#rgb` or `#rrggbb`, either case. | Everything else: named colours (`red`), `rgb(...)`, `var(--x)`, 8-digit `#rrggbbaa`. |
+| `brand_logo_url` | `""` (use the built-in mark); an `http://` or `https://` URL up to 2048 characters; a same-origin path starting with a single `/`; or a base64 `data:` URI of a raster image (`png`, `jpeg`, `jpg`, `gif`, `webp`, `avif`) up to 262,144 characters (`MAX_DATA_URI_LENGTH`; the error message calls them bytes). | Any other scheme, including `javascript:` in any casing; protocol-relative `//host/logo.png`; a bare relative path like `logo.png`; `data:image/svg+xml`; control characters; oversize values. |
+
+The restrictive-looking rules are the point of the feature, not oversights:
+
+- **`brand_accent` is an anchored hex-digit allowlist** because the value is
+  injected into a CSS custom property (`--accent: <value>`) in the browser.
+  A permissive check would accept `red; background: url(https://evil/x)`,
+  which is stored CSS injection — and with it, exfiltration through
+  background-image requests. An allowlist of hex digits has no escape hatch.
+- **`brand_logo_url` is an allowlist of schemes**, never a denylist, because
+  the value lands in an `<img src>`. A denylist loses to the next encoding
+  the URL parser accepts and the blocklist doesn't (`JaVaScRiPt:`,
+  `%6aavascript:`, `vbscript:`, whatever ships next). With an allowlist,
+  being wrong about a new scheme is a logo that fails to load rather than
+  stored XSS against every visitor — including, because `GET` here is
+  pre-auth, everyone who merely loads the login page.
+- **SVG data URIs are refused on purpose.** An SVG is a document that can
+  carry `<script>` and event handlers. Browsers don't execute it through
+  `<img src>`, but the same stored string is one copy-paste away from a CSS
+  `url()`, an `<object>`, or a direct navigation, where they do.
+
+Values are stored raw, not HTML-escaped: escaping belongs at the point of
+rendering, and escaping on write would double-escape the ampersand in a
+legitimate name like `Ops & Data`.
+
+!!! note "Accepted v1 limitation: any authenticated user can rebrand"
+    There is no role system in this app — `get_current_user` yields a
+    username and nothing else — so "admin only" is not expressible today.
+    The blast radius is cosmetic and every change is attributed in the
+    [audit log](#audit-log), which is how you find out who turned the nav
+    pink.
+
 ## Audit log
 
 | Method | Path | Auth | Request | Response |
@@ -105,6 +307,7 @@ of another action. Every control action is covered:
 | `cancel` | `task` | the task id being revoked | `POST /api/tasks/{task_id}/cancel` |
 | `retry` | `task` | the *original* task id | `POST /api/tasks/{task_id}/retry` and `/api/tasks/retry-bulk` (one row per task) |
 | `pause_occurrence` | `schedule` | the schedule name | `POST /api/schedules/{name}/occurrences/pause` |
+| `update` | `setting` | the setting key (`brand_name`, `brand_accent`, `brand_logo_url`) | `PUT /api/settings` — one row per *changed* key, `details={"old", "new"}` (each truncated to 200 characters, so a data-URI logo doesn't turn the audit log into an image store) |
 
 A retry records only `retry`, never an additional `start`, even though it
 dispatches through the same `start_task` call underneath.
