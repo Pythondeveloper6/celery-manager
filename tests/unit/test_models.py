@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from celery_manager.db.models import Base, TaskRun, PeriodicSchedule, ScheduleOverride, User, AuditLog
+from celery_manager.db.models import Base, TaskRun, PeriodicSchedule, ScheduleOverride
 
 
 def test_task_run_round_trip():

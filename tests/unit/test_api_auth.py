@@ -4,7 +4,6 @@ from celery import Celery
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
-from celery_manager.db.session import get_session_factory
 
 
 # `base_url` is https, not the TestClient default of http://testserver: the

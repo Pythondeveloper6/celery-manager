@@ -6,6 +6,9 @@ import logging
 import traceback as tb_module
 from datetime import datetime, timedelta, timezone
 
+from celery import Task
+from celery.exceptions import Retry
+
 from celery_manager import progress as progress_module
 from celery_manager.logcapture import capture_logs
 
@@ -71,7 +74,40 @@ def _find_matching_override(session, schedule_name: str):
     return None
 
 
-def _upsert_task_run(session, task_id: str, create_defaults: dict | None = None, **fields) -> None:
+def _safe_json(value) -> str:
+    """Serialize a run's args/kwargs for `task_runs`, without ever raising.
+
+    `json.dumps` is stricter than Celery is. Celery's own JSON serializer is
+    kombu's extended one, which happily round-trips `datetime`, `date`,
+    `UUID` and `Decimal` over the broker — so `send_task(kwargs={"since":
+    datetime(...)})` is ordinary, supported usage that arrives in the worker
+    as a real `datetime`. Feeding that to stdlib `json.dumps` raises
+    `TypeError`, and because this call sits *before* the task body, the
+    exception used to propagate straight out of the wrapper: the task was
+    marked FAILURE and its body never ran at all. Same for a task invoked
+    with any non-JSON object under `task_always_eager` or a pickle
+    serializer. That is precisely the failure mode spec §4.1 forbids —
+    celery-manager deciding a task's outcome.
+
+    `default=repr` keeps the JSON *shape* (a list stays a list, a dict stays
+    a dict) and replaces only the leaves stdlib json cannot express, so the
+    stored value is still searchable by `q=` and still decodes to something
+    of the right type. The outer guard catches what `default` cannot reach —
+    non-string dict keys, circular references — and degrades to a repr of the
+    whole structure rather than losing the run.
+    """
+    try:
+        return json.dumps(value, default=repr)
+    except Exception:
+        try:
+            return json.dumps(repr(value))
+        except Exception:  # a __repr__ that raises is still not our problem
+            return '"<unserializable>"'
+
+
+def _upsert_task_run(
+    session, task_id: str, create_defaults: dict | None = None, clear: tuple[str, ...] = (), **fields
+) -> None:
     """Merge this run's decorator-owned facts into the `task_runs` row for
     `task_id`, creating the row only if nobody else has.
 
@@ -100,6 +136,15 @@ def _upsert_task_run(session, task_id: str, create_defaults: dict | None = None,
     `task_name`/`status`, but must not restate them over whatever the
     decorator or the listener has since established. Applied only on the
     insert path, and only for non-None values.
+
+    `clear` is the deliberate escape hatch from the skip-None rule, for the
+    one caller that genuinely needs to *erase* a field: the `started` write
+    at the top of a retry attempt. Celery reuses the task id across attempts,
+    so without it the previous attempt's `exception`/`traceback`/progress
+    stay on the row forever — a task that failed once and then succeeded
+    displayed as `succeeded` with a full traceback attached. Named explicitly
+    rather than inferred from a None in `fields`, so that "I don't know this
+    field" and "I know this field is now empty" stay different statements.
     """
     from celery_manager.db.models import TaskRun
 
@@ -111,13 +156,15 @@ def _upsert_task_run(session, task_id: str, create_defaults: dict | None = None,
             if value is None:
                 continue
             setattr(run, key, value)
+    for key in clear:
+        setattr(run, key, None)
     for key, value in fields.items():
         if value is None:
             continue
         setattr(run, key, value)
 
 
-def _persist_run(task_id: str, create_defaults: dict | None = None, **fields) -> None:
+def _persist_run(task_id: str, create_defaults: dict | None = None, clear: tuple[str, ...] = (), **fields) -> None:
     """Persist one run outcome, swallowing any storage failure.
 
     Spec §4.1: celery-manager is an observability/control layer wrapped
@@ -129,7 +176,7 @@ def _persist_run(task_id: str, create_defaults: dict | None = None, **fields) ->
     """
     try:
         with _session_factory() as session:
-            _upsert_task_run(session, task_id, create_defaults=create_defaults, **fields)
+            _upsert_task_run(session, task_id, create_defaults=create_defaults, clear=clear, **fields)
             session.commit()
     except Exception:  # deliberate: storage must never affect the task's outcome
         logger.exception(
@@ -137,6 +184,67 @@ def _persist_run(task_id: str, create_defaults: dict | None = None, **fields) ->
             "the task's own outcome is unaffected.",
             task_id,
         )
+
+
+def _describe_exception(exc: BaseException) -> tuple[str, str]:
+    """`(message, traceback)` for a task that raised, without ever raising.
+
+    `str(exc)` looks harmless and is not: an exception class with a custom
+    `__str__` that itself raises — a real pattern in database drivers and in
+    exception types whose `__init__` skipped `super().__init__` — turned the
+    decorator's failure branch into the failure. The `RuntimeError` from
+    `__str__` propagated out of the `except` block and *replaced* the task's
+    real exception, which is the precise thing `_persist_run`'s docstring
+    promises never happens. (`traceback.format_exc` already guards its own
+    stringification, but it is cheap to be sure here rather than to depend on
+    that.)
+    """
+    try:
+        message = str(exc)
+    except Exception:
+        message = f"<unprintable {type(exc).__name__}>"
+    try:
+        formatted = tb_module.format_exc()
+    except Exception:
+        formatted = f"<unformattable traceback for {type(exc).__name__}>"
+    return message, formatted
+
+
+def _identify_run(args: tuple, func) -> tuple[object | None, str | None, str]:
+    """Work out whose run this is: `(task_self, task_id, task_name)`.
+
+    `@track` is documented to sit under `@app.task(bind=True)`, where the
+    first positional argument is the Task instance. It used to *assume* that
+    and read `args[0].request.id` — so applying it to a task without
+    `bind=True` raised `AttributeError: 'str' object has no attribute
+    'request'` straight out of the wrapper, before the body ran, failing a
+    task over a wiring mistake. Exactly the outcome spec §4.1 forbids, and
+    the failure was type-dependent (a first argument that happened to have a
+    `.request` attribute would have been silently mistaken for the task
+    itself), which is worse than a consistent one.
+
+    So identify the bound Task by type rather than by position, and fall back
+    to `celery.current_task` for an unbound task — same guarded lookup, and
+    same reasoning, as `progress._resolve_run`. That makes `@track` on an
+    unbound task work properly (real name, real uuid, args recorded whole)
+    rather than merely not crash. `task_self` is returned as well as used
+    here because the caller needs it to know whether `args[0]` is the task
+    instance or a real argument.
+    """
+    task_self = args[0] if args and isinstance(args[0], Task) else None
+    if task_self is not None:
+        return task_self, getattr(task_self.request, "id", None), getattr(task_self, "name", func.__name__)
+
+    task_id = None
+    task_name = func.__name__
+    try:
+        from celery import current_task
+
+        task_id = getattr(getattr(current_task, "request", None), "id", None)
+        task_name = getattr(current_task, "name", None) or func.__name__
+    except Exception:  # deliberate: current_task is a proxy; never trust it
+        pass
+    return None, task_id, task_name
 
 
 def track(schedule_name: str | None = None):
@@ -149,8 +257,10 @@ def track(schedule_name: str | None = None):
 
     Checks for a matching schedule_overrides entry before running; if found
     and action is skip/cancel, records the run as 'skipped' and does not
-    call the wrapped function. Otherwise runs normally, capturing logs and
-    persisting a TaskRun row with the outcome.
+    call the wrapped function. Otherwise it writes a `started` row, runs the
+    task with log capture on, and rewrites that row with the outcome —
+    `succeeded`, `failed`, or `retried` if the body raised Celery's `Retry`
+    to schedule another attempt.
 
     Requires `celery_manager.setup(config)` to have been called in this
     process (the worker process, for tasks that actually execute there).
@@ -161,9 +271,7 @@ def track(schedule_name: str | None = None):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            task_self = args[0] if args else None
-            task_id = getattr(task_self.request, "id", None) if task_self else None
-            task_name = getattr(task_self, "name", func.__name__) if task_self else func.__name__
+            task_self, task_id, task_name = _identify_run(args, func)
             effective_schedule_name = schedule_name or task_name
 
             if _session_factory is None:
@@ -171,8 +279,8 @@ def track(schedule_name: str | None = None):
                 _warn_unconfigured_once(task_name)
                 return func(*args, **kwargs)
 
-            run_args = json.dumps(args[1:] if task_self else args)
-            run_kwargs = json.dumps(kwargs)
+            run_args = _safe_json(args[1:] if task_self else args)
+            run_kwargs = _safe_json(kwargs)
 
             # Skip-check. Guarded for the same reason as _persist_run: if
             # storage is unreachable we fail *open* (run the task normally),
@@ -241,13 +349,17 @@ def track(schedule_name: str | None = None):
             # applying the real terminal status to a run whose decorator write
             # failed, which is strictly worse.
             #
-            # One retry wrinkle, accepted rather than fixed: Celery reuses the
-            # task id across retry attempts, so attempt N+1 rewrites `started`
-            # over the listener's `retried` (correct — the row should show the
-            # attempt now in flight) but leaves the previous attempt's
-            # finished_at/runtime_seconds/progress_* on the row, because
-            # _upsert_task_run skips None values and so cannot clear a field.
-            # The row self-corrects when the attempt finishes.
+            # Retries: Celery reuses the task id across attempts, so attempt
+            # N+1 rewrites `started` over the previous attempt's status
+            # (correct — the row should show the attempt now in flight). It
+            # also has to *erase* what the previous attempt left behind, which
+            # is what `clear` below is for. Without it the row kept the last
+            # attempt's exception/traceback and progress counters: a task that
+            # failed once and then succeeded rendered as `succeeded` with a
+            # stale traceback and a stale progress bar, which is a worse lie
+            # than showing nothing. finished_at/runtime_seconds are cleared
+            # for the same reason — the run is in flight again and has no
+            # finish time until it has one.
             #
             # Cost: one extra INSERT/UPDATE+commit per tracked run. Accepted:
             # it is one write against a run that is about to do real work, and
@@ -261,13 +373,48 @@ def track(schedule_name: str | None = None):
                 kwargs=run_kwargs,
                 schedule_name=effective_schedule_name,
                 started_at=started_at,
+                clear=(
+                    "exception", "traceback", "finished_at", "runtime_seconds",
+                    "progress_current", "progress_total", "progress_message",
+                    "progress_updated_at",
+                ),
             )
 
             with progress_module._run_context(effective_task_id), capture_logs() as buffer:
                 try:
                     result = func(*args, **kwargs)
+                except Retry as exc:
+                    # `self.retry()` raises `celery.exceptions.Retry`, which
+                    # is an ordinary Exception subclass and so used to land in
+                    # the failure branch below — recording a run that Celery
+                    # considers RETRY as `failed`, with "Retry in 30s: ..." in
+                    # the exception column and a finish time for a run that
+                    # has not finished. Celery's own vocabulary has a word for
+                    # this and so does ours (`_STATUS_BY_EVENT` maps
+                    # task-retried -> "retried"), so use it, and leave
+                    # finished_at/runtime unset: another attempt is coming and
+                    # will rewrite `started` over this.
+                    #
+                    # Only `Retry` is special-cased. `Ignore`/`Reject` share
+                    # its base class but mean "this message is being dropped",
+                    # which has no status in our vocabulary — they keep
+                    # falling through to `failed`, which at least surfaces
+                    # them, rather than being silently reclassified.
+                    _persist_run(
+                        effective_task_id,
+                        task_name=task_name,
+                        status="retried",
+                        args=run_args,
+                        kwargs=run_kwargs,
+                        schedule_name=effective_schedule_name,
+                        started_at=started_at,
+                        exception=_describe_exception(exc)[0],
+                        log_output=buffer.getvalue(),
+                    )
+                    raise
                 except Exception as exc:
                     finished_at = datetime.now(timezone.utc)
+                    message, formatted = _describe_exception(exc)
                     _persist_run(
                         effective_task_id,
                         task_name=task_name,
@@ -278,8 +425,8 @@ def track(schedule_name: str | None = None):
                         started_at=started_at,
                         finished_at=finished_at,
                         runtime_seconds=(finished_at - started_at).total_seconds(),
-                        exception=str(exc),
-                        traceback=tb_module.format_exc(),
+                        exception=message,
+                        traceback=formatted,
                         log_output=buffer.getvalue(),
                     )
                     raise

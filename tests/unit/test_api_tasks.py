@@ -380,3 +380,73 @@ def test_null_datetimes_stay_null():
     assert body["finished_at"] is None
     assert body["eta"] is None
     assert body["progress_updated_at"] is None
+
+
+# --- Status codes and inbound timestamps at the HTTP boundary ---
+
+
+def test_retry_of_an_unknown_task_id_is_404_not_500():
+    """`GET /api/tasks/{id}` already answers 404 for an id it has never seen;
+    the retry route used to let the same condition escape as an unhandled
+    ValueError, i.e. a 500 — indistinguishable from a real server fault to
+    anyone reading logs or alerting on 5xx."""
+    client, _ = _client_and_session()
+    response = client.post("/api/tasks/does-not-exist/retry")
+    assert response.status_code == 404
+
+
+def test_bulk_retry_with_an_unknown_task_id_is_404_not_500():
+    """`bulk_retry` stops at the first unknown id rather than reporting
+    per-item results (a documented limitation), so a batch containing one is
+    reported the same way a single unknown id is."""
+    client, _ = _client_and_session()
+    with patch("celery_manager.control.tasks.Celery.send_task", return_value=MagicMock(id="t1-retry"), create=True):
+        response = client.post("/api/tasks/retry-bulk", json={"task_ids": ["t1", "does-not-exist"]})
+    assert response.status_code == 404
+
+
+def test_retry_of_a_run_only_the_events_listener_recorded():
+    """An undecorated task's row is written by the listener, whose `args` are
+    a Python repr rather than JSON. Decoding them with `json.loads` alone
+    made the dashboard's retry button 500 for every such run."""
+    from celery_manager.events.listener import upsert_task_run
+
+    config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    app, session_factory = create_app(config)
+    with session_factory() as session:
+        create_user(session, "alice", "pw")
+        upsert_task_run(session, {
+            "type": "task-received", "uuid": "listener-only", "name": "demo.plain",
+            "args": "(5,)", "kwargs": "{'b': 2}",
+        })
+        session.commit()
+    client = TestClient(app, base_url="https://testserver")
+    client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
+
+    with patch("celery_manager.control.tasks.Celery.send_task", return_value=MagicMock(id="listener-only-retry"), create=True) as send:
+        response = client.post("/api/tasks/listener-only/retry")
+
+    assert response.status_code == 200
+    send.assert_called_once_with("demo.plain", args=[5], kwargs={"b": 2})
+
+
+def test_date_bounds_with_a_non_utc_offset_name_the_same_instant():
+    """SQLAlchemy's SQLite DATETIME binds a datetime by formatting its fields
+    and dropping tzinfo, so `?date_from=...+02:00` was compared as local wall
+    time and shifted the window by the caller's offset. The three bounds below
+    are the same instant and must return the same rows."""
+    client, _ = _client_with_history()
+
+    as_utc = client.get("/api/tasks", params={"date_from": "2026-08-15T12:00:00Z"}).json()
+    as_plus_two = client.get("/api/tasks", params={"date_from": "2026-08-15T14:00:00+02:00"}).json()
+    as_minus_five = client.get("/api/tasks", params={"date_from": "2026-08-15T07:00:00-05:00"}).json()
+
+    assert as_utc["total"] == as_plus_two["total"] == as_minus_five["total"]
+    assert (
+        [t["task_id"] for t in as_utc["items"]]
+        == [t["task_id"] for t in as_plus_two["items"]]
+        == [t["task_id"] for t in as_minus_five["items"]]
+    )
+    # And the window is the real one: new-2 started at 06:00Z, before the
+    # bound, so only the two later runs qualify.
+    assert sorted(t["task_id"] for t in as_utc["items"]) == ["new-3", "new-3-retry"]

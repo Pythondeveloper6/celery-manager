@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from celery_manager.api.deps import get_current_user
+from celery_manager.api.serialization import utc, utc_bound
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
+    TaskRunNotFound,
     list_task_runs,
     count_task_runs,
     get_task_run,
@@ -19,32 +21,6 @@ from celery_manager.control.tasks import (
 )
 
 router = APIRouter(prefix="/api/tasks")
-
-
-def _utc(value: datetime | None) -> datetime | None:
-    """Stamp UTC onto a datetime read back from the database.
-
-    SQLite drops tzinfo on a `DateTime(timezone=True)` round-trip, so
-    `run.started_at` comes back naive even though it was written as an aware
-    UTC value (every writer in this codebase uses `datetime.now(timezone.utc)`
-    — see `decorator._find_matching_override` for the same normalization on
-    the read side). FastAPI then serializes the naive value as
-    "2026-08-10T00:00:00", with no offset marker — and `new Date(...)` on that
-    string in a browser parses it as *local* time. For a viewer in UTC+2 that
-    shifts every timestamp by two hours: today it only skews the "Started"
-    column, but a live elapsed-time counter fed from it would read two hours
-    wrong, or negative.
-
-    So normalize at the API boundary, where the value becomes JSON, rather
-    than in each caller. None passes through untouched — a run that never
-    started has no start time, and inventing one would be worse than omitting
-    it.
-    """
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 @router.get("")
@@ -80,7 +56,7 @@ def list_tasks(
     with session_factory() as session:
         filters = {
             "status": status, "task_name": task_name, "q": q,
-            "date_from": date_from, "date_to": date_to,
+            "date_from": utc_bound(date_from), "date_to": utc_bound(date_to),
         }
         # The same filter dict feeds both calls, so `total` can never be a
         # count of some other query than the one `items` came from.
@@ -92,8 +68,8 @@ def list_tasks(
                     "task_id": r.task_id,
                     "task_name": r.task_name,
                     "status": r.status,
-                    "started_at": _utc(r.started_at),
-                    "finished_at": _utc(r.finished_at),
+                    "started_at": utc(r.started_at),
+                    "finished_at": utc(r.finished_at),
                     "runtime_seconds": r.runtime_seconds,
                     # Progress is opt-in (only tasks that report it have any),
                     # so these are usually null. Shipped raw: the frontend
@@ -102,7 +78,7 @@ def list_tasks(
                     "progress_current": r.progress_current,
                     "progress_total": r.progress_total,
                     "progress_message": r.progress_message,
-                    "progress_updated_at": _utc(r.progress_updated_at),
+                    "progress_updated_at": utc(r.progress_updated_at),
                 }
                 for r in runs
             ],
@@ -137,14 +113,14 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
             # (extending TaskSummary) claim fields the response never sent.
             "queue": run.queue,
             "worker": run.worker,
-            "eta": _utc(run.eta),
-            "started_at": _utc(run.started_at),
-            "finished_at": _utc(run.finished_at),
+            "eta": utc(run.eta),
+            "started_at": utc(run.started_at),
+            "finished_at": utc(run.finished_at),
             "runtime_seconds": run.runtime_seconds,
             "progress_current": run.progress_current,
             "progress_total": run.progress_total,
             "progress_message": run.progress_message,
-            "progress_updated_at": _utc(run.progress_updated_at),
+            "progress_updated_at": utc(run.progress_updated_at),
             # Both directions of the retry chain: the run this one was
             # retried from, and the runs retried from it. `retried_by` is a
             # list because an operator can retry the same failed run more than
@@ -185,10 +161,24 @@ def cancel(task_id: str, request: Request, terminate: bool = False, username: st
 
 @router.post("/{task_id}/retry")
 def retry(task_id: str, request: Request, username: str = Depends(get_current_user)):
+    """Re-dispatch a stored run. 404 if there is no such run.
+
+    A retry of an unknown task id used to escape as an unhandled `ValueError`
+    and reach the client as a 500 — which reads as "the dashboard is broken"
+    rather than "that task id doesn't exist", and is indistinguishable from a
+    genuine server fault to anyone reading logs or alerting on 5xx. It is the
+    same condition `GET /api/tasks/{task_id}` already answers with a 404, so
+    it gets the same status. Only `TaskRunNotFound` is translated: a
+    `ValueError` from undecodable stored args is a real server-side problem
+    and must keep surfacing as one.
+    """
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
-        new_id = retry_task(celery_app, session, task_id, username=username)
+        try:
+            new_id = retry_task(celery_app, session, task_id, username=username)
+        except TaskRunNotFound:
+            raise HTTPException(status_code=404, detail="not found")
     return {"new_task_id": new_id}
 
 
@@ -198,8 +188,17 @@ class BulkRetryRequest(BaseModel):
 
 @router.post("/retry-bulk")
 def retry_bulk(payload: BulkRetryRequest, request: Request, username: str = Depends(get_current_user)):
+    """Re-dispatch several stored runs. 404 if any of them is unknown.
+
+    `bulk_retry` stops at the first unknown id (documented limitation — it is
+    not partial-failure aware), so an unknown id in the batch is reported the
+    same way a single unknown id is, rather than as a 500.
+    """
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
-        new_ids = bulk_retry(celery_app, session, payload.task_ids, username=username)
+        try:
+            new_ids = bulk_retry(celery_app, session, payload.task_ids, username=username)
+        except TaskRunNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
     return {"new_task_ids": new_ids}
