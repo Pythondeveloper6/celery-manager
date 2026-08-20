@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listAuditLog, type AuditEntry } from "../api/audit";
 import { BrandMark, useBranding } from "../branding";
 
@@ -19,11 +19,20 @@ export function AuditLog() {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Same shape as ScheduleList and TaskList: the server's own words, and a
+  // way to try again. This used to swallow the error and substitute a fixed
+  // sentence, so "your session expired" and "the database is down" arrived
+  // as the same unactionable message with nothing to click.
+  const refresh = useCallback(() => {
+    setError(null);
     listAuditLog()
       .then(setEntries)
-      .catch(() => setError("Couldn't load the audit log."));
+      .catch((err) => setError(err instanceof Error ? err.message : "Couldn't load the audit log."));
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   return (
     <div className="cm-page">
@@ -39,9 +48,14 @@ export function AuditLog() {
 
       <div className="cm-panel">
         {error ? (
-          <p className="cm-error" role="alert">
-            {error}
-          </p>
+          <div className="cm-panel-stack">
+            <p className="cm-error" role="alert">
+              {error}
+            </p>
+            <button type="button" className="cm-btn cm-btn-outline" onClick={refresh}>
+              Try again
+            </button>
+          </div>
         ) : entries === null ? (
           <p className="cm-loading">
             <span className="cm-live-dot" aria-hidden="true" />

@@ -104,6 +104,19 @@ export interface TaskEvent {
 
 export function subscribeToUpdates(onEvent: (event: TaskEvent) => void): () => void {
   const source = new EventSource(`${BASE}/stream`, { withCredentials: true });
-  source.onmessage = (message) => onEvent(JSON.parse(message.data));
+  source.onmessage = (message) => {
+    // A frame that isn't JSON — a proxy injecting a keep-alive comment as
+    // data, a truncated write — used to throw straight out of the event
+    // handler as an uncaught error. One bad frame is not a reason to make
+    // noise in the console of a dashboard left open all day; the next good
+    // frame, or the poll running alongside this, refreshes the list anyway.
+    let event: TaskEvent;
+    try {
+      event = JSON.parse(message.data);
+    } catch {
+      return;
+    }
+    onEvent(event);
+  };
   return () => source.close();
 }

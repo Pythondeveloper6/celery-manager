@@ -141,6 +141,26 @@
   box-shadow: 0 0 6px 1px var(--cm-color-accent-soft);
 }
 
+/* Gone quiet. The task list already drains the colour out of its run lane
+   when a run stops reporting (.cm-run-lane[data-stalled] in tasks.css, and
+   its note on why neutral rather than amber); without the same treatment
+   here the *same run* read as healthily in-flight on its own page while
+   reading as stalled one click away in the list. The amber alert below the
+   bar is what states the fact; this just stops the bar implying liveness. */
+.cm-run-track[data-stalled="true"] {
+  border-color: var(--cm-color-border-strong);
+}
+
+.cm-run-track[data-stalled="true"] .cm-run-fill {
+  background-image: none;
+  background-color: var(--cm-color-text-faint);
+}
+
+.cm-run-track[data-stalled="true"] .cm-run-fill::after {
+  background-color: var(--cm-color-text-muted);
+  box-shadow: none;
+}
+
 /* tokens.css already zeroes transition durations under reduce; restated
    here so the bar's width jump stays explicit rather than inherited. */
 @media (prefers-reduced-motion: reduce) {
@@ -322,7 +342,12 @@
 
 .cm-lineage-label {
   flex: none;
-  min-width: 7rem;
+  /* 7rem is a column width for the labels to line up in — but rem scales
+     with the reader's font size, so at a 200% default font it became a 224px
+     floor inside a ~230px card and pushed the page sideways (measured: 337
+     against a 320px client width). `min()` keeps the alignment wherever
+     there is room for it and gives it up where there isn't. */
+  min-width: min(7rem, 100%);
   font-family: var(--cm-font-mono);
   font-size: var(--cm-text-xs);
   font-weight: 600;
@@ -338,16 +363,22 @@
   word-break: break-all;
 }
 
+/* The text pair, not the fill pair — same reasoning as .cm-back-link in
+   tokens.css and .cm-tasks-link-btn in tasks.css. These are the only links
+   out of a failed run into its retries, and under the live deployment's
+   brand (#f2c744) the fill token rendered them at 1.61:1 on the panel
+   surface, hovering to 1.51:1. The derived text token measures 5.45:1 there
+   and improves on hover. No change for the built-in accent. */
 .cm-lineage-link {
   font-family: var(--cm-font-mono);
   font-size: var(--cm-text-sm);
   font-weight: 500;
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
   word-break: break-all;
   transition: color var(--cm-duration-fast) var(--cm-ease);
 }
 
 .cm-lineage-link:hover {
-  color: var(--cm-color-accent-hover);
+  color: var(--cm-color-accent-text-hover);
   text-decoration: underline;
 }

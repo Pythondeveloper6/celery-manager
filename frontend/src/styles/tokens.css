@@ -177,6 +177,17 @@
   --cm-page-max: 1600px;
   --cm-page-pad-x: var(--cm-space-4);
 
+  /* The height of the sticky .cm-app-nav strip: space-3 padding twice plus
+     one line of nav text, measured against the rendered bar at 57.2px and
+     rounded up. Two things need it and neither can read it from the DOM —
+     .cm-page, so a full-height page plus a nav isn't taller than the window,
+     and the task list's sticky filter rail, so it parks below the bar rather
+     than under it. It lives here rather than in either of them so the two
+     can't drift to different numbers. Rounded *up* on purpose: a page a
+     couple of pixels short of the fold is invisible, a page a couple of
+     pixels over it grows a scrollbar. */
+  --cm-app-nav-height: 3.75rem;
+
   /* A readable line/field length, for the parts of a wide page that are a
      form or a sentence rather than a table. The page stays full width so
      every left edge still lines up; only the content column stops. */
@@ -430,10 +441,16 @@ button {
   border: none;
 }
 
+/* `summary` is in both lists deliberately. It is natively focusable but is
+   none of the element types listed here, so the disclosure that opens the
+   task list's date range was the one control in the filter rail with no
+   visible focus at all — caught by tabbing to it and reading back its
+   computed box-shadow ("none"), not by reading the selector. */
 a,
 button,
 input,
 select,
+summary,
 textarea,
 [tabindex] {
   outline: none;
@@ -443,6 +460,7 @@ a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+summary:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
   box-shadow: var(--cm-focus-ring);
@@ -744,10 +762,17 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
+/* Wraps, unlike the version that shipped. .cm-app-nav-inner and
+   .cm-app-nav-end both already wrapped, but this innermost row did not — so
+   the four links stayed on one 561px line no matter how narrow the window
+   got and dragged the whole document sideways. Measured with a 200%-scaled
+   default font (WCAG 1.4.4's requirement): every route reported
+   scrollWidth 561 against clientWidth 320. */
 .cm-app-nav-links {
   display: flex;
   align-items: center;
-  gap: var(--cm-space-5);
+  flex-wrap: wrap;
+  gap: var(--cm-space-2) var(--cm-space-5);
 }
 
 .cm-app-nav-link {
@@ -793,7 +818,13 @@ textarea:focus-visible,
    ========================================================================== */
 
 .cm-page {
-  min-height: 100dvh;
+  /* Minus the nav, not a flat 100dvh. Every .cm-page renders *below* the
+     sticky nav strip, so a floor of a full viewport made the document
+     nav-height taller than the window on every screen — measured on the
+     schedules list, which has one row of content and still reported
+     scrollHeight 957 against clientHeight 900. A permanent scrollbar on a
+     page with nothing to scroll reads as content you have failed to find. */
+  min-height: calc(100dvh - var(--cm-app-nav-height));
   max-width: var(--cm-page-max);
   margin: 0 auto;
   /* 1rem of side chrome, down from 1.5rem, and 1rem above the header, down
@@ -832,6 +863,23 @@ textarea:focus-visible,
   color: var(--cm-color-text-muted);
 }
 
+/* `overflow-wrap: anywhere`, and the choice matters. Two of the four screens
+   put an identifier in this heading: TaskDetail shows the task name and
+   ScheduleOccurrences shows the schedule name. "billing.reconcile_invoices"
+   is a *single unbreakable token* — neither "." nor "_" is a break
+   opportunity under normal wrapping — so at 1.875rem it is 348px of one word
+   and it simply ran past a 360px viewport (measured: scrollWidth 364 vs
+   clientWidth 360 at 360px, and 729 vs 700 at a 200%-scaled default font).
+
+   Not `word-break: break-all`, which would chop every heading mid-word even
+   when there is room. Not `overflow-wrap: break-word`, which permits the
+   break at layout time but leaves the element's *min-content contribution*
+   as the whole unbroken word — and min-content is exactly what sizes this
+   heading, since .cm-detail-header makes the h1 a flex item directly.
+   `anywhere` is the one value that does both: it shrinks the min-content
+   floor so the box can be narrow, while still only breaking a word that
+   genuinely cannot fit a line of its own. .cm-login-header h1 already uses
+   it for the same reason (a 64-character configured brand name). */
 .cm-page-title {
   font-family: var(--cm-font-display);
   font-size: var(--cm-text-2xl);
@@ -839,6 +887,7 @@ textarea:focus-visible,
   letter-spacing: -0.01em;
   line-height: var(--cm-leading-tight);
   color: var(--cm-color-text);
+  overflow-wrap: anywhere;
 }
 
 /* A quiet "this view is receiving live events" signal — reuses the same
@@ -918,6 +967,18 @@ textarea:focus-visible,
   color: var(--cm-color-text-faint);
   border: 1px dashed var(--cm-color-border);
   border-radius: var(--cm-radius-md);
+}
+
+/* An error state that leaves the user somewhere to go: the message, then the
+   button that retries it. Lives up here with the other panel states rather
+   than in the settings section it was written for, because every list screen
+   now uses it — tasks, schedules, occurrences, the audit log and settings —
+   and a failure should look the same wherever it happens. */
+.cm-panel-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cm-space-4);
 }
 
 /* ==========================================================================
@@ -1233,10 +1294,6 @@ textarea:focus-visible,
   word-break: break-word;
 }
 
-.cm-log-panel .cm-empty-state {
-  border-style: dashed;
-}
-
 /* ==========================================================================
    Action buttons — shared solid/outline treatments for retry, bulk retry,
    and schedule-occurrence skip/cancel (Task 14). Same type scale and
@@ -1317,8 +1374,10 @@ textarea:focus-visible,
   width: 2.25rem;
 }
 
-.cm-task-table input[type="checkbox"],
-.cm-occurrence-row input[type="checkbox"] {
+/* Task table only. The `.cm-occurrence-row input[type="checkbox"]` half of
+   this selector was removed: ScheduleOccurrences acts on a row with two
+   buttons and has never rendered a checkbox, so that half matched nothing. */
+.cm-task-table input[type="checkbox"] {
   width: 16px;
   height: 16px;
   accent-color: var(--cm-color-accent);
@@ -1364,7 +1423,17 @@ textarea:focus-visible,
    Schedule occurrences (future-schedule pause/cancel view, Task 14)
    ========================================================================== */
 
+/* Capped at --cm-measure, unlike the tables. An occurrence row is a
+   timestamp on the left and its two actions on the right, and it was written
+   when .cm-page was a 960px column. At 1600px the same space-between row put
+   "Thu, Aug 20, 2:19 PM" and the "Skip this run" that acts on it ~950px
+   apart, measured on the real page — a card with nothing in the middle of it
+   and a metre of eye travel between a thing and its button.
+   --cm-measure exists for exactly this ("the parts of a wide page that are a
+   form or a sentence rather than a table"); the page stays full width so the
+   header and the left edge still line up. */
 .cm-occurrence-list {
+  max-width: var(--cm-measure);
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-2);
@@ -1405,9 +1474,11 @@ textarea:focus-visible,
 .cm-occurrence-main {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--cm-space-3);
   flex: 1 1 auto;
-  min-width: 200px;
+  /* Same yielding floor as .cm-schedule-list-link below. */
+  min-width: min(200px, 100%);
 }
 
 .cm-occurrence-time {
@@ -1450,11 +1521,18 @@ textarea:focus-visible,
   border: 1px solid var(--cm-color-border);
 }
 
+/* `flex: 0 1 auto` and a wrap, not `flex: none`: with `none` the pair of
+   buttons was an unshrinkable 494px block, so at a scaled font size it left
+   the card and the page scrolled sideways (measured: 561 vs 500 at a 32px
+   default font). It still prefers to sit on one line — the row above wraps
+   this whole group to its own line first, since a flex line breaks on
+   max-content — it just can no longer force the page wider than the window. */
 .cm-occurrence-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--cm-space-2);
-  flex: none;
+  flex: 0 1 auto;
 }
 
 .cm-occurrence-row-error {
@@ -1495,6 +1573,26 @@ textarea:focus-visible,
 .cm-audit-log th:last-child,
 .cm-audit-log td:last-child {
   padding-right: 0;
+}
+
+/* Shrink-to-content on every column except the last. This table was designed
+   for a 960px column and .cm-page is now 1600px; the auto table algorithm
+   hands the spare width out in proportion, which at 1665px put the "When"
+   column at 599px around 151px of timestamp — 448px of blank between a run's
+   time and the person who acted on it, measured on the real page. Reading
+   across a row stops being possible at that distance.
+
+   `width: 1%` is the same idiom .cm-tasks-col-* uses in styles/tasks.css:
+   an under-specified width the auto algorithm rounds up to the content's own
+   width, leaving all the slack for the one column that has variable-length
+   content — here "Target", which carries task ids and setting keys and is
+   deliberately last. Written as :not(:last-child) rather than pinned to three
+   nth-childs so inserting a column in the middle can't silently make the
+   wrong one flexible. */
+.cm-audit-log th:not(:last-child),
+.cm-audit-log td:not(:last-child) {
+  width: 1%;
+  white-space: nowrap;
 }
 
 .cm-audit-log tbody tr:last-child td {
@@ -1552,10 +1650,15 @@ textarea:focus-visible,
   padding: 0;
 }
 
+/* Left-packed, not space-between. The "disabled" badge describes the
+   schedule beside it, and space-between put the two at opposite ends of a
+   1600px card — a label a metre away from its subject. (The occurrence rows
+   keep a two-ended layout because their buttons are an action column and
+   .cm-occurrence-list caps the width instead; here the badge is an
+   annotation and belongs next to what it annotates.) */
 .cm-schedule-list-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--cm-space-3);
   padding: var(--cm-space-4);
@@ -1575,8 +1678,13 @@ textarea:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  flex: 1 1 auto;
-  min-width: 200px;
+  /* 0 1, not 1 1: growing to fill the card is what pushed the badge to the
+     far edge in the first place. */
+  flex: 0 1 auto;
+  /* A floor, not a fixed width — and floors have to yield. A flat 200px is
+     wider than the card's content box at 320px with a scaled font, which is
+     how the schedules list ended up pushing the page sideways. */
+  min-width: min(200px, 100%);
   color: var(--cm-color-text);
   text-decoration: none;
 }
@@ -1586,11 +1694,16 @@ textarea:focus-visible,
   text-decoration: underline;
 }
 
+/* Both wrap `anywhere`, for the reason .cm-page-title documents above: a
+   schedule name and a dotted task path ("demo.send_report") are single
+   unbreakable tokens, and the meta line was the last thing still forcing the
+   schedules page wider than a 320px window. */
 .cm-schedule-list-name {
   font-family: var(--cm-font-body);
   font-size: var(--cm-text-sm);
   font-weight: 600;
   color: var(--cm-color-text);
+  overflow-wrap: anywhere;
   transition: color var(--cm-duration-fast) var(--cm-ease);
 }
 
@@ -1598,6 +1711,7 @@ textarea:focus-visible,
   font-family: var(--cm-font-mono);
   font-size: var(--cm-text-xs);
   color: var(--cm-color-text-faint);
+  overflow-wrap: anywhere;
 }
 
 /* Generic administrative-state badge — same neutral text-muted /
@@ -1683,9 +1797,15 @@ textarea:focus-visible,
    --cm-color-accent: 5.55:1 light, 9.49:1 dark.
    -------------------------------------------------------------------------- */
 
+/* Wraps. Three uppercase pills in a fixed well is 347px at a 200%-scaled
+   default font, and as an unwrappable row it took a 320px window with it
+   (measured: scrollWidth 379 against clientWidth 320 on every route). Two
+   rows of pills in the well is a worse-looking switch than one; a dashboard
+   that scrolls sideways on every screen is a worse dashboard. */
 .cm-segmented {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 2px;
   background-color: var(--cm-color-surface-sunken);
@@ -1770,21 +1890,17 @@ textarea:focus-visible,
 }
 
 .cm-scope-tag {
-  flex: none;
+  /* Allowed to shrink, so "Deployment-wide" can break at its hyphen when a
+     scaled font makes it 252px wide. `flex: none` pinned it to max-content
+     and pushed the settings panel past the window. The basis is still auto,
+     so it only ever breaks when it genuinely cannot fit. */
+  flex: 0 1 auto;
   font-family: var(--cm-font-mono);
   font-size: var(--cm-text-xs);
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cm-color-text);
-}
-
-/* An error state that leaves the user somewhere to go. */
-.cm-panel-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--cm-space-4);
 }
 
 /* Capped, unlike a table panel: a hex-colour field 1500px wide is a worse

@@ -45,9 +45,17 @@ export function ScheduleList() {
 
       <div className="cm-panel">
         {error ? (
-          <p className="cm-error" role="alert">
-            {error}
-          </p>
+          // Same error treatment as TaskList and the audit log: the server's
+          // message, and a button that retries it. An error screen with
+          // nothing to click is a dead end.
+          <div className="cm-panel-stack">
+            <p className="cm-error" role="alert">
+              {error}
+            </p>
+            <button type="button" className="cm-btn cm-btn-outline" onClick={refresh}>
+              Try again
+            </button>
+          </div>
         ) : schedules === null ? (
           <p className="cm-loading">
             <span className="cm-live-dot" aria-hidden="true" />
