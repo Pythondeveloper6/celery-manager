@@ -15,6 +15,22 @@ _STATUS_BY_EVENT = {
     "task-revoked": "revoked",
 }
 
+# Statuses the decorator owns outright and that no Celery lifecycle event can
+# describe, so the listener must never overwrite them.
+#
+# `skipped` means "@track matched a schedule override and never called the task
+# body". Celery knows nothing about that: the wrapper still returns normally,
+# so the worker emits a perfectly ordinary task-succeeded for the same uuid.
+# In the documented two-process topology (worker + a separate
+# `celery-manager events` process) that event lands after the decorator's
+# write and used to flip the row back to `succeeded` — so a paused occurrence
+# displayed as if it had run, exactly whenever the listener is running.
+#
+# Deliberately narrow: only `skipped`. `succeeded`/`failed`/`retried` are
+# shared vocabulary where a later listener update is the normal, correct
+# sequence, and blanket-guarding them would break the ordinary case.
+_DECORATOR_OWNED_STATUSES = frozenset({"skipped"})
+
 
 def upsert_task_run(session, event: dict) -> None:
     """Apply a single Celery event to the task_runs table.
@@ -32,8 +48,12 @@ def upsert_task_run(session, event: dict) -> None:
     if run is None:
         run = TaskRun(task_id=task_id, task_name=event.get("name", "unknown"), status=status)
         session.add(run)
-    else:
+    elif run.status not in _DECORATOR_OWNED_STATUSES:
         run.status = status
+    # else: leave the decorator-owned terminal status alone (see
+    # _DECORATOR_OWNED_STATUSES). Only `status` is protected — every other
+    # field below still updates, so a skipped run keeps picking up the
+    # worker/queue the listener knows about and the decorator doesn't.
 
     if "name" in event:
         run.task_name = event["name"]

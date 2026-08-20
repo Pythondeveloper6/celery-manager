@@ -114,7 +114,13 @@ def pause_occurrence(
     created_by: str,
     eta_tolerance_seconds: int = 60,
 ) -> ScheduleOverride:
-    """Record a skip/cancel/reschedule override for one future occurrence.
+    """Record a skip or cancel override for one future occurrence.
+
+    `action` is validated by the caller, not here. The REST layer accepts
+    only `skip` and `cancel` and rejects `reschedule` with a 422: the
+    `ScheduleOverride.reschedule_to` column exists in the data model but no
+    reschedule behaviour is implemented, and silently storing an override
+    nothing acts on is worse than refusing it.
 
     Idempotent by *tolerance window*, not exact equality: since
     `upcoming_occurrences` recomputes occurrence timestamps relative to
