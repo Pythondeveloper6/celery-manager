@@ -29,3 +29,4 @@ nav:
   - REST API: rest-api.md
   - Dashboard: dashboard.md
   - Configuration: configuration.md
+  - Working on celery-manager: contributing.md

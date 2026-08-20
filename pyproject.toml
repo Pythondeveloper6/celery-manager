@@ -10,10 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "pythondeveloper6", email = "pythondeveloper6@gmail.com" }]
 keywords = ["celery", "dashboard", "monitoring", "task-queue", "scheduler"]
-# TODO: choose and add a LICENSE before publishing. Deliberately no `license`
-# field and no LICENSE file yet — picking a license is the project owner's
-# call, not something to default into. Until one is chosen this package is
-# "all rights reserved" by default and should not be published to PyPI.
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
@@ -21,6 +19,7 @@ classifiers = [
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -37,13 +36,20 @@ dependencies = [
     "celery>=5.3,<6.0",
     "sqlalchemy>=2.0,<3.0",
     "fastapi>=0.110,<1.0",
+    # Declared explicitly even though FastAPI already pulls it in: the route
+    # modules `import pydantic` directly, and the `>=2` floor is load-bearing
+    # rather than cosmetic. FastAPI still supports pydantic v1, so without
+    # this an install could resolve to v1 and then fail at import time on
+    # `ConfigDict` / `model_dump(exclude_unset=...)` in
+    # api/routes/settings.py.
+    "pydantic>=2.0,<3.0",
     "bcrypt>=4.1",
     "itsdangerous>=2.1",
 ]
 
 [project.urls]
 Homepage = "https://github.com/pythondeveloper6/celery-manager"
-Documentation = "https://github.com/pythondeveloper6/celery-manager#readme"
+Documentation = "https://github.com/pythondeveloper6/celery-manager/tree/main/docs"
 Repository = "https://github.com/pythondeveloper6/celery-manager"
 Issues = "https://github.com/pythondeveloper6/celery-manager/issues"
 
@@ -60,6 +66,27 @@ celery-manager = "celery_manager.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/celery_manager"]
+
+# An explicit allowlist, not a denylist. Hatchling's sdist default is "the
+# whole project directory minus what VCS ignores", which pulled in 74 files of
+# `.superpowers/` review diffs (several MB) and a stray root screenshot — a
+# denylist would have needed updating the next time a tool drops a directory
+# here. `frontend/` is included on purpose: it is the source the shipped
+# `dashboard/static` bundle is built from, and an sdist that ships a
+# prebuilt binary should ship what produced it. `plan.md` is not: it is a
+# 190 KB internal working document.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/examples",
+    "/frontend",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/mkdocs.yml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -9,25 +9,34 @@ before React ever loads — routing on the URL fragment keeps every deep
 link resolving to the same `/` request the server actually serves).
 
 Every screen calls the [REST API](rest-api.md) with `credentials:
-"include"` so the session cookie set at login is sent automatically; a
-`401` from any call routes the user back to the login screen (via the
-top-level `whoami()` check in `App.tsx`).
+"include"` so the session cookie set at login is sent automatically (the
+SSE subscription uses `withCredentials: true` for the same reason).
+
+**There is no global `401` interceptor.** `App.tsx` calls `whoami()` exactly
+once, on mount, to decide between the login screen and the app; nothing
+re-checks after that. So if your session expires while a tab is open, the
+next call fails *in place* — the task list shows "Couldn't load tasks.", the
+settings screen shows "Your session has expired. Sign in again to save
+settings." — and you stay on the screen you were on until you reload. That
+is a rough edge, not a design: reloading takes you to the login screen.
 
 ## Login
 
-The entry screen (shown whenever `GET /api/whoami` comes back unauthenticated,
-or the initial connectivity check to the server fails). A simple
-username/password form:
+The entry screen, shown when the mount-time `GET /api/whoami` comes back
+unauthenticated. A simple username/password form:
 
 - Inputs are locked (`disabled`) while a login request is in flight, so a
   slow network can't produce a double-submit.
 - A failed login shows an inline error (`role="alert"`) without leaking
   whether the username or the password was wrong — both `401` cases are a
   single generic message.
-- A network-level failure (server unreachable, DNS/CORS issue) is shown as
-  a distinct "connection problem" screen with a **Retry** button, rather
-  than being folded into the "invalid credentials" message a real login
-  attempt would show — the two are different problems.
+- If the mount-time check fails at the network level (server unreachable,
+  DNS/CORS issue), you get a distinct **"Connection problem"** screen with a
+  **Retry** button *instead of* the login form — a server that isn't
+  answering is a different problem from a bad password, and showing a login
+  form you cannot possibly submit would be a lie. A network failure during
+  an actual login attempt is likewise kept out of the "invalid credentials"
+  message.
 
 On success, the app switches straight to the task list; there's no
 separate "remember me" control — the session cookie lasts 7 days by
@@ -72,9 +81,11 @@ that describes them, live to the right.
   table tells you which filter emptied it instead of leaving you guessing.
 
 Below roughly 1024px the panel collapses behind a **Filters** toggle
-carrying a count of what's active. Collapsed, it is removed from the page
-rather than hidden in place, so its inputs don't sit invisibly in the tab
-order.
+carrying a count of what's active. The collapse is `display: none` on the
+rail (the markup stays mounted, so your typed filter state survives a
+toggle), which is the one hiding technique that also takes the inputs out
+of the tab order — a collapsed panel never leaves focusable controls
+sitting invisibly behind the table.
 
 ### Results
 
@@ -82,17 +93,30 @@ order.
   answers "how much is there of *this*", not "how big is the table".
 - **Runtime** shows a live-ticking elapsed time for a running task and a
   final duration for a finished one.
-- **Progress** — a running task that calls
+- **Progress** — a running task that reports a *known total* via
   [`report_progress()`](progress.md) gets a bar, a percentage, its own
-  message, and a projected time remaining. Three cases are deliberately
-  distinguished: a task reporting a known total gets the bar; one
-  reporting an open-ended count gets the count and message and **no** bar,
-  because there is no denominator to fill; and one that never reports
-  progress gets neither, showing elapsed time only. A bar sitting at 0%
-  would read as a stuck task, so "not instrumented" never renders as 0%.
-  If a running task stops reporting for a while, the row says how long it
-  has been quiet and stops showing an estimate — extrapolating a rate that
-  has visibly stopped would keep counting down as if nothing were wrong.
+  message, and a projected time remaining. A task that never reports
+  progress gets none of that and shows elapsed time only: a bar sitting at
+  0% would read as a stuck task, so "not instrumented" never renders as 0%.
+  If such a task stops reporting for a while, the row says how long it has
+  been quiet and drops the estimate — extrapolating a rate that has visibly
+  stopped would keep counting down as if nothing were wrong.
+
+    **Open-ended progress is thinner here than on the detail page.** With no
+    total there is no percentage and no bar, and the row shows only the
+    task's `progress_message` — the raw count is not rendered in the list,
+    and the "no update for …" stalled note is gated on there being a
+    percentage, so it doesn't appear either. An open-ended reporter that
+    passes no `message` is therefore indistinguishable in the list from one
+    reporting nothing at all. The [task detail](#task-detail) page shows the
+    count and the quiet time in both cases; use it when you are watching one
+    open-ended run.
+
+    A running task's percentage is capped at **99%** until it genuinely
+    reports completion — rounding 0.998 up reads as a finished task that is
+    somehow still working. The list and the detail page share one derivation
+    (`lib/taskProgress`) so they can never quote two different percentages
+    for the same run.
 - **Bulk retry** — available while the `failed` filter is active. The
   selection is dropped whenever the filter, search, dates, page or mode
   change, and is separately pruned against the visible rows on every
@@ -108,18 +132,24 @@ widens the page up to the API's 500-row ceiling. Every refresh re-requests
 the whole span you have open rather than just the newest page, so a
 background poll can never collapse your loaded rows back to page one.
 
-**History** is for reading further back. It pages explicitly through the
-full filtered total ("Runs 501–550 of 1,308 · Page 11 of 28"), and the
-poll is switched off while you are in it — which is what makes offset
-paging trustworthy, since rows can't shift under you between clicks. The
-header indicator changes from a pulsing **Live** dot to a still **Paused**
-one, and a bar above the table offers **Back to live**.
+**History** is for reading further back. You get into it from **Browse all
+N runs by page** under the table, or from **Browse older runs** when a live
+page has hit the 500-row ceiling. It pages explicitly through the full
+filtered total: a ledger above the table reads `Runs 501–550 of 1,308`, and
+a pager below it reads `Page 11 of 28` between **← Newer** and **Older →**
+buttons (each move scrolls you back to the top of the table). The poll is
+switched off while you are in history — which is what makes offset paging
+trustworthy, since rows can't shift under you between clicks; SSE events are
+ignored in this mode too. The header indicator changes from a pulsing
+**Live** dot to a still **Paused** one, and a bar above the table offers
+**Back to live**.
 
 ### Live updates
 
 The screen opens an SSE connection (`GET /api/stream`) on mount and
-refetches when any task event arrives, rather than patching individual
-rows from the event payload. **Alongside** that, it polls every 5 seconds.
+refetches when a task event arrives (in live mode only — see above), rather
+than patching individual rows from the event payload. **Alongside** that, it
+polls every 5 seconds.
 The poll is not redundant: the SSE event bus lives in the API process's
 memory, but the documented deployment runs the events listener as a
 separate OS process which cannot publish into it — so in a standard
@@ -127,11 +157,14 @@ deployment the SSE connection opens and then delivers nothing, and the
 poll is what actually keeps the list current. See
 [REST API: live updates](rest-api.md#live-updates-sse).
 
-Refreshed data dims the table briefly rather than replacing it, so rows
-never flicker away while fresher data is in flight; only the first load
-shows a full "Loading tasks…" state. A failed *background* refresh shows a
-banner above the still-visible rows rather than replacing them with an
-error.
+A refetch never replaces the rows with a spinner: only the first load shows
+a full "Loading tasks…" state. A refetch you *caused* — changing a filter,
+or an SSE event arriving — dims the table briefly while the new data is in
+flight. The 5-second poll deliberately does not dim, since a table that
+flickered every five seconds on its own would be worse than a table that
+quietly updates. A failed *background* refresh shows a banner above the
+still-visible rows; a failure with no rows behind it shows an error state
+with **Try again**.
 
 ## Task detail
 
@@ -159,9 +192,13 @@ error.
   a count with no bar, and a run that has gone quiet says so and drops the
   estimate.
 - An **Execution** panel: worker, queue, ETA, started, finished, runtime.
-  A value that isn't recorded reads as `—` with the reason ("Still
-  running", "Hasn't started yet", "No ETA set"), never as a blank cell you
-  have to interpret.
+  A value that isn't recorded reads as `—` with the reason — "Still
+  running", "Hasn't started yet", "No ETA set", or a plain "Not recorded"
+  where nothing more specific is knowable — never as a blank cell you have
+  to interpret. In practice **ETA always reads "No ETA set"**, because
+  nothing in celery-manager currently writes that column; see
+  [the REST API note](rest-api.md#datetimes-in-task-responses). Worker and
+  queue read "Not recorded" whenever the events listener wasn't running.
 - A **Retry lineage** panel, shown only when there is lineage to show: the
   run this one was retried from, and every run retried from it (there can
   be several — retrying a failed run repeatedly is normal). Each is a link,
@@ -172,9 +209,27 @@ got and how long it took, which worker and queue, whether anyone has
 already retried it, then the log, then args/kwargs as the recipe to
 reproduce it.
 
-While the task is still running the page refreshes itself every 2 seconds
-and stops the moment the run reaches a terminal status, so a finished run's
-page isn't left polling forever.
+While the run is still *active* — `queued`, `started` or `retried`, not
+just running — the page refreshes itself every 2 seconds, and stops the
+moment the run reaches a terminal status, so a finished run's page isn't
+left polling forever. If one of those refreshes fails the page keeps the
+data it has and says so ("Live updates paused… Still retrying every 2s.")
+rather than blanking.
+
+## Schedules list
+
+`/schedules`, and where the **Schedules** nav link lands. A card per
+configured periodic schedule, backed by `GET /api/schedules`: the schedule's
+name (a link into its occurrences view), the task it runs, and its
+`schedule_spec` as Celery renders it (`<freq: 2.00 hours>`). A schedule with
+`enabled: false` carries a **disabled** badge — though nothing sets that flag
+today, so in practice every card is enabled.
+
+The list is a pure read of the `periodic_schedules` table, which
+`create_app()` syncs from `celery_app.conf.beat_schedule` **once at
+startup**. A schedule added to your beat config while the dashboard process
+is running will not appear until it restarts. Empty state: "No periodic
+schedules configured yet."
 
 ## Schedule occurrences (future-schedule view)
 
@@ -189,6 +244,8 @@ page isn't left polling forever.
   practice every row this screen shows is still in the future, so this
   state only appears defensively, if the API were to ever return a
   consumed row).
+- A **← All schedules** back link returns to the [schedules
+  list](#schedules-list), which is where you arrived from.
 - **Skip this run** / **Cancel this run** buttons on each non-resolved
   row call `POST /api/schedules/{name}/occurrences/pause` with that row's
   `target_time` and the chosen action. A button already matching the
@@ -206,16 +263,25 @@ page isn't left polling forever.
 
 ## Audit log
 
-`/audit`. A read-only table of every manually-triggered control action —
-task retries (single and bulk), on-demand starts, cancellations, and
-per-occurrence schedule pauses — with **When**, **User**,
-**Action**, and **Target** (`{target_type}:{target_id}`, e.g. `task:abc123`)
-columns, newest first, backed by `GET /api/audit`. There's no filtering or
+`/audit`. A read-only table of every manually-triggered control action, with
+**When**, **User**, **Action**, and **Target**
+(`{target_type}:{target_id}`, e.g. `task:abc123`) columns, newest first,
+backed by `GET /api/audit`.
+
+What you will actually see here, given what the dashboard itself can do:
+task retries (single and bulk), per-occurrence schedule pauses, and
+[branding changes](#branding-deployment-wide) (one row per changed key).
+The API also audits `start` and `cancel`, but **no dashboard control
+triggers either** — there is no "run now" and no "cancel" button in the UI
+today — so those rows only appear if something calls
+`POST /api/tasks/start` or `POST /api/tasks/{id}/cancel` directly. There's no filtering or
 pagination control in the UI beyond the API's default 50-row limit
 (`limit` is a raw query param on `GET /api/audit` but the screen doesn't
 currently expose a control for it). An empty state ("No manual actions
 recorded yet.") is shown until the first control action is taken through
-the dashboard.
+the dashboard. A failed load shows the server's own message with a **Try
+again** button — the same treatment the task list and both schedule screens
+use, so an error screen is never a dead end.
 
 This is the audit trail that answers "who did what, to what, and when" for
 anything the dashboard itself performed on a user's behalf — it does not

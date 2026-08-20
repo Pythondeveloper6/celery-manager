@@ -18,7 +18,8 @@ without touching your beat schedule or restarting anything.
 - **Live progress** — call `celery_manager.report_progress(current, total,
   message)` inside a task body and watch the bar move, with elapsed time and
   a projected finish while the task is still running.
-- **Log capture** — stdout and `logging` output from inside a task body,
+- **Log capture** — `logging` output from inside a task body (and `print()`
+  too, in a real worker — [see why](docs/decorator.md#what-log-capture-actually-captures)),
   attached to that run and readable in the dashboard.
 - **Control** — start, cancel/terminate, retry, and bulk retry, from the UI
   or the API. Retries keep their lineage, so you can walk the chain.
@@ -88,6 +89,12 @@ celery-manager events --celery-app your_module:your_celery_app \
                       --db-url sqlite:///celery_manager.db
 ```
 
+**Two things that stop people on a first run**, both covered in the
+[Quickstart](docs/quickstart.md): there is no default account, so you have to
+create one (`celery_manager.auth.users.create_user`); and on plain HTTP you
+need `cookie_secure=False`, or you will log in successfully and then
+immediately appear logged out.
+
 ## Documentation
 
 Full documentation lives in [`docs/`](docs/) (an MkDocs Material site — run
@@ -100,6 +107,11 @@ Full documentation lives in [`docs/`](docs/) (an MkDocs Material site — run
 - [Dashboard](docs/dashboard.md) — the screens and what they do.
 - [Configuration](docs/configuration.md) — every config field, the schema
   and upgrade story, and production notes.
+- [Working on celery-manager](docs/contributing.md) — running the tests,
+  building the docs, and rebuilding the committed dashboard bundle.
+
+Changes between versions — including the one breaking API change so far —
+are in [`CHANGELOG.md`](CHANGELOG.md).
 
 A complete runnable Django example is in
 [`examples/django_demo/`](examples/django_demo/).
@@ -116,7 +128,4 @@ of known gaps and planned follow-ups.
 
 ## License
 
-**TODO: choose and add a LICENSE before publishing.** No license has been
-selected yet, so no `LICENSE` file and no `license` field in
-`pyproject.toml`. Until one is added this code is "all rights reserved" by
-default and should not be published to PyPI.
+MIT — see [`LICENSE`](LICENSE).

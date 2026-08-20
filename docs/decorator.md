@@ -6,9 +6,11 @@ into three things:
 1. **Per-occurrence schedule control** — if someone pauses/cancels a
    specific future run from the dashboard, this decorator is what makes
    the task actually skip its body at that run instead of executing.
-2. **Full log capture** — stdout/stderr and `logging` calls made during
-   the task are captured and shown on the task's detail page, not just the
-   traceback on failure.
+2. **Log capture** — `logging` output produced during the task is captured
+   and shown on the task's detail page, not just the traceback on failure.
+   See [What "log capture" actually captures](#what-log-capture-actually-captures)
+   — `print()` is included in a real worker, but for a reason that is worth
+   knowing.
 3. **Visibility while the task is still running** — the decorator records a
    `started` row *before* it calls your function, so an in-flight task is
    visible even with no events-listener process running, and
@@ -117,20 +119,104 @@ What makes it safe:
   real terminal status to a run whose decorator write failed, which is
   strictly worse.
 
-!!! note "One retry wrinkle, accepted rather than fixed"
-    Celery reuses the task id across retry attempts. So attempt N+1 rewrites
-    `started` over the listener's `retried` — correct, the row should show
-    the attempt now in flight — but the *previous* attempt's `finished_at`,
-    `runtime_seconds`, and `progress_*` values stay on the row, because the
-    upsert skips `None` values and therefore cannot clear a field. The row
-    self-corrects the moment the new attempt finishes. Until then, a
-    retrying task can briefly show a stale runtime.
+!!! note "What a retry attempt clears"
+    Celery reuses the task id across retry attempts, so there is one row for
+    all of them. Attempt N+1's `started` write rewrites the status (correct
+    — the row should show the attempt now in flight) and additionally
+    **erases** what the previous attempt left behind: `exception`,
+    `traceback`, `finished_at`, `runtime_seconds`, and all four `progress_*`
+    columns. Without that, a task that failed once and then succeeded showed
+    as `succeeded` with a full traceback and a stale progress bar attached,
+    which is a worse lie than showing nothing. `log_output` is *not* cleared
+    here — it is rewritten wholesale by whichever branch ends the attempt.
 
 **Cost: one extra INSERT/UPDATE and commit per tracked run.** That is
 accepted deliberately — it is one write against a run that is about to do
 real work, and it buys visibility of every in-flight task without requiring
 the events listener at all. Like every other write in this decorator, a
 failure is logged and dropped: it can never change your task's outcome.
+
+### `self.retry()` is recorded as `retried`, not `failed`
+
+`self.retry()` raises `celery.exceptions.Retry`, which is an ordinary
+`Exception` subclass — so it used to land in the decorator's failure branch
+and record a run Celery considers RETRY as `failed`, with Celery's
+`"Retry in 30s: RuntimeError('boom')"` message sitting in the exception
+column and a finish time on a run that has not finished. It is now recorded
+as `status="retried"` with `finished_at`/`runtime_seconds` left unset,
+matching the `retried` status the events listener writes from
+`task-retried`; the `Retry` is re-raised unchanged, so Celery's own retry
+machinery is untouched.
+
+Only `Retry` is special-cased. `Ignore` and `Reject` share its base class but
+mean "this message is being dropped", which has no status in
+celery-manager's vocabulary — they still fall through to `failed`, which at
+least surfaces them rather than silently reclassifying them.
+
+### Args and kwargs are stored best-effort
+
+The decorator serializes a run's args/kwargs to JSON *before* calling your
+task body, which makes the serializer a hazard: `json.dumps` is stricter than
+Celery is. Celery's own JSON serializer round-trips `datetime`, `date`,
+`UUID` and `Decimal`, so `send_task(kwargs={"since": datetime(...)})` is
+ordinary supported usage that arrives in the worker as a real `datetime` —
+and stdlib `json.dumps` raises `TypeError` on it. That exception used to
+propagate out of the wrapper, marking the task FAILURE without ever running
+its body: celery-manager deciding a task's outcome, which is exactly what it
+must never do.
+
+Values stdlib JSON cannot express are now stored as their `repr` inside
+otherwise-valid JSON, so the shape survives (a list stays a list) and the
+value stays searchable by `q=`. The trade-off: those leaves no longer
+round-trip, so [retrying such a run](rest-api.md#retrying-a-run-the-listener-recorded)
+re-dispatches the repr string rather than the original object. Pass explicit
+`args`/`kwargs` to `control.retry_task()` when that matters.
+
+## What "log capture" actually captures
+
+`capture_logs()` attaches a `logging.StreamHandler` to the **root logger**
+for the duration of the task body, and nothing else. It does not redirect
+`sys.stdout` or `sys.stderr`. So what lands in `log_output` is: anything
+logged through the `logging` module by your task or by any library it calls,
+as long as that logger propagates to root.
+
+`print()` is captured too in a real Celery worker — but indirectly, and it is
+worth knowing why, because it stops being true in some setups. Celery's
+worker sets `worker_redirect_stdouts = True` by default, which replaces
+`sys.stdout`/`sys.stderr` with a proxy that writes to the `celery.redirected`
+logger at `WARNING`. That propagates to root, so our handler sees it:
+
+```
+2026-08-20 12:20:59,343 WARNING celery.redirected: PRINTED-IN-WORKER
+```
+
+Two consequences:
+
+- **`print()` is not captured outside a worker.** Under
+  `task_always_eager = True` (a test, a shell, `.apply()`), nobody installs
+  that redirect, so `print()` goes to the real stdout and `log_output` holds
+  only the `logging` calls.
+- **`print()` is not captured if you turn the redirect off.** Setting
+  `worker_redirect_stdouts = False`, or raising
+  `worker_redirect_stdouts_level` above the level your prints land at, takes
+  it away — and celery-manager has no way to notice.
+
+If you want output that is reliably captured in every one of those setups,
+log it: `logger.info(...)` rather than `print(...)`.
+
+!!! warning "Empty `log_output`? Check your log level."
+    `capture_logs()` adds a handler but never sets a level, so the **root
+    logger's** effective level still decides whether a record is created at
+    all. Python's default is `WARNING`, which means a task doing
+    `logger.info("...")` produces an empty `log_output` unless something
+    raised the level — and a Celery worker only does that if you started it
+    with a level that allows it (`celery -A app worker -l info`). Started at
+    the default `WARNING`, `logger.info()` from inside your task is dropped
+    before celery-manager ever sees it.
+
+    This bites in eager mode too: running the bundled demo's tasks through
+    `.apply()` in a plain shell records the run correctly but leaves
+    `log_output` empty, because nothing configured logging in that process.
 
 ## How the skip/cancel check works
 
@@ -148,11 +234,11 @@ will rarely line up to the microsecond.
   the decorator marks it `consumed`, records a `TaskRun` with
   `status="skipped"`, and returns `None` **without calling the wrapped
   function** — the task body never runs for that occurrence.
-- Otherwise the task runs normally. Its stdout/logging output is captured
-  (via `celery_manager.logcapture.capture_logs`, which attaches a handler
-  to the root logger for the duration of the call) and, together with the
-  outcome (`succeeded`/`failed`), exception, traceback, and runtime,
-  persisted as a `TaskRun` row.
+- Otherwise the task runs normally. Its log output is captured (via
+  `celery_manager.logcapture.capture_logs`, which attaches a handler to the
+  root logger for the duration of the call) and, together with the outcome
+  (`succeeded`/`failed`), exception, traceback, and runtime, persisted as a
+  `TaskRun` row.
 
 One implementation detail worth knowing if you inspect the database
 directly: SQLite drops timezone info on `DateTime(timezone=True)` columns
