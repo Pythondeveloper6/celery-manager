@@ -13,6 +13,7 @@ from celery_manager.api.routes import (
     tasks as task_routes,
     schedules as schedule_routes,
     audit as audit_routes,
+    settings as settings_routes,
 )
 from celery_manager.control.schedules import sync_periodic_schedules
 from celery_manager.api.sse import EventBus, sse_stream
@@ -41,6 +42,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(task_routes.router)
     app.include_router(schedule_routes.router)
     app.include_router(audit_routes.router)
+    app.include_router(settings_routes.router)
 
     @app.get("/api/stream")
     def stream(request: Request):
