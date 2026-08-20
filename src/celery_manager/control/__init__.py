@@ -17,10 +17,16 @@ from celery_manager.control.schedules import (
     sync_periodic_schedules,
     upcoming_occurrences,
 )
+from celery_manager.control.settings import (
+    get_settings,
+    update_settings,
+)
 from celery_manager.control.tasks import (
     bulk_retry,
     cancel_task,
+    count_task_runs,
     get_task_run,
+    list_retries_of,
     list_task_runs,
     retry_task,
     start_task,
@@ -29,7 +35,10 @@ from celery_manager.control.tasks import (
 __all__ = [
     "bulk_retry",
     "cancel_task",
+    "count_task_runs",
+    "get_settings",
     "get_task_run",
+    "list_retries_of",
     "list_overrides",
     "list_periodic_schedules",
     "list_task_runs",
@@ -40,4 +49,5 @@ __all__ = [
     "start_task",
     "sync_periodic_schedules",
     "upcoming_occurrences",
+    "update_settings",
 ]
