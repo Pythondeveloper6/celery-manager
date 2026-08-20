@@ -1,20 +1,152 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from celery import Celery
+from sqlalchemy import or_
 
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
 
+# Maximum rows `GET /api/tasks` will hand back in one response, and the ceiling
+# the route clamps a caller-supplied `limit` to. Lives here next to the query
+# builder rather than in the route so the control layer documents its own
+# contract, but the clamping itself happens at the API boundary — a Python
+# caller of `list_task_runs` is trusted and may legitimately ask for more.
+MAX_PAGE_SIZE = 500
 
-def list_task_runs(session, *, status: str | None = None, task_name: str | None = None, limit: int = 50, offset: int = 0) -> list[TaskRun]:
-    query = session.query(TaskRun)
+
+def _escape_like(term: str) -> str:
+    """Neutralize LIKE wildcards in user-supplied search text.
+
+    `%` and `_` are wildcards inside a LIKE pattern, so an operator searching
+    their task kwargs for the literal string "100%" would otherwise match
+    *every* row — a search box that silently returns everything looks like a
+    broken filter, not like zero results. The escape character itself has to
+    go first, or escaping `%` would re-escape the backslash we just added.
+
+    Callers must pass `escape="\\\\"` alongside the returned pattern; the
+    escape character is only meaningful to LIKE if it is declared.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _apply_task_filters(
+    query,
+    *,
+    status: str | None = None,
+    task_name: str | None = None,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+):
+    """Apply the shared task-run filter chain to a query.
+
+    Deliberately the *single* place the filters are expressed, used by both
+    `list_task_runs` and `count_task_runs`. The classic bug in a paginated,
+    filtered list is a total that quietly disagrees with the page it labels —
+    "Showing 50 of 1,284" when the 1,284 was counted without the search term.
+    Duplicating the chain in two functions is what lets them drift; sharing
+    the builder makes drift structurally impossible, so keep it that way and
+    add new filters only here.
+    """
     if status is not None:
         query = query.filter_by(status=status)
     if task_name is not None:
         query = query.filter_by(task_name=task_name)
+    if q:
+        # args/kwargs are JSON stored as Text (see db/models.py), so this is a
+        # pragmatic substring match over the serialized JSON, not a real JSON
+        # query — searching "alice" finds a run whose kwargs contain it, but
+        # there is no way to ask for `kwargs.user == "alice"`. That trade-off
+        # was accepted for v1. `.ilike()` compiles to a case-insensitive LIKE
+        # on SQLite, which has no native ILIKE.
+        pattern = f"%{_escape_like(q)}%"
+        query = query.filter(
+            or_(
+                TaskRun.task_name.ilike(pattern, escape="\\"),
+                TaskRun.task_id.ilike(pattern, escape="\\"),
+                TaskRun.args.ilike(pattern, escape="\\"),
+                TaskRun.kwargs.ilike(pattern, escape="\\"),
+            )
+        )
+    # Either date bound excludes rows with `started_at IS NULL` — SQL
+    # comparisons against NULL are never true — and that is the intended
+    # meaning: a queued run has not started, so it did not run "within this
+    # range" and should not appear under a date filter.
+    #
+    # `date_to` is a plain `<=` against the instant, not a calendar day. A
+    # caller who means "all of Aug 14" must pass an end-of-day `date_to`
+    # (23:59:59.999999, or the start of Aug 15 if they prefer a half-open
+    # range) — the frontend's date picker does exactly that. Truncating to a
+    # day here would be wrong for the callers that legitimately want an hour
+    # window.
+    if date_from is not None:
+        query = query.filter(TaskRun.started_at >= date_from)
+    if date_to is not None:
+        query = query.filter(TaskRun.started_at <= date_to)
+    return query
+
+
+def list_task_runs(
+    session,
+    *,
+    status: str | None = None,
+    task_name: str | None = None,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[TaskRun]:
+    """One page of task runs, newest first, under the given filters.
+
+    Ordered by the surrogate `id` rather than `started_at`: `started_at` is
+    nullable (a queued run has none), so ordering by it would scatter queued
+    rows unpredictably, and `id` is monotonic in insertion order anyway.
+    """
+    query = _apply_task_filters(
+        session.query(TaskRun),
+        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to,
+    )
     return query.order_by(TaskRun.id.desc()).offset(offset).limit(limit).all()
+
+
+def count_task_runs(
+    session,
+    *,
+    status: str | None = None,
+    task_name: str | None = None,
+    q: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> int:
+    """How many runs match these filters, ignoring limit/offset.
+
+    Exists so the dashboard can honestly say "showing 50 of 1,284" and know
+    whether a next page exists. Takes exactly the filter arguments
+    `list_task_runs` takes, and routes them through the same
+    `_apply_task_filters` — see that function for why sharing matters.
+    """
+    query = _apply_task_filters(
+        session.query(TaskRun),
+        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to,
+    )
+    # count() over the filtered entity; SQLAlchemy wraps this in a
+    # SELECT count(*) subquery, so no rows are loaded into memory.
+    return query.count()
+
+
+def list_retries_of(session, task_id: str) -> list[TaskRun]:
+    """Every run dispatched as a retry of `task_id`, oldest first.
+
+    More than one is normal: an operator can retry the same failed run
+    repeatedly, and each attempt gets its own row pointing back here.
+    Oldest-first because the detail view renders this as a chronological
+    "retry history" list, unlike the newest-first main task list.
+    """
+    return session.query(TaskRun).filter_by(retried_from_id=task_id).order_by(TaskRun.id).all()
 
 
 def get_task_run(session, task_id: str) -> TaskRun | None:
@@ -65,7 +197,14 @@ def cancel_task(
 
 def retry_task(celery_app: Celery, session, task_id: str, username: str, args: list | None = None, kwargs: dict | None = None) -> str:
     """Re-run a task, by default with its original args/kwargs; pass
-    args/kwargs to override them."""
+    args/kwargs to override them.
+
+    Also stamps the new dispatch's row with `retried_from_id`, so the retry
+    chain is visible on the detail view immediately — before any Celery event
+    for the new task_id has been received, which in the documented topology
+    (a separate `celery-manager events` process) may be seconds away or, if
+    the listener isn't running at all, never.
+    """
     run = get_task_run(session, task_id)
     if run is None:
         raise ValueError(f"no task run found for {task_id}")
@@ -74,6 +213,38 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     final_kwargs = kwargs if kwargs is not None else json.loads(run.kwargs or "{}")
 
     new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
+
+    # Upsert, never a blind insert. `task_runs.task_id` is UNIQUE, and by the
+    # time send_task() returns, the events listener may already have written a
+    # row for this brand-new uuid from `task-sent`. Blindly adding a second
+    # one raises IntegrityError — that exact race was finding C1 of this
+    # project's final review, and it is why `decorator._upsert_task_run`
+    # exists. Written out here rather than imported: that helper is private to
+    # the decorator and, by design, skips None values so a decorator write can
+    # never null out a listener-owned field. This site has the opposite
+    # requirement (it must always write retried_from_id), so it owns its own
+    # three lines rather than bending a helper with a different contract.
+    #
+    # Only `retried_from_id` is forced on an existing row. The listener owns
+    # status/queue/worker and knows more about them than we do; the seed
+    # values below are for the row-doesn't-exist-yet case only, so the
+    # dashboard has something to show for the new run in the meantime.
+    new_run = get_task_run(session, new_id)
+    if new_run is None:
+        new_run = TaskRun(
+            task_id=new_id,
+            task_name=run.task_name,
+            status="queued",
+            args=json.dumps(final_args),
+            kwargs=json.dumps(final_kwargs),
+        )
+        session.add(new_run)
+    new_run.retried_from_id = task_id
+
+    # record_audit commits, which flushes the row above with it — but commit
+    # explicitly rather than relying on that, so the lineage is durable even
+    # if auditing is ever made optional here the way it is in start_task.
+    session.commit()
     record_audit(session, username, "retry", "task", task_id, {"new_task_id": new_id})
     return new_id
 
