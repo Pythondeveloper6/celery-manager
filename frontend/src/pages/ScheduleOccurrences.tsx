@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listOccurrences, pauseOccurrence, type Occurrence, type PauseAction } from "../api/schedules";
+import { BrandMark } from "../branding";
 
 // Keyed by PauseAction rather than a bare string, so adding an action to the
 // API without giving it a label here is a compile error instead of a blank
@@ -102,7 +103,7 @@ export function ScheduleOccurrences() {
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <p className="cm-page-eyebrow">
-            <span className="cm-brand-mark" aria-hidden="true" />
+            <BrandMark />
             schedule
           </p>
           <h1 className="cm-page-title">{name}</h1>

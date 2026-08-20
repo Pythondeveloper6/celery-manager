@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSchedules, type ScheduleSummary } from "../api/schedules";
+import { BrandMark, useBranding } from "../branding";
 
 // This is the missing discovery step for ScheduleOccurrences (Task 14):
 // that view is keyed by an exact schedule name with no way to reach it
@@ -12,6 +13,7 @@ import { listSchedules, type ScheduleSummary } from "../api/schedules";
 // since a schedule row carries no per-column data dense enough to need
 // tabular alignment (just a name, a task, and a spec).
 export function ScheduleList() {
+  const { settings } = useBranding();
   const [schedules, setSchedules] = useState<ScheduleSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,8 +36,8 @@ export function ScheduleList() {
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <p className="cm-page-eyebrow">
-            <span className="cm-brand-mark" aria-hidden="true" />
-            celery-manager
+            <BrandMark />
+            {settings.brand_name}
           </p>
           <h1 className="cm-page-title">Periodic schedules</h1>
         </div>

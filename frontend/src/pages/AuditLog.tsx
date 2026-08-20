@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listAuditLog, type AuditEntry } from "../api/audit";
+import { BrandMark, useBranding } from "../branding";
 
 function formatTimestamp(value: string): string {
   const parsed = new Date(value);
@@ -14,6 +15,7 @@ function formatTimestamp(value: string): string {
 }
 
 export function AuditLog() {
+  const { settings } = useBranding();
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,8 +30,8 @@ export function AuditLog() {
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <p className="cm-page-eyebrow">
-            <span className="cm-brand-mark" aria-hidden="true" />
-            celery-manager
+            <BrandMark />
+            {settings.brand_name}
           </p>
           <h1 className="cm-page-title">Audit log</h1>
         </div>
