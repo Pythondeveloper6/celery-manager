@@ -236,3 +236,142 @@ def test_unconfigured_decorator_still_runs_the_task_body(env, monkeypatch):
     assert result.state == "SUCCESS"
     with Session() as session:
         assert session.query(TaskRun).count() == 0
+
+
+# --- the up-front `started` row ---------------------------------------------
+#
+# The decorator used to write to task_runs only when a task *finished*, which
+# made every long-running task invisible in the dashboard unless the separate
+# events-listener process happened to be running — and left
+# `report_progress()` with no row to write to until the run was already over.
+# It now upserts a `started` row before invoking the body. Cost: one extra
+# commit per tracked run.
+
+
+def test_started_row_exists_while_the_task_is_mid_flight(env):
+    """The assertion that actually proves the feature: the row is readable
+    from another session *during* the body, not merely afterwards."""
+    app, Session, echo, calls = env
+    seen = {}
+
+    @app.task(name="demo.slow", bind=True)
+    @track(schedule_name="demo-slow")
+    def slow(self, value):
+        with Session() as session:
+            row = session.query(TaskRun).filter_by(task_id="mid-flight-1").one()
+            seen["status"] = row.status
+            seen["task_name"] = row.task_name
+            seen["schedule_name"] = row.schedule_name
+            seen["args"] = row.args
+            seen["started_at_set"] = row.started_at is not None
+            seen["finished_at"] = row.finished_at
+        return value
+
+    result = slow.apply(args=["hi"], task_id="mid-flight-1")
+
+    assert result.state == "SUCCESS"
+    assert seen == {
+        "status": "started",
+        "task_name": "demo.slow",
+        "schedule_name": "demo-slow",
+        "args": '["hi"]',
+        "started_at_set": True,
+        "finished_at": None,
+    }
+
+
+def test_terminal_status_still_wins_over_the_started_row(env):
+    """started -> succeeded / failed, on one row, in that order. The two
+    writes happen in the same thread around the body, so the terminal one
+    always lands last."""
+    app, Session, echo, calls = env
+
+    echo.apply(args=["hi"], task_id="terminal-1")
+
+    @app.task(name="demo.boom3", bind=True)
+    @track()
+    def boom(self):
+        raise ValueError("kaboom")
+
+    boom.apply(task_id="terminal-2")
+
+    with Session() as session:
+        ok = session.query(TaskRun).filter_by(task_id="terminal-1").one()
+        assert ok.status == "succeeded"
+        assert ok.finished_at is not None
+
+        bad = session.query(TaskRun).filter_by(task_id="terminal-2").one()
+        assert bad.status == "failed"
+        assert "kaboom" in bad.exception
+
+
+def test_started_row_upserts_onto_a_listener_row_without_clobbering_it(env):
+    """Same collision the C1 regressions above cover, now on the *first*
+    write rather than the last: the listener may already have inserted this
+    uuid from task-sent/task-started, so the started write must merge (one
+    row, listener-owned worker/queue intact), not insert."""
+    app, Session, echo, calls = env
+    task_id = "started-vs-listener-1"
+
+    with Session() as session:
+        upsert_task_run(session, {"type": "task-sent", "uuid": task_id, "name": "demo.echo", "queue": "default"})
+        upsert_task_run(session, {"type": "task-started", "uuid": task_id, "hostname": "worker-1"})
+        session.commit()
+
+    result = echo.apply(args=["hi"], task_id=task_id)
+
+    assert result.state == "SUCCESS"
+    with Session() as session:
+        rows = session.query(TaskRun).filter_by(task_id=task_id).all()
+        assert len(rows) == 1
+        assert rows[0].status == "succeeded"
+        assert rows[0].worker == "worker-1"
+        assert rows[0].queue == "default"
+
+
+def test_a_skipped_run_never_reports_itself_as_started(env):
+    """The started write sits after the skip-check, so a paused occurrence
+    goes straight to `skipped` and never flickers through `started` — which
+    matters because the listener guards `skipped` and nothing else."""
+    app, Session, echo, calls = env
+    with Session() as session:
+        session.add(ScheduleOverride(
+            schedule_name="demo-every-2h",
+            target_time=datetime.now(timezone.utc),
+            action="skip",
+            consumed=False,
+            created_by="alice",
+            created_at=datetime.now(timezone.utc),
+        ))
+        session.commit()
+
+    echo.apply(args=["hi"], task_id="skipped-not-started-1")
+
+    assert calls == []
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id="skipped-not-started-1").one()
+        assert row.status == "skipped"
+
+
+def test_a_failed_started_write_does_not_stop_the_run_or_the_final_write(env, monkeypatch):
+    """Fail-open, on the new write too: if the up-front row cannot be stored,
+    the body still runs and the outcome is still recorded."""
+    app, Session, echo, calls = env
+    real_upsert = decorator_module._upsert_task_run
+    attempts = []
+
+    def explode_on_first_write(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:  # the `started` write
+            raise RuntimeError("storage is down")
+        return real_upsert(*args, **kwargs)
+
+    monkeypatch.setattr(decorator_module, "_upsert_task_run", explode_on_first_write)
+
+    result = echo.apply(args=["hi"], task_id="started-write-failed-1")
+
+    assert calls == ["hi"]
+    assert result.state == "SUCCESS"
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id="started-write-failed-1").one()
+        assert row.status == "succeeded"

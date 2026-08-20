@@ -6,6 +6,7 @@ import logging
 import traceback as tb_module
 from datetime import datetime, timedelta, timezone
 
+from celery_manager import progress as progress_module
 from celery_manager.logcapture import capture_logs
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def _find_matching_override(session, schedule_name: str):
     return None
 
 
-def _upsert_task_run(session, task_id: str, **fields) -> None:
+def _upsert_task_run(session, task_id: str, create_defaults: dict | None = None, **fields) -> None:
     """Merge this run's decorator-owned facts into the `task_runs` row for
     `task_id`, creating the row only if nobody else has.
 
@@ -91,6 +92,14 @@ def _upsert_task_run(session, task_id: str, **fields) -> None:
     the fields the decorator actually knows about, and skip any whose value
     is `None`, so a decorator write can never null out a value the listener
     established.
+
+    `create_defaults` is for a writer that knows *some* fields only well
+    enough to seed a brand-new row, never well enough to overwrite an
+    existing one — `report_progress()`, which may be the very first writer to
+    touch an undecorated task's uuid and must then supply the NOT NULL
+    `task_name`/`status`, but must not restate them over whatever the
+    decorator or the listener has since established. Applied only on the
+    insert path, and only for non-None values.
     """
     from celery_manager.db.models import TaskRun
 
@@ -98,13 +107,17 @@ def _upsert_task_run(session, task_id: str, **fields) -> None:
     if run is None:
         run = TaskRun(task_id=task_id)
         session.add(run)
+        for key, value in (create_defaults or {}).items():
+            if value is None:
+                continue
+            setattr(run, key, value)
     for key, value in fields.items():
         if value is None:
             continue
         setattr(run, key, value)
 
 
-def _persist_run(task_id: str, **fields) -> None:
+def _persist_run(task_id: str, create_defaults: dict | None = None, **fields) -> None:
     """Persist one run outcome, swallowing any storage failure.
 
     Spec §4.1: celery-manager is an observability/control layer wrapped
@@ -116,7 +129,7 @@ def _persist_run(task_id: str, **fields) -> None:
     """
     try:
         with _session_factory() as session:
-            _upsert_task_run(session, task_id, **fields)
+            _upsert_task_run(session, task_id, create_defaults=create_defaults, **fields)
             session.commit()
     except Exception:  # deliberate: storage must never affect the task's outcome
         logger.exception(
@@ -204,7 +217,53 @@ def track(schedule_name: str | None = None):
 
             started_at = datetime.now(timezone.utc)
             effective_task_id = task_id or f"run-{started_at.isoformat()}"
-            with capture_logs() as buffer:
+
+            # Announce the run *before* calling the body. Until this existed
+            # the decorator only ever wrote when a task finished, so a
+            # long-running task was invisible in the dashboard unless the
+            # separate events-listener process happened to be running — and
+            # `report_progress()` had no row to write to until the run was
+            # over, which defeats the point of live progress entirely.
+            #
+            # Ordering, which is what makes this safe: this write and the
+            # terminal write below happen in the same thread, in sequence,
+            # around the body, so the final succeeded/failed always lands
+            # after (and therefore wins over) this `started`. There is no
+            # "late started" window to worry about within the decorator.
+            #
+            # Against the events listener there is no new hazard either: the
+            # listener treats `started` as an ordinary lifecycle status it may
+            # overwrite (only `skipped` is in its _DECORATOR_OWNED_STATUSES
+            # guard, deliberately), and every event it could apply here —
+            # task-started, task-succeeded, task-failed — is emitted by the
+            # worker at or after the moment we write this. Note we do not add
+            # `started` to that guard: doing so would stop the listener
+            # applying the real terminal status to a run whose decorator write
+            # failed, which is strictly worse.
+            #
+            # One retry wrinkle, accepted rather than fixed: Celery reuses the
+            # task id across retry attempts, so attempt N+1 rewrites `started`
+            # over the listener's `retried` (correct — the row should show the
+            # attempt now in flight) but leaves the previous attempt's
+            # finished_at/runtime_seconds/progress_* on the row, because
+            # _upsert_task_run skips None values and so cannot clear a field.
+            # The row self-corrects when the attempt finishes.
+            #
+            # Cost: one extra INSERT/UPDATE+commit per tracked run. Accepted:
+            # it is one write against a run that is about to do real work, and
+            # it buys visibility of every in-flight task without requiring the
+            # listener process at all.
+            _persist_run(
+                effective_task_id,
+                task_name=task_name,
+                status="started",
+                args=run_args,
+                kwargs=run_kwargs,
+                schedule_name=effective_schedule_name,
+                started_at=started_at,
+            )
+
+            with progress_module._run_context(effective_task_id), capture_logs() as buffer:
                 try:
                     result = func(*args, **kwargs)
                 except Exception as exc:
