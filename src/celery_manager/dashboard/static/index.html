@@ -6,8 +6,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>celery-manager</title>
-    <script type="module" crossorigin src="/assets/index-C_zleSqh.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CLuyW32I.css">
+    <script>
+      // Theme bootstrap. Inline, blocking, and before the bundle on purpose:
+      // the browser paints as soon as it has the stylesheet, and the bundle
+      // arrives later. Anything that set data-theme from the bundle would
+      // therefore paint a white page first and correct it a beat afterwards —
+      // a full-screen white flash at 3am, which is exactly who dark mode is
+      // for. This runs before the first paint, so there is nothing to correct.
+      //
+      // Deliberately does *not* import from src/theme.ts (a module import
+      // would defeat the point by being deferred). It duplicates one thing —
+      // the "cm-theme" key and the two attribute values — and nothing else;
+      // src/theme.ts re-applies the preference on load, so if this script is
+      // ever wrong or blocked, the result is a flash rather than a wrong theme.
+      (function () {
+        try {
+          var stored = localStorage.getItem("cm-theme");
+          if (stored === "light" || stored === "dark") {
+            document.documentElement.setAttribute("data-theme", stored);
+            var meta = document.querySelector('meta[name="color-scheme"]');
+            if (meta) meta.setAttribute("content", stored);
+          }
+        } catch (e) {
+          // Storage blocked by policy or private mode: fall through to the OS
+          // preference, which is what "no stored choice" means anyway.
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BHP9b8mP.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CsA9b_OX.css">
   </head>
   <body>
     <div id="root"></div>

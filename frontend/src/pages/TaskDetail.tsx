@@ -327,7 +327,17 @@ export function TaskDetail() {
                     >
                       <div className="cm-run-fill" style={{ width: `${percent}%` }} />
                     </div>
-                    {task.progress_message && <p className="cm-run-message">{task.progress_message}</p>}
+                    {/* aria-hidden because the progressbar's aria-valuetext
+                        above already ends with this same message; without it a
+                        screen reader reads it twice in a row. The open-ended
+                        branch below has no progressbar, so its copy of this
+                        line stays announced — it is the only announcement
+                        there is. */}
+                    {task.progress_message && (
+                      <p className="cm-run-message" aria-hidden="true">
+                        {task.progress_message}
+                      </p>
+                    )}
                   </div>
                 )}
 
