@@ -48,6 +48,9 @@
 | 17 | Docs site (MkDocs Material) | 1–15 |
 | 18 | Dashboard — periodic schedules list screen (added mid-run, closes a spec gap) | 10, 12, 15 |
 | 19 | Dashboard — task search, filtering, and detail depth (added mid-run, user request) | 10, 13, 14 |
+| 20 | Full task history — pagination + filtered totals (added mid-run, user request) | 10, 19 |
+| 21 | Live progress + start-to-finish timing (added mid-run, user request) | 3, 4, 10, 13 |
+| 22 | Theming (light/dark/system) + deployment branding (added mid-run, user request) | 9, 12 |
 
 ---
 
@@ -75,7 +78,10 @@ plus anything worth surfacing outside that ledger.
 - [x] **Task 16: Django demo project** — commit `24ed13e` (dispatched in parallel with Task 13; Redis not available in this sandbox, so verification used `task_always_eager` + REST API checks instead of a live worker/beat — README still documents the full real flow). Review: Approved, clean. Fixed a real bug in the plan's own `settings.py` example (bare-int schedule value breaks the occurrences endpoint — needs a real `celery.schedules.schedule()` instance).
 - [x] **Task 17: Docs site (MkDocs Material)** — commit `6d45fb2` (dispatched in parallel with Task 15). Documented from real source, not the original plan text — every spot-checked claim across all 6 pages verified accurate against actual code, including non-obvious deviations from earlier fix rounds. Review: Approved, clean.
 - [x] **Task 18: Dashboard — periodic schedules list screen** — commit `bf40e79`. Closes the discoverability gap: reviewer traced the full nav→list→detail chain through the actual diff and confirmed it's real end to end (no dead links, no guessed URLs). All 18 tasks now complete.
-- [ ] **Task 19: Dashboard — task search, filtering, and detail depth** — not started. **Added mid-run** per user request ("we need [the tasks UI] to be awesome... search, filter, group by, get tasks for a specific date, task full details and logs"). Scoped via clarifying questions: search covers task name + task ID + args/kwargs content; group-by covers status + task name + date (client-side); date filter is a from/to range; detail depth adds worker/queue/timing info and a retry-history chain on top of the existing baseline. Dispatched after the final-review fix wave (Critical/Important findings) lands, since both touch overlapping files.
+- [x] **Task 19: Dashboard — task search, filtering, and detail depth** — commits `a92be3f` (backend), `f796c79`/`ab37c9e` (list), `fc271ba` (detail). Search covers task name/id/args/kwargs with LIKE-wildcard escaping; group-by is client-side and says so in the group headers; detail gained worker/queue/timings and a two-directional retry lineage.
+- [x] **Task 20: Full task history — pagination + filtered totals** — commits `a92be3f`, `ab37c9e`. Shipped as an explicit live/history mode split: live keeps the 5s poll and the guarantee that a refresh cannot collapse loaded rows; history pages by offset over the full filtered total with the poll switched off, which is what makes offset paging trustworthy. **The first pass capped reachable history at the API's 500-row ceiling and was sent back** — that ceiling did not deliver the actual request ("see all tasks history"), and documenting it would have been accepting the gap rather than closing it.
+- [x] **Task 21: Live progress + start-to-finish timing** — commits `64dcf40`, `ed2500e`, `706b177`. `report_progress()` plus a `started` row written before the task body. Benchmarked at 100k calls in one task body for 0.043s and 4 database writes. Three progress shapes render distinctly and deliberately: known total (bar + projected finish), open-ended (count, no bar), and stalled (estimate suppressed rather than counting down from a stopped rate).
+- [x] **Task 22: Theming + deployment branding** — commits `171dbc0`, `a2f0a4f`, `95b3978`. Three-state theme in localStorage with a flash-free pre-paint bootstrap; branding stored server-side and audited, with the four accent variants *derived by measured contrast* rather than guessed. Also carried the user's mid-wave layout feedback: `.cm-page` 960px → fluid with a 1600px ceiling, page padding 2rem/1.5rem/4rem → 1rem/1rem/2rem, and table cells given the horizontal gutter they never had.
 
 ---
 
@@ -4861,6 +4867,70 @@ Expected: PASS (all tests, no regressions)
 git add src/celery_manager/db/models.py src/celery_manager/control/tasks.py src/celery_manager/api/routes/tasks.py frontend/src src/celery_manager/dashboard/static tests/unit/test_control_tasks.py tests/unit/test_control_retry_audit.py tests/unit/test_api_tasks.py
 git commit -m "feat: task search, date-range filter, group-by, and worker/timing + retry-chain detail"
 ```
+
+---
+
+### Task 20: Full task history — pagination + filtered totals
+
+**Why this task exists:** added mid-run per an explicit user request — "see all tasks history if this is not added". It was not. `GET /api/tasks` passed no `limit`/`offset` through to `list_task_runs`, so it always returned that function's default newest-50 and nothing in the product could reach an older run. The Backlog already carried "pagination on `GET /api/tasks`" as a deferred item from the final review; the user request promoted it.
+
+**Files:**
+- Modify: `src/celery_manager/control/tasks.py` — `_apply_task_filters`, `count_task_runs`, `MAX_PAGE_SIZE`
+- Modify: `src/celery_manager/api/routes/tasks.py` — `limit`/`offset` params, clamping, envelope response
+- Modify: `frontend/src/api/tasks.ts` — `TaskPage` envelope type, `TaskQuery`
+- Modify: `frontend/src/pages/TaskList.tsx` — "Showing N of M" + Load more
+- Test: `tests/unit/test_control_tasks.py`, `tests/unit/test_api_tasks.py`
+
+**Rulings made during implementation:**
+- **One shared filter builder, not two filter chains.** `list_task_runs` and `count_task_runs` both route through `_apply_task_filters`. The classic failure of this feature is a total counted under different filters than the page it labels — sharing the builder makes that drift structurally impossible instead of merely tested-against.
+- **Envelope response, accepted as a breaking change.** `{items,total,limit,offset}` replaces the bare array. A bare array has nowhere to put a total, and without a total the UI cannot distinguish "50 results" from "the first 50 of 1,284". Taken now, while the package is unreleased at 0.1.0 and the only consumers are our own SPA and `docs/rest-api.md`.
+- **Clamp, don't reject, an oversized `limit`.** `?limit=10000000` is more often a stale bookmark than an attack; a 400 hands the caller a broken page instead of a capped one. Clamped to 500, offset floored at 0.
+- **The refetch span, not the page, is what a background poll re-requests.** The task list refreshes every 5s. Re-fetching `limit=50, offset=0` would silently collapse loaded history back to page one every 5 seconds. The list refetches the accumulated span instead.
+- **Known limitation, not fixed:** paging is `OFFSET`-based, so deep pages cost O(offset) in the database. Fine for this table's expected size; a keyset cursor is the fix if history reaches millions of rows. Ledgered, not built.
+
+---
+
+### Task 21: Live progress + start-to-finish timing
+
+**Why this task exists:** added mid-run per an explicit user request — "see progress of the running tasks and time from start to finish".
+
+**Files:**
+- Create: `src/celery_manager/progress.py` — `report_progress`
+- Modify: `src/celery_manager/db/models.py` — `progress_current/total/message/updated_at`
+- Modify: `src/celery_manager/decorator.py` — context var, and a `started` row written up front
+- Modify: `src/celery_manager/__init__.py` — public export
+- Create: `frontend/src/lib/taskProgress.ts` — shared derivations (percent, elapsed, ETA, duration formatting, tick hook)
+- Modify: `frontend/src/pages/TaskList.tsx`, `frontend/src/pages/TaskDetail.tsx`
+- Create: `examples/django_demo/tasks_app/tasks.py` — `import_customers`, `tail_event_stream` demo tasks
+- Test: `tests/unit/test_progress.py`, `tests/unit/test_decorator.py`
+
+**Rulings made during design (via clarifying questions to the user):**
+- **An explicit `report_progress()` helper, not the Celery result backend.** Reading `self.update_state(state="PROGRESS", meta=...)` out of the result backend needs no new API and works for teams already doing it — but it requires a result backend to be configured, and the progress evaporates when the result expires, so it can never appear in *history*. The helper writes to `task_runs`, which is already this project's source of truth, works with no result backend at all, and persists. Cost, accepted: the user adds one line to tasks they want a bar for.
+- **Writes are throttled to one per 0.5s per run**, with a completion call always writing. `report_progress` inside a 100k-row loop would otherwise be 100k commits — a footgun we are not shipping and documenting away.
+- **`@track` now writes a `started` row before invoking the task body.** This is a real behaviour change, and it is what makes the feature possible at all: previously the decorator wrote only on completion, so a running task was invisible unless the separate events-listener process happened to be running, and a progress write had no row to land on. Cost: one extra commit per tracked run.
+- **`total=None` is a first-class case, not an edge case.** Draining a queue or following a stream has no denominator. It reports a count and a message with no percentage, and the UI shows exactly that rather than inventing a bar it cannot honestly fill.
+- **`progressFraction === null` must never render as 0%.** A bar at 0% reads as a stuck task; no bar reads as "not instrumented". These are different facts and the UI keeps them different.
+- **ETA is straight-line extrapolation and is presented as an estimate.** Wrong for work with uneven per-unit cost, so it returns nothing rather than a wild number when there is no rate to extrapolate from.
+
+---
+
+### Task 22: Theming (light/dark/system) + deployment branding
+
+**Why this task exists:** added mid-run per an explicit user request — "give a good care for the UI dashboard design, add dark and white theme, and add settings in case they wanted to brand it". Dark mode already existed but only through `prefers-color-scheme`: correct, and completely unchoosable by the user.
+
+**Files:**
+- Create: `src/celery_manager/control/settings.py`, `src/celery_manager/api/routes/settings.py`
+- Modify: `src/celery_manager/db/models.py` — `AppSetting`; `src/celery_manager/api/app.py` — router
+- Create: `frontend/src/theme.ts`, `frontend/src/api/settings.ts`, `frontend/src/pages/Settings.tsx`
+- Modify: `frontend/src/styles/tokens.css`, `frontend/src/App.tsx`, `frontend/src/main.tsx`, `frontend/index.html`, `frontend/src/pages/Login.tsx`
+- Test: `tests/unit/test_api_settings.py`
+
+**Rulings:**
+- **Theme is per-browser (localStorage); branding is per-deployment (database).** A theme is a personal preference and syncing it to a shared table would fight between colleagues; branding is the opposite — one operator sets it and everyone should see it. The settings screen states both facts in the UI, because users otherwise assume both are personal.
+- **Three theme states, not a boolean.** "System" has to remain reachable, so tokens resolve from an explicit `data-theme` attribute while still following the OS when no explicit choice is stored.
+- **`GET /api/settings` is unauthenticated by design.** The login screen must render the deployment's branding and is pre-auth by definition. Safe only because the supported-key allowlist is closed and holds nothing sensitive; `updated_by`/`updated_at` are withheld rather than exposed.
+- **Both branding validators are allowlists, not denylists.** The accent lands in a CSS custom property (CSS injection) and the logo URL in an `<img src>` (stored XSS). A denylist loses to `JaVaScRiPt:`, percent-encoding, and the next scheme nobody has thought of; an allowlist makes an unknown scheme a broken logo instead of a compromise.
+- **Accepted v1 limitation:** no role system, so any authenticated user can rebrand the deployment. Audited, not prevented.
 
 ---
 
