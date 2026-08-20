@@ -130,6 +130,15 @@ def _resolve_run() -> tuple[str | None, str | None]:
     `task_name` deliberately: if reading the name blows up we still keep the
     id we already have.
     """
+    tracked_id = _current_task_id.get()
+    if tracked_id:
+        # Short-circuit: this is the hot path (once per loop iteration, before
+        # the throttle can drop the call), and touching Celery's thread-local
+        # proxy here would buy nothing — `@track` has already created the row
+        # with the real task name, and if that write happened to fail, the
+        # "unknown" seed below is corrected by the terminal write anyway.
+        return tracked_id, None
+
     fallback_id = None
     task_name = None
     try:
@@ -141,7 +150,7 @@ def _resolve_run() -> tuple[str | None, str | None]:
     except Exception:  # deliberate: current_task is a proxy; never trust it
         pass
 
-    return (_current_task_id.get() or fallback_id or None), task_name
+    return fallback_id or None, task_name
 
 
 def _coerce_current(value) -> int | None:
