@@ -52,6 +52,6 @@ export interface ScheduleSummary {
 
 export async function listSchedules(): Promise<ScheduleSummary[]> {
   const response = await fetch(`${BASE}/schedules`, { credentials: "include" });
-  if (!response.ok) throw new Error("failed to load schedules");
+  if (!response.ok) throw new Error("Couldn't load schedules.");
   return response.json();
 }

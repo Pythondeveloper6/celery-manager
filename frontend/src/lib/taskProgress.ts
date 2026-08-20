@@ -41,6 +41,24 @@ export function progressFraction(task: TaskSummary): number | null {
   return Math.min(1, Math.max(0, current / total));
 }
 
+/** The completion percentage to *show*, 0-100, or null when there is none.
+ *
+ *  Split out of the two screens rather than left as one `Math.round` each,
+ *  because they had already drifted: the detail page deliberately never
+ *  rounds a still-running task up to 100 ("rounding 0.998 up reads as a
+ *  finished task that is somehow still working") while the list rounded
+ *  plainly — so a run at 99.6% showed 100% in the table and 99% on its own
+ *  page. That is precisely the disagreement this module exists to prevent,
+ *  and it is now one function with one rule: a run that is still running
+ *  stops at 99 until it is genuinely complete. */
+export function progressPercent(task: TaskSummary): number | null {
+  const fraction = progressFraction(task);
+  if (fraction === null) return null;
+  if (fraction >= 1) return 100;
+  const rounded = Math.round(fraction * 100);
+  return isRunning(task) ? Math.min(99, rounded) : rounded;
+}
+
 /** Seconds this run has been going, live for a running task and final for a
  *  finished one.
  *

@@ -80,16 +80,15 @@
    viewport a sticky rail underneath it would eat what little scroll room is
    left, so below 34rem tall the rail simply scrolls with the page.
 
-   --cm-tasks-rail-top clears the sticky nav. It tracks .cm-app-nav's height
-   (space-3 padding twice plus one line of nav text) and is declared here
-   because tokens.css is owned elsewhere; it is a local constant, not a
-   guess — measured against the rendered nav. */
+   The offset clears the sticky nav. This used to carry its own local copy of
+   the nav's height because tokens.css was owned by another task at the time;
+   it now reads --cm-app-nav-height, which .cm-page's own min-height also
+   uses, so the two can no longer disagree about how tall the bar is. */
 @media (min-width: 64rem) and (min-height: 34rem) {
   .cm-tasks-rail {
-    --cm-tasks-rail-top: 3.75rem;
     position: sticky;
-    top: calc(var(--cm-tasks-rail-top) + var(--cm-space-4));
-    max-height: calc(100dvh - var(--cm-tasks-rail-top) - var(--cm-space-6));
+    top: calc(var(--cm-app-nav-height) + var(--cm-space-4));
+    max-height: calc(100dvh - var(--cm-app-nav-height) - var(--cm-space-6));
     overflow-y: auto;
   }
 }
@@ -110,17 +109,29 @@
   color: var(--cm-color-text-muted);
 }
 
+/* --cm-color-accent-*TEXT*, not --cm-color-accent. The distinction is
+   documented in tokens.css and is load-bearing the moment a deployment sets
+   its own brand colour: --cm-color-accent is a *fill*, guaranteed legible
+   only against --cm-color-accent-contrast, while this is accent painted
+   straight onto a surface with nothing guaranteeing anything. Measured
+   against the live deployment's brand (#f2c744): as raw accent this text was
+   1.37:1 on the rail's sunken surface and 1.61:1 on white — and the *hover*
+   step made it worse, 1.28:1, because the fill's hover deliberately steps
+   away from the fill's text colour. The derived text pair measures 4.64:1
+   and improves on hover, by construction (see deriveAccent in branding.tsx).
+   Identical to --cm-color-accent for the built-in phosphor cyan, so this is
+   a no-op for a default deployment. */
 .cm-tasks-clear-all {
   font-family: var(--cm-font-body);
   font-size: var(--cm-text-xs);
   font-weight: 600;
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
   border-radius: var(--cm-radius-sm);
   transition: color var(--cm-duration-fast) var(--cm-ease);
 }
 
 .cm-tasks-clear-all:hover {
-  color: var(--cm-color-accent-hover);
+  color: var(--cm-color-accent-text-hover);
   text-decoration: underline;
 }
 
@@ -183,7 +194,7 @@
 }
 
 .cm-tasks-active-chip:hover .cm-tasks-active-x {
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
 }
 
 .cm-tasks-rail-section {
@@ -355,7 +366,7 @@
 
 .cm-tasks-filters-toggle:hover {
   border-color: var(--cm-color-accent);
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
 }
 
 @media (max-width: 63.99rem) {
@@ -670,13 +681,13 @@
   font-family: var(--cm-font-body);
   font-size: var(--cm-text-xs);
   font-weight: 600;
-  color: var(--cm-color-accent);
+  color: var(--cm-color-accent-text);
   border-radius: var(--cm-radius-sm);
   transition: color var(--cm-duration-fast) var(--cm-ease);
 }
 
 .cm-tasks-link-btn:hover {
-  color: var(--cm-color-accent-hover);
+  color: var(--cm-color-accent-text-hover);
   text-decoration: underline;
 }
 

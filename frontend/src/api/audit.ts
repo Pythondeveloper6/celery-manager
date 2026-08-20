@@ -11,6 +11,6 @@ export interface AuditEntry {
 
 export async function listAuditLog(): Promise<AuditEntry[]> {
   const response = await fetch(`${BASE}/audit`, { credentials: "include" });
-  if (!response.ok) throw new Error("failed to load audit log");
+  if (!response.ok) throw new Error("Couldn't load the audit log.");
   return response.json();
 }

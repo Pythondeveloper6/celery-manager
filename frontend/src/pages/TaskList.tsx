@@ -6,7 +6,7 @@ import {
   elapsedSeconds,
   formatDuration,
   isRunning,
-  progressFraction,
+  progressPercent,
   projectedRemainingSeconds,
   secondsSince,
   useNow,
@@ -242,13 +242,14 @@ function groupTasks(tasks: TaskSummary[], groupBy: GroupBy): TaskGroup[] {
 function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
   const running = isRunning(task);
   const elapsed = elapsedSeconds(task, now);
-  const fraction = progressFraction(task);
   const remaining = projectedRemainingSeconds(task, elapsed);
 
   // `progressFraction` returning null means "not instrumented" or "no
   // denominator" — explicitly NOT 0%. A bar at 0% reads as a stuck task, so
-  // those rows get a clock and nothing else.
-  const percent = fraction === null ? null : Math.round(fraction * 100);
+  // those rows get a clock and nothing else. The rounding itself comes from
+  // lib/taskProgress, so this cell and the detail page can't quote two
+  // different percentages for the same run (they used to, at 99.5%+).
+  const percent = progressPercent(task);
 
   const quietFor = running ? secondsSince(task.progress_updated_at, now) : null;
   const stalled = percent !== null && quietFor !== null && quietFor >= STALLED_AFTER_SECONDS;

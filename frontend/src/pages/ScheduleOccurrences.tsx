@@ -96,8 +96,13 @@ export function ScheduleOccurrences() {
 
   return (
     <div className="cm-page">
-      <Link to="/" className="cm-back-link">
-        &larr; All tasks
+      {/* Back to the *schedules* list, not to Tasks. This screen predates
+          ScheduleList, so its back link went to the only list that existed
+          at the time; now that /schedules is where a person actually arrives
+          from, sending them to the task table instead is a dead end that
+          costs a second navigation every time. */}
+      <Link to="/schedules" className="cm-back-link">
+        &larr; All schedules
       </Link>
 
       <header className="cm-page-header">
@@ -117,9 +122,16 @@ export function ScheduleOccurrences() {
       )}
 
       {error ? (
-        <p className="cm-error" role="alert">
-          {error}
-        </p>
+        // Same error treatment as the other list screens: the server's own
+        // message plus a retry, rather than a sentence with no way forward.
+        <div className="cm-panel-stack">
+          <p className="cm-error" role="alert">
+            {error}
+          </p>
+          <button type="button" className="cm-btn cm-btn-outline" onClick={refresh}>
+            Try again
+          </button>
+        </div>
       ) : occurrences === null ? (
         <p className="cm-loading">
           <span className="cm-live-dot" aria-hidden="true" />

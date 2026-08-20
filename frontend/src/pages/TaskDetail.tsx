@@ -8,6 +8,7 @@ import {
   formatDuration,
   isRunning,
   progressFraction,
+  progressPercent,
   projectedRemainingSeconds,
   secondsSince,
   toMillis,
@@ -145,17 +146,30 @@ export function TaskDetail() {
   // interval is cleared. Nothing keeps ticking on a finished run.
   useEffect(() => {
     if (!taskId || !live) return;
+    // `cancelled` as well as clearInterval, because clearing the timer does
+    // nothing about the request it already dispatched. Navigating from one
+    // live run to another tears this effect down while a getTask() for the
+    // *old* id is still in flight; without the guard its response lands
+    // afterwards and repaints the new run's page with the old run's data
+    // until the new fetch overtakes it. Same reason the loader effect above
+    // carries one.
+    let cancelled = false;
     const timer = setInterval(() => {
       getTask(taskId)
         .then((next) => {
+          if (cancelled) return;
           setTask(next);
           setLiveError(null);
         })
         .catch((err) => {
+          if (cancelled) return;
           setLiveError(err instanceof Error ? err.message : "Couldn't refresh this run.");
         });
     }, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [taskId, live]);
 
   // The one-second clock behind the elapsed counter. Only runs while the task
@@ -204,8 +218,11 @@ export function TaskDetail() {
   const showEstimate = remaining !== null && !stale;
 
   // Never render 100% on a run that is still going: rounding 0.998 up reads
-  // as a finished task that is somehow still working.
-  const percent = fraction === null ? null : fraction >= 1 ? 100 : Math.min(99, Math.round(fraction * 100));
+  // as a finished task that is somehow still working. That rule now lives in
+  // lib/taskProgress alongside every other derivation, because the task list
+  // rounded plainly and the two screens quoted different percentages for the
+  // same run in the last half-percent.
+  const percent = task ? progressPercent(task) : null;
 
   // Why a timestamp is missing depends on where the run is: a queued task
   // hasn't started, a running one hasn't finished, and anything else simply
@@ -305,7 +322,16 @@ export function TaskDetail() {
               <>
                 {fraction !== null && percent !== null && (
                   <div className="cm-run-progress">
-                    <div className="cm-run-progress-head">
+                    {/* aria-hidden for the same reason .cm-run-message below
+                        is: the progressbar's aria-valuetext already says
+                        "21% — 4,182 of 20,000", and without this the tree
+                        reads "21% 4,182 of 20,000" and then immediately
+                        "Run progress, 21% — 4,182 of 20,000 — …". Verified
+                        against a real accessibility tree, not inferred. Safe
+                        because this head only ever renders in the branch
+                        that also renders the bar; the open-ended branch
+                        below has no bar, so its head stays announced. */}
+                    <div className="cm-run-progress-head" aria-hidden="true">
                       <span className="cm-run-pct">
                         {percent}
                         <span className="cm-run-pct-unit">%</span>
@@ -316,6 +342,11 @@ export function TaskDetail() {
                     </div>
                     <div
                       className="cm-run-track"
+                      // The list drains its run lane when a run stops
+                      // reporting; without the same flag here the same run
+                      // looked healthy on its own page and stalled in the
+                      // table one click away.
+                      data-stalled={stale ? "true" : undefined}
                       role="progressbar"
                       aria-label="Run progress"
                       aria-valuemin={0}
