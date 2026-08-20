@@ -297,9 +297,22 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
 
         {/* Rendered whenever there is something true to say — including for a
             run reporting an open-ended message with no total, which gets the
-            message without a (meaningless) bar. */}
+            message without a (meaningless) bar.
+
+            Hidden from assistive tech *only* when the bar above is present,
+            because that bar's aria-valuetext already carries this exact
+            string — verified against a real accessibility tree, where the
+            cell's name came out as "2m 44s 21% · ~10m 23s left · row 4,182 of
+            20,000 21% · ~10m 23s left · row 4,182 of 20,000". With no bar
+            (open-ended progress) this span is the only announcement there is,
+            so it must stay in the tree. */}
         {running && metaText && (
-          <span className="cm-run-meta" data-stalled={stalled ? "true" : undefined} title={metaText}>
+          <span
+            className="cm-run-meta"
+            data-stalled={stalled ? "true" : undefined}
+            title={metaText}
+            aria-hidden={percent !== null ? true : undefined}
+          >
             {metaText}
           </span>
         )}
