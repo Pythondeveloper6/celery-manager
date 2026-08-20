@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from datetime import datetime
 
@@ -9,12 +10,71 @@ from sqlalchemy import or_
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
 
-# Maximum rows `GET /api/tasks` will hand back in one response, and the ceiling
-# the route clamps a caller-supplied `limit` to. Lives here next to the query
-# builder rather than in the route so the control layer documents its own
-# contract, but the clamping itself happens at the API boundary — a Python
-# caller of `list_task_runs` is trusted and may legitimately ask for more.
+# Maximum rows a list endpoint will hand back in one response, and the ceiling
+# each route clamps a caller-supplied `limit` to (`GET /api/tasks` and
+# `GET /api/audit` both use it — one number, so the API has one answer to
+# "how much can I ask for"). Lives here next to the query builder rather than
+# in the routes so the control layer documents its own contract, but the
+# clamping itself happens at the API boundary — a Python caller of
+# `list_task_runs` is trusted and may legitimately ask for more.
 MAX_PAGE_SIZE = 500
+
+
+class TaskRunNotFound(ValueError):
+    """No `task_runs` row exists for the given task id.
+
+    Subclasses `ValueError` rather than `LookupError` purely so this stays a
+    non-breaking change: `retry_task` has always raised a bare `ValueError`
+    here, and any Python caller already catching that keeps working. The
+    reason for having a type at all is the REST layer — it needs to tell
+    "you asked about a task we've never heard of" (404) apart from "the row
+    exists but we could not make sense of its stored args" (also a
+    `ValueError`, but a 500-worthy one), and a message-string match is not a
+    way to tell exceptions apart.
+    """
+
+
+def _decode_stored_call_argument(raw: str | None, field: str, task_id: str, empty):
+    """Decode a stored `task_runs.args`/`.kwargs` back into real Python.
+
+    Two writers, two formats, and only one of them is JSON. The decorator
+    writes `json.dumps(...)`; the events listener writes `str(event["args"])`
+    (`listener.upsert_task_run`), and Celery's event payload is already a
+    *repr* — `"(5,)"`, `"{'b': 2}"`. So `json.loads` alone raised
+    `JSONDecodeError` for every run the listener recorded and the decorator
+    did not, i.e. every undecorated task, which surfaced as a 500 from the
+    dashboard's retry button. Try JSON first (the format we write), then
+    `ast.literal_eval` (the format we read back from Celery); the latter is
+    the safe evaluator, never `eval`.
+
+    Refuses rather than guesses when neither works, or when the decoded value
+    is the wrong shape: re-dispatching somebody's task with silently dropped
+    or reinterpreted arguments is a much worse outcome than an error message
+    telling the operator to supply args explicitly. Celery's own event repr
+    is truncated for long values, so "neither works" is a real case, not a
+    theoretical one.
+    """
+    if not raw:
+        return empty
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        try:
+            value = ast.literal_eval(raw)
+        except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+            raise ValueError(
+                f"could not decode the stored {field} for {task_id} ({raw!r}); "
+                f"pass {field} explicitly to retry this run"
+            ) from None
+    if isinstance(empty, list) and isinstance(value, tuple):
+        value = list(value)
+    if not isinstance(value, type(empty)):
+        raise ValueError(
+            f"the stored {field} for {task_id} decoded to "
+            f"{type(value).__name__}, not {type(empty).__name__}; "
+            f"pass {field} explicitly to retry this run"
+        )
+    return value
 
 
 def _escape_like(term: str) -> str:
@@ -199,6 +259,11 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     """Re-run a task, by default with its original args/kwargs; pass
     args/kwargs to override them.
 
+    Raises `TaskRunNotFound` if `task_id` names no stored run (the REST layer
+    turns that into a 404), and a plain `ValueError` if the stored args or
+    kwargs cannot be decoded — see `_decode_stored_call_argument` for why
+    that is refused rather than guessed at.
+
     Also stamps the new dispatch's row with `retried_from_id`, so the retry
     chain is visible on the detail view immediately — before any Celery event
     for the new task_id has been received, which in the documented topology
@@ -207,10 +272,10 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     """
     run = get_task_run(session, task_id)
     if run is None:
-        raise ValueError(f"no task run found for {task_id}")
+        raise TaskRunNotFound(f"no task run found for {task_id}")
 
-    final_args = args if args is not None else json.loads(run.args or "[]")
-    final_kwargs = kwargs if kwargs is not None else json.loads(run.kwargs or "{}")
+    final_args = args if args is not None else _decode_stored_call_argument(run.args, "args", task_id, [])
+    final_kwargs = kwargs if kwargs is not None else _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
 
     new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
 

@@ -1,12 +1,19 @@
 from unittest.mock import MagicMock
 
+import pytest
 from celery import Celery
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from celery_manager.db.models import Base, TaskRun, AuditLog
 from celery_manager.control.audit import record
-from celery_manager.control.tasks import retry_task, bulk_retry, get_task_run, list_retries_of
+from celery_manager.control.tasks import (
+    TaskRunNotFound,
+    retry_task,
+    bulk_retry,
+    get_task_run,
+    list_retries_of,
+)
 
 
 def _session_with_runs():
@@ -146,3 +153,94 @@ def test_retry_task_lineage_does_not_disturb_the_audit_trail():
     assert [r.action for r in rows] == ["retry"]
     assert rows[0].target_id == "t1"
     assert "t1-retry" in rows[0].details
+
+
+# --- Decoding the stored args back into a real call ---
+#
+# Two writers, two formats. The decorator writes `json.dumps(...)`; the
+# events listener writes `str(event["args"])`, and Celery's event payload is
+# already a *repr* — "(5,)", "{'b': 2}". `json.loads` alone therefore blew up
+# with a JSONDecodeError on every run only the listener had recorded, i.e.
+# every task not decorated with @track, which surfaced as a 500 from the
+# dashboard's retry button.
+
+
+def _session_with_a_listener_written_run():
+    from celery_manager.events.listener import upsert_task_run
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    with Session() as session:
+        upsert_task_run(session, {
+            "type": "task-received", "uuid": "listener-1", "name": "demo.plain",
+            "args": "(5, 'x')", "kwargs": "{'b': 2}", "hostname": "worker-1",
+        })
+        session.commit()
+    return Session()
+
+
+def test_retry_task_decodes_listener_written_repr_args():
+    session = _session_with_a_listener_written_run()
+    app = MagicMock(spec=Celery)
+    app.send_task.return_value = MagicMock(id="listener-1-retry")
+
+    retry_task(app, session, "listener-1", username="alice")
+
+    app.send_task.assert_called_once_with("demo.plain", args=[5, "x"], kwargs={"b": 2})
+
+
+def test_retry_task_raises_task_run_not_found_for_an_unknown_id():
+    """A dedicated type, so the REST layer can answer 404 instead of 500
+    without matching on a message string. Still a ValueError subclass, so
+    callers written against the old behaviour keep working."""
+    session = _session_with_runs()
+    app = MagicMock(spec=Celery)
+
+    with pytest.raises(TaskRunNotFound):
+        retry_task(app, session, "no-such-run", username="alice")
+    with pytest.raises(ValueError):
+        retry_task(app, session, "no-such-run", username="alice")
+    app.send_task.assert_not_called()
+
+
+def test_retry_task_refuses_stored_args_it_cannot_decode():
+    """Celery's event repr is truncated for long values, so undecodable
+    stored args are a real case. Re-dispatching someone's task with silently
+    dropped arguments is worse than refusing, so this raises rather than
+    falling back to an empty arg list — and nothing is dispatched."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    with Session() as session:
+        session.add(TaskRun(task_id="truncated-1", task_name="demo.plain", status="failed",
+                            args="(<Row object at 0x7f...", kwargs="{}"))
+        session.commit()
+    session = Session()
+    app = MagicMock(spec=Celery)
+
+    with pytest.raises(ValueError) as excinfo:
+        retry_task(app, session, "truncated-1", username="alice")
+    # Not the not-found case — the run exists, its args are the problem.
+    assert not isinstance(excinfo.value, TaskRunNotFound)
+    assert "args" in str(excinfo.value)
+    app.send_task.assert_not_called()
+
+
+def test_explicit_args_bypass_decoding_entirely():
+    """An operator retrying with explicit args must not be blocked by a row
+    whose stored args are unreadable."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    with Session() as session:
+        session.add(TaskRun(task_id="truncated-2", task_name="demo.plain", status="failed",
+                            args="(<Row object at 0x7f...", kwargs="{}"))
+        session.commit()
+    session = Session()
+    app = MagicMock(spec=Celery)
+    app.send_task.return_value = MagicMock(id="truncated-2-retry")
+
+    retry_task(app, session, "truncated-2", username="alice", args=[1], kwargs={})
+
+    app.send_task.assert_called_once_with("demo.plain", args=[1], kwargs={})

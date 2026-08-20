@@ -22,6 +22,7 @@ from celery_manager.control.settings import (
     update_settings,
 )
 from celery_manager.control.tasks import (
+    TaskRunNotFound,
     bulk_retry,
     cancel_task,
     count_task_runs,
@@ -33,6 +34,7 @@ from celery_manager.control.tasks import (
 )
 
 __all__ = [
+    "TaskRunNotFound",
     "bulk_retry",
     "cancel_task",
     "count_task_runs",

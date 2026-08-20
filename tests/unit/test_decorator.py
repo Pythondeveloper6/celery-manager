@@ -12,6 +12,15 @@ from celery_manager.decorator import track, configure
 from celery_manager.events.listener import upsert_task_run
 
 
+class BrokenStrError(Exception):
+    """An exception whose `__str__` raises — the shape that used to make the
+    decorator's own failure branch blow up. Declared at module level rather
+    than inside the test so it is an ordinary, importable class."""
+
+    def __str__(self):
+        raise RuntimeError("__str__ is broken")
+
+
 @pytest.fixture
 def env():
     app = Celery("test_app", broker="memory://", backend="cache+memory://")
@@ -375,3 +384,259 @@ def test_a_failed_started_write_does_not_stop_the_run_or_the_final_write(env, mo
     with Session() as session:
         row = session.query(TaskRun).filter_by(task_id="started-write-failed-1").one()
         assert row.status == "succeeded"
+
+
+# --- arguments the decorator has to store but cannot serialize --------------
+#
+# `@track` records the run's args/kwargs, and it does that *before* calling
+# the body. Stdlib `json.dumps` is stricter than Celery: kombu's JSON
+# serializer round-trips datetime/date/UUID/Decimal over the broker, so a
+# task can legitimately arrive in the worker holding objects stdlib json
+# refuses. That used to raise straight out of the wrapper — the body never
+# ran and the task reported FAILURE, which is exactly the outcome spec §4.1
+# says celery-manager must never cause.
+
+
+def test_unserializable_args_do_not_stop_the_task_body(env):
+    from decimal import Decimal
+    from uuid import UUID
+
+    app, Session, echo, calls = env
+    ran = []
+
+    @app.task(name="demo.exotic_args", bind=True)
+    @track()
+    def exotic(self, when, ident, amount):
+        ran.append(when)
+        return "ok"
+
+    result = exotic.apply(
+        args=[datetime(2026, 1, 1, tzinfo=timezone.utc),
+              UUID("00000000-0000-0000-0000-000000000001"),
+              Decimal("1.50")],
+        task_id="exotic-1",
+    )
+
+    assert result.state == "SUCCESS"
+    assert result.result == "ok"
+    assert len(ran) == 1
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id="exotic-1").one()
+        assert row.status == "succeeded"
+        # Shape preserved (a list stays a list), unserializable leaves
+        # replaced by their repr so the value is still searchable.
+        assert row.args.startswith("[") and row.args.endswith("]")
+        # repr, not JSON, for the leaves stdlib json cannot express.
+        assert "datetime.datetime(2026, 1, 1" in row.args
+        assert "1.50" in row.args
+
+
+def test_a_hostile_object_in_kwargs_still_does_not_stop_the_task(env):
+    app, Session, echo, calls = env
+
+    class Hostile:
+        def __repr__(self):
+            raise RuntimeError("no repr for you")
+
+    @app.task(name="demo.hostile_args", bind=True)
+    @track()
+    def hostile(self, **kwargs):
+        return "ok"
+
+    result = hostile.apply(kwargs={"thing": Hostile()}, task_id="hostile-1")
+
+    assert result.state == "SUCCESS"
+    with Session() as session:
+        assert session.query(TaskRun).filter_by(task_id="hostile-1").one().status == "succeeded"
+
+
+# --- retries: Celery reuses the task id across attempts ---------------------
+
+
+def test_a_celery_retry_is_recorded_as_retried_not_failed(env):
+    """`self.retry()` raises `celery.exceptions.Retry`, an ordinary Exception
+    subclass. Caught by the generic failure branch it recorded a run Celery
+    considers RETRY as `failed`, with "Retry in 30s: ..." sitting in the
+    exception column and a finish time for a run that had not finished."""
+    app, Session, echo, calls = env
+    writes = []
+
+    @app.task(name="demo.retrier", bind=True, max_retries=2, default_retry_delay=0)
+    @track()
+    def retrier(self):
+        if self.request.retries < 1:
+            raise self.retry(exc=ValueError("transient"))
+        return "ok"
+
+    real_persist = decorator_module._persist_run
+
+    def spy(task_id, **fields):
+        writes.append(fields.get("status"))
+        return real_persist(task_id, **fields)
+
+    original = decorator_module._persist_run
+    decorator_module._persist_run = spy
+    try:
+        result = retrier.apply(task_id="retry-status-1")
+    finally:
+        decorator_module._persist_run = original
+
+    assert result.state == "SUCCESS"
+    # Never `failed` — the intermediate attempt is a retry, and the run ends
+    # succeeded.
+    assert writes == ["started", "retried", "started", "succeeded"]
+
+
+def test_a_new_attempt_clears_the_previous_attempts_outcome(env):
+    """Celery reuses the task id, so attempt N+1 writes onto attempt N's row.
+    `_upsert_task_run` skips None values and therefore cannot erase a field —
+    without the explicit `clear`, a run that failed once and then succeeded
+    kept the failure's exception, traceback and progress counters and
+    rendered as `succeeded` with a traceback attached."""
+    app, Session, echo, calls = env
+    attempts = []
+
+    @app.task(name="demo.autoretry", bind=True,
+              autoretry_for=(ValueError,), max_retries=2, default_retry_delay=0)
+    @track()
+    def flaky(self):
+        attempts.append(1)
+        if len(attempts) < 2:
+            raise ValueError("transient")
+        return "ok"
+
+    result = flaky.apply(task_id="clear-1")
+
+    assert result.state == "SUCCESS"
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id="clear-1").one()
+        assert row.status == "succeeded"
+        assert row.exception is None
+        assert row.traceback is None
+        # The successful attempt's own timings survive; only the stale ones go.
+        assert row.finished_at is not None
+        assert row.runtime_seconds is not None
+
+
+def test_clearing_on_a_new_attempt_never_touches_listener_owned_fields(env):
+    """The `clear` list is deliberately limited to what the decorator itself
+    writes. worker/queue belong to the events listener and must survive every
+    attempt."""
+    app, Session, echo, calls = env
+    task_id = "clear-vs-listener-1"
+
+    with Session() as session:
+        upsert_task_run(session, {"type": "task-sent", "uuid": task_id, "name": "demo.echo", "queue": "default"})
+        upsert_task_run(session, {"type": "task-started", "uuid": task_id, "hostname": "worker-1"})
+        session.commit()
+
+    echo.apply(args=["hi"], task_id=task_id)
+
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id=task_id).one()
+        assert row.worker == "worker-1"
+        assert row.queue == "default"
+        assert row.status == "succeeded"
+
+
+# --- @track on a task that is not `bind=True` -------------------------------
+#
+# The decorator is documented to sit under `@app.task(bind=True)` and used to
+# assume args[0] was the Task instance, reading `args[0].request.id`. Applied
+# to an unbound task that assumption raised `AttributeError: 'str' object has
+# no attribute 'request'` out of the wrapper — a wiring mistake failing the
+# user's task before its body ever ran.
+
+
+def test_track_on_an_unbound_task_still_runs_the_body(env):
+    app, Session, echo, calls = env
+    ran = []
+
+    @app.task(name="demo.unbound")  # deliberately not bind=True
+    @track()
+    def unbound(value):
+        ran.append(value)
+        return value
+
+    result = unbound.apply(args=["hi"], task_id="unbound-1")
+
+    assert result.state == "SUCCESS"
+    assert result.result == "hi"
+    assert ran == ["hi"]
+
+
+def test_track_on_an_unbound_task_records_the_real_name_and_uuid(env):
+    """Falling back to `celery.current_task` (the same guarded lookup
+    `progress._resolve_run` uses) means an unbound task is recorded properly,
+    not merely without crashing: real registered name, real uuid, and all of
+    its arguments — none of which is args[0]-is-self."""
+    app, Session, echo, calls = env
+
+    @app.task(name="demo.unbound_named")
+    @track()
+    def unbound(a, b):
+        return a + b
+
+    unbound.apply(args=[1, 2], task_id="unbound-2")
+
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id="unbound-2").one()
+        assert row.task_name == "demo.unbound_named"
+        assert row.status == "succeeded"
+        assert row.args == "[1, 2]"
+
+
+def test_track_on_an_unbound_task_with_a_first_arg_that_looks_bound(env):
+    """The old positional assumption was type-dependent: an argument that
+    happened to expose `.request` would have been silently mistaken for the
+    task instance and dropped from the recorded args."""
+    app, Session, echo, calls = env
+
+    class LooksLikeATask:
+        request = object()
+        name = "not.a.task"
+
+        def __repr__(self):
+            return "<LooksLikeATask>"
+
+    @app.task(name="demo.decoy")
+    @track()
+    def decoy(thing):
+        return "ok"
+
+    result = decoy.apply(args=[LooksLikeATask()], task_id="decoy-1")
+
+    assert result.state == "SUCCESS"
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id="decoy-1").one()
+        assert row.task_name == "demo.decoy"
+        # The decoy is an argument, not the task, so it stays in args.
+        assert "LooksLikeATask" in row.args
+
+
+def test_an_exception_whose_str_raises_does_not_displace_the_real_failure(env):
+    """The failure branch called `str(exc)` unguarded, so an exception class
+    with a broken `__str__` (a real pattern in DB drivers and in types that
+    skip `super().__init__`) raised *from inside the except block* and
+    replaced the task's own exception — the caller saw a RuntimeError from
+    celery-manager instead of their failure, and the row stayed at
+    `started`."""
+    app, Session, echo, calls = env
+
+    @app.task(name="demo.bad_str", bind=True)
+    @track()
+    def bad(self):
+        raise BrokenStrError("real failure")
+
+    # `throw=True` so the task's own exception object reaches us intact:
+    # a plain eager `.apply()` round-trips the result through Celery's
+    # serialization, which would answer the question "can Celery pickle this
+    # class" rather than the one this test is asking.
+    with pytest.raises(BrokenStrError):
+        bad.apply(task_id="bad-str-1", throw=True)
+
+    with Session() as session:
+        row = session.query(TaskRun).filter_by(task_id="bad-str-1").one()
+        assert row.status == "failed"
+        assert "BrokenStrError" in row.exception
+        assert row.traceback is not None

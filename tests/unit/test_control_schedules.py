@@ -5,7 +5,7 @@ from celery.schedules import crontab, schedule as interval_schedule
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from celery_manager.db.models import Base, PeriodicSchedule, ScheduleOverride
+from celery_manager.db.models import Base, PeriodicSchedule
 from celery_manager.control.schedules import (
     upcoming_occurrences,
     pause_occurrence,
