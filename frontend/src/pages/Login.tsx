@@ -1,7 +1,13 @@
 import { useId, useState } from "react";
 import { login } from "../api/client";
+import { BrandMark, useBranding } from "../branding";
 
 export function Login({ onSuccess }: { onSuccess: (username: string) => void }) {
+  // Branding is already in context by the time this renders (BrandingProvider
+  // wraps App in main.tsx, above the authentication check) — that is the whole
+  // reason GET /api/settings is unauthenticated. If it never arrives, this
+  // shows the built-in wordmark and the form still works.
+  const { settings } = useBranding();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,8 +36,8 @@ export function Login({ onSuccess }: { onSuccess: (username: string) => void }) 
       <form className="cm-login-card" onSubmit={handleSubmit} noValidate>
         <div className="cm-login-header">
           <h1>
-            <span className="cm-brand-mark" aria-hidden="true" />
-            celery-manager
+            <BrandMark large />
+            {settings.brand_name}
           </h1>
           <p className="cm-login-tagline">Queue control</p>
           <div className="cm-pulse-rule" aria-hidden="true" />
