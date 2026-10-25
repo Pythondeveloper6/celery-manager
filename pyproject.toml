@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "celery-manager"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "A dashboard and control API for Celery background tasks."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,10 +50,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pythondeveloper6/celery-manager"
-Documentation = "https://github.com/pythondeveloper6/celery-manager/tree/main/docs"
-Repository = "https://github.com/pythondeveloper6/celery-manager"
-Issues = "https://github.com/pythondeveloper6/celery-manager/issues"
+Homepage = "https://github.com/Pythondeveloper6/celery-manager"
+Documentation = "https://github.com/Pythondeveloper6/celery-manager/tree/main/docs"
+Repository = "https://github.com/Pythondeveloper6/celery-manager"
+Issues = "https://github.com/Pythondeveloper6/celery-manager/issues"
+Changelog = "https://github.com/Pythondeveloper6/celery-manager/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # uvicorn is only needed to *serve* celery-manager standalone (the demo's

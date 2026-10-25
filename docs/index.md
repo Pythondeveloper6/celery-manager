@@ -12,7 +12,7 @@ occurrence of a periodic task without touching its schedule.
 - [Configuration reference](configuration.md)
 - [Working on celery-manager](contributing.md) — tests, docs, and rebuilding
   the dashboard bundle
-- [Changelog](https://github.com/pythondeveloper6/celery-manager/blob/main/CHANGELOG.md)
+- [Changelog](https://github.com/Pythondeveloper6/celery-manager/blob/main/CHANGELOG.md)
   — including what breaks for development builds
 
 ## What it does today
@@ -42,7 +42,7 @@ few seconds; see [the SSE limitation](rest-api.md#known-limitation-sse-does-not-
 there is no role system yet (any signed-in user can do anything), and there
 is no schema-migration framework.
 
-See the [Django demo](https://github.com/pythondeveloper6/celery-manager/tree/main/examples/django_demo)
+See the [Django demo](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo)
 for a complete working example.
 
 ## How it fits together
