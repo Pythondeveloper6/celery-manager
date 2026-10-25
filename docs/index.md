@@ -13,7 +13,7 @@ occurrence of a periodic task without touching its schedule.
 - [Working on celery-manager](contributing.md) — tests, docs, and rebuilding
   the dashboard bundle
 - [Changelog](https://github.com/pythondeveloper6/celery-manager/blob/main/CHANGELOG.md)
-  — including the one breaking API change so far
+  — including what breaks for development builds
 
 ## What it does today
 

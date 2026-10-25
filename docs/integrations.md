@@ -52,10 +52,15 @@ Flask is WSGI and the dashboard is ASGI. Adapt it with
 [`a2wsgi`](https://github.com/abersheeran/a2wsgi) and route the prefix with
 werkzeug's `DispatcherMiddleware`:
 
+Install the extra with `celery-manager[flask]` (see the
+[Quickstart](quickstart.md#install)); it adds Flask and `a2wsgi`.
+
 ```python
 from a2wsgi import ASGIMiddleware
 from flask import Flask
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
+from celery_manager.api.app import create_app
 
 app = Flask(__name__)
 dashboard, _ = create_app(config)

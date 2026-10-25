@@ -51,13 +51,32 @@ without touching your beat schedule or restarting anything.
 
 ## Install
 
-```bash
-pip install --pre celery-manager
+celery-manager 0.1.0a1 is an alpha in a **private** GitHub repository and is
+**not on PyPI yet** (publication is planned), so `pip install --pre
+celery-manager` will not find it. Install the tagged release from git (this
+needs access to the repository):
 
-# add the `standalone` extra if you want to run the dashboard with uvicorn
-# rather than mounting it into an ASGI app you already serve:
-pip install --pre "celery-manager[standalone]"
+```bash
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"
 ```
+
+or from the wheel attached to the GitHub release:
+
+```bash
+pip install ./celery_manager-0.1.0a1-py3-none-any.whl
+```
+
+Extras go after the name, e.g. `"celery-manager[standalone] @
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"`. Once the
+package is published, `pip install --pre celery-manager` will work (`--pre`
+because 0.1.0a1 is a pre-release).
+
+Optional extras:
+
+- `standalone` — pulls in uvicorn, to run the dashboard on its own rather than
+  mounting it into an ASGI app you already serve.
+- `flask` — pulls in Flask and `a2wsgi`, to mount the dashboard in a Flask
+  (WSGI) app; see [Integrating with your app](docs/integrations.md#flask-wsgi).
 
 ## Wire it up
 
@@ -125,7 +144,7 @@ Full documentation lives in [`docs/`](docs/) (an MkDocs Material site — run
 - [Working on celery-manager](docs/contributing.md) — running the tests,
   building the docs, and rebuilding the committed dashboard bundle.
 
-Changes between versions — including the one breaking API change so far —
+Changes between versions — including what breaks for development builds —
 are in [`CHANGELOG.md`](CHANGELOG.md).
 
 A complete runnable Django example is in

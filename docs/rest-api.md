@@ -66,8 +66,8 @@ framed by another site.
 
     Callers must change `await res.json()` to `(await res.json()).items`.
     The list items also gained `runtime_seconds` and the four `progress_*`
-    fields. This is a deliberate break, taken while the package is
-    unreleased, before the `0.1.0a1` alpha, and its only consumers are the bundled SPA and
+    fields. This is a deliberate break, taken before the `0.1.0a1`
+    alpha was released, and its only consumers are the bundled SPA and
     this page — see the docstring on `list_tasks` in
     `src/celery_manager/api/routes/tasks.py`.
 
@@ -395,7 +395,7 @@ dispatches through the same `start_task` call underneath.
 | `GET` | `/api/stream` | required | `text/event-stream`. Each event is `data: {"task_id": str, "type": str}\n\n` (default `message` event name, no custom `event:` field), one line per Celery task-lifecycle event forwarded from the events listener (`task-sent`, `task-received`, `task-started`, `task-succeeded`, `task-failed`, `task-retried`, `task-revoked`) plus any other event types the listener chooses to publish. Connection stays open indefinitely; the client (dashboard) reconnects with the browser's native `EventSource` retry behavior. |
 
 Like every other endpoint on this page, it returns `401` without a valid
-session cookie. (Before 0.1.0a1 it had no auth at all.) The browser's
+session cookie. (Development builds before 0.1.0a1 had no auth on it at all.) The browser's
 `EventSource` sends the cookie when opened with `withCredentials: true`,
 which is what the dashboard does.
 

@@ -2,7 +2,8 @@
 
 The dashboard is a single-page React app served by the same FastAPI app as
 the REST API — once built, its static files live at
-`src/celery_manager/dashboard/static/` and are mounted at `/`. It uses
+`src/celery_manager/dashboard/static/` and are mounted at the app's root (`/` standalone, or the prefix you mount it
+under; every API and asset URL is relative, so either works). It uses
 `HashRouter` rather than browser history routing (the server has no
 catch-all fallback route, so a real GET for e.g. `/tasks/abc` would 404
 before React ever loads — routing on the URL fragment keeps every deep
@@ -48,7 +49,10 @@ A thin persistent nav bar sits above every authenticated screen: the
 brand mark and wordmark on the left, then **Tasks** / **Schedules** /
 **Audit Log** / **Settings** (`NavLink`, so the active screen is
 highlighted), and a three-way **Auto / Light / Dark** theme control on the
-right. Each screen underneath still owns its own page header — the nav bar
+right, and a **Sign out** button. Sign out calls `POST /api/auth/logout`,
+which clears the `cm_session` cookie, and returns you to the login screen; while
+the request is in flight the button reads "Signing out…", and if it fails an
+error message is shown and you stay signed in. Each screen underneath still owns its own page header — the nav bar
 deliberately doesn't duplicate per-screen titles or actions.
 
 The brand mark and wordmark are whatever the deployment has been branded
