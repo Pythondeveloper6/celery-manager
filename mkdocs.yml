@@ -3,6 +3,8 @@ site_description: A dashboard and control API for Celery background tasks.
 repo_url: https://github.com/pythondeveloper6/celery-manager
 theme:
   name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
   palette:
     - scheme: default
       toggle:
