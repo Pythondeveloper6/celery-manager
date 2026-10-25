@@ -1,0 +1,145 @@
+/* Brand: the "signal panel" palette of the celery-manager dashboard
+   (frontend/src/styles/tokens.css). Phosphor cyan #35D6D2 on near-black
+   #0B0F14 in dark mode; the deeper teal #0A7478 in light mode, which is the
+   dashboard's contrast-checked accent (4.7:1+ on its darkest light surface,
+   and white text on it is 5.6:1). */
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #0a7478;
+  --md-primary-fg-color--light: #2fa4a6;
+  --md-primary-fg-color--dark: #086063;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: rgb(255 255 255 / 0.8);
+  --md-accent-fg-color: #086063;
+  --md-typeset-a-color: #0a7478;
+  --cm-on-accent: #ffffff;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #35d6d2;
+  --md-primary-fg-color--light: #5ce3df;
+  --md-primary-fg-color--dark: #2ab5b2;
+  --md-primary-bg-color: #e7ecef;
+  --md-primary-bg-color--light: rgb(231 236 239 / 0.75);
+  --md-accent-fg-color: #5ce3df;
+  --md-typeset-a-color: #35d6d2;
+  --md-default-bg-color: #0b0f14;
+  --md-default-bg-color--light: #121820;
+  --md-default-fg-color: #e7ecef;
+  --md-default-fg-color--light: #9aa7b0;
+  --md-default-fg-color--lighter: #64717a;
+  --md-default-fg-color--lightest: #1c252e;
+  --md-code-bg-color: #121820;
+  --md-code-fg-color: #e7ecef;
+  --md-footer-bg-color: #080b0f;
+  --md-footer-bg-color--dark: #06080b;
+  --cm-on-accent: #05201f;
+}
+
+.md-header,
+.md-tabs {
+  background: linear-gradient(90deg, #086063, #0a7478);
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-header,
+[data-md-color-scheme="slate"] .md-tabs {
+  background: #0b0f14;
+  color: #e7ecef;
+  box-shadow: 0 1px 0 rgb(53 214 210 / 0.18);
+}
+
+.md-typeset h1 {
+  color: var(--md-default-fg-color);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.md-typeset h2 {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset .md-button--primary {
+  background-color: var(--md-primary-fg-color);
+  border-color: var(--md-primary-fg-color);
+  color: var(--cm-on-accent);
+}
+
+.md-typeset .md-button--primary:hover,
+.md-typeset .md-button--primary:focus {
+  background-color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+  color: var(--cm-on-accent);
+}
+
+.md-typeset .md-button:not(.md-button--primary) {
+  color: var(--md-typeset-a-color);
+  border-color: var(--md-typeset-a-color);
+}
+
+/* ── home page ──────────────────────────────────────────────────────────── */
+
+.cm-hero {
+  text-align: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.cm-hero .cm-logo {
+  height: 4.5rem;
+  width: auto;
+  margin: 0 auto 1rem;
+  display: block;
+}
+
+.cm-hero h1 {
+  font-size: 2.6rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin: 0 0 0.75rem;
+}
+
+.cm-hero .cm-tagline {
+  font-size: 1.15rem;
+  color: var(--md-default-fg-color--light);
+  max-width: 40rem;
+  margin: 0 auto 1.5rem;
+}
+
+.cm-hero .md-button {
+  margin: 0.25rem;
+}
+
+@media screen and (max-width: 44.9375em) {
+  .cm-hero h1 {
+    font-size: 1.9rem;
+  }
+
+  .cm-hero .cm-tagline {
+    font-size: 1rem;
+  }
+}
+
+.cm-shot {
+  border-radius: 0.75rem;
+  box-shadow: 0 20px 50px -12px rgb(11 15 20 / 0.35), 0 0 0 1px rgb(11 15 20 / 0.08);
+  margin: 1.5rem 0;
+}
+
+[data-md-color-scheme="slate"] .cm-shot {
+  box-shadow: 0 20px 50px -12px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(53 214 210 / 0.2);
+}
+
+[data-md-color-scheme="default"] .cm-only-dark,
+[data-md-color-scheme="slate"] .cm-only-light {
+  display: none;
+}
+
+.md-typeset .grid.cards > ul > li {
+  border-radius: 0.6rem;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--md-accent-fg-color);
+}

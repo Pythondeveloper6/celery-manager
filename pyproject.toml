@@ -51,7 +51,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/Pythondeveloper6/celery-manager"
-Documentation = "https://github.com/Pythondeveloper6/celery-manager/tree/main/docs"
+Documentation = "https://pythondeveloper6.github.io/celery-manager/"
 Repository = "https://github.com/Pythondeveloper6/celery-manager"
 Issues = "https://github.com/Pythondeveloper6/celery-manager/issues"
 Changelog = "https://github.com/Pythondeveloper6/celery-manager/blob/main/CHANGELOG.md"

@@ -48,7 +48,7 @@ meant an unbound task's first argument was silently treated as the task
 object, which is how this used to fail.
 
 This decorator only does its job in a process that has been wired with
-`celery_manager.setup(config)` — see [Wiring](#wiring-the-worker-process-must-call-celery_managersetup)
+`celery_manager.setup(config)` — see [Wiring](#wiring--the-worker-process-must-call-celery_managersetup)
 below, which is the step most easily missed.
 
 `schedule_name` should match the name you use for this schedule in the

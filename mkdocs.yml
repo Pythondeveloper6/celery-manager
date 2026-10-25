@@ -1,37 +1,118 @@
 site_name: celery-manager
-site_description: A dashboard and control API for Celery background tasks.
+site_description: A dashboard and control API for Celery background tasks. See every run, cancel or retry it, and pause a single future occurrence of a periodic task.
+site_author: Mahmoud Ahmed
+site_url: https://pythondeveloper6.github.io/celery-manager/
 repo_url: https://github.com/Pythondeveloper6/celery-manager
+repo_name: Pythondeveloper6/celery-manager
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Mahmoud Ahmed &middot; MIT licence
+
+# Internal design records, not user documentation.
+exclude_docs: |
+  superpowers/
+
+strict: true
+validation:
+  links:
+    anchors: warn
+
 theme:
   name: material
   logo: assets/logo.svg
   favicon: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
   palette:
-    - scheme: default
+    - media: "(prefers-color-scheme)"
       toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-    - scheme: slate
-      toggle:
-        icon: material/brightness-4
+        icon: material/brightness-auto
         name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Follow the system
   features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
     - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
     - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Pythondeveloper6/celery-manager
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/celery-manager/
+
 markdown_extensions:
-  - fenced_code
-  - tables
+  - abbr
   - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
   - toc:
       permalink: true
+      # GitHub's heading ids, so an anchor link works on github.com and here alike.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
 nav:
   - Home: index.md
-  - Quickstart: quickstart.md
-  - The decorator: decorator.md
-  - Live progress: progress.md
-  - REST API: rest-api.md
-  - Dashboard: dashboard.md
-  - Integrating with your app: integrations.md
-  - Configuration: configuration.md
-  - Working on celery-manager: contributing.md
-exclude_docs: |
-  superpowers/
+  - Guide:
+      - Quickstart: quickstart.md
+      - Integrating with your app: integrations.md
+      - The decorator: decorator.md
+      - Live progress: progress.md
+      - Dashboard: dashboard.md
+  - Reference:
+      - REST API: rest-api.md
+      - Configuration: configuration.md
+  - Project:
+      - Working on celery-manager: contributing.md
+      - Changelog: changelog.md
+      - Security: security.md

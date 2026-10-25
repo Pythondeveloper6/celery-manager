@@ -274,7 +274,7 @@ backed by `GET /api/audit`.
 
 What you will actually see here, given what the dashboard itself can do:
 task retries (single and bulk), per-occurrence schedule pauses, and
-[branding changes](#branding-deployment-wide) (one row per changed key).
+[branding changes](#branding--deployment-wide) (one row per changed key).
 The API also audits `start` and `cancel`, but **no dashboard control
 triggers either** — there is no "run now" and no "cancel" button in the UI
 today — so those rows only appear if something calls
