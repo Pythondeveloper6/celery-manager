@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "celery-manager"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "A dashboard and control API for Celery background tasks."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,7 +13,7 @@ keywords = ["celery", "dashboard", "monitoring", "task-queue", "scheduler"]
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
     "Framework :: Celery",
     "Framework :: FastAPI",
@@ -87,6 +87,8 @@ include = [
     "/LICENSE",
     "/mkdocs.yml",
 ]
+# Internal design docs; must not ship in the sdist.
+exclude = ["/docs/superpowers"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

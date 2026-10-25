@@ -37,11 +37,11 @@ without touching your beat schedule or restarting anything.
 ## Install
 
 ```bash
-pip install celery-manager
+pip install --pre celery-manager
 
 # add the `standalone` extra if you want to run the dashboard with uvicorn
 # rather than mounting it into an ASGI app you already serve:
-pip install "celery-manager[standalone]"
+pip install --pre "celery-manager[standalone]"
 ```
 
 ## Wire it up
@@ -123,8 +123,9 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-v1. See [`plan.md`](plan.md) for the implementation history and the backlog
-of known gaps and planned follow-ups.
+This is the first alpha, **0.1.0a1**. It is feature-complete for the v1 scope,
+but APIs may change before 0.1.0. See [`plan.md`](plan.md) for the implementation history and the
+backlog of known gaps and planned follow-ups.
 
 ## License
 
