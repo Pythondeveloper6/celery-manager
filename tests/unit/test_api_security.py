@@ -69,6 +69,56 @@ def test_different_port_is_a_different_origin(client):
     assert _rebrand(client, origin="https://testserver:8443").status_code == 403
 
 
+def test_http_default_port_in_host_matches_an_https_origin(client):
+    """Upstream TLS terminator -> nginx with `Host $host:$server_port`: the
+    app sees the plain-http listener's port 80 for an https page."""
+    response = _rebrand(client, origin="https://dash.example.com", host="dash.example.com:80")
+    assert response.status_code == 200
+
+
+def test_https_default_port_in_x_forwarded_host_matches_an_https_origin(client):
+    response = _rebrand(
+        client, origin="https://dash.example.com", host="127.0.0.1:8000", **{"x-forwarded-host": "dash.example.com:443"}
+    )
+    assert response.status_code == 200
+
+
+def test_non_default_origin_port_against_port_less_host_is_refused(client):
+    """nginx `$host` drops the port; the fix is `$http_host` on the proxy,
+    not treating :8443 and the default port as the same origin."""
+    response = _rebrand(client, origin="https://dash.example.com:8443", host="dash.example.com")
+    assert response.status_code == 403
+
+
+def test_non_default_host_port_against_port_less_origin_is_refused(client):
+    response = _rebrand(client, origin="https://dash.example.com", host="dash.example.com:8443")
+    assert response.status_code == 403
+
+
+def test_origin_side_default_port_is_scheme_specific(client):
+    """`http://x:443` is port 443, not the http default, so it is not `x`."""
+    assert _rebrand(client, origin="http://dash.example.com:443", host="dash.example.com").status_code == 403
+    assert _rebrand(client, origin="http://dash.example.com:443", host="dash.example.com:443").status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("origin", "host", "status"),
+    [
+        ("https://[::1]", "[::1]", 200),
+        ("https://[::1]", "[::1]:443", 200),
+        ("https://[::1]", "[::1]:80", 200),
+        ("https://[::1]:8443", "[::1]:8443", 200),
+        ("https://[::1]:8443", "[::1]", 403),
+        ("https://[::1]", "[::2]", 403),
+        # The address's own trailing group must not be read as a port.
+        ("https://[::80]", "[::80]", 200),
+        ("https://[::]", "[::80]", 403),
+    ],
+)
+def test_ipv6_literal_hosts(client, origin, host, status):
+    assert _rebrand(client, origin=origin, host=host).status_code == status
+
+
 def test_request_without_origin_is_allowed(client):
     """curl, scripts and other non-browser clients send no Origin and can't
     be made to carry a victim's cookie, so they are not affected."""

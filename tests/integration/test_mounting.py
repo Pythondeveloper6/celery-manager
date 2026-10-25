@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from http.cookies import SimpleCookie
 
 import pytest
 from celery import Celery
@@ -41,8 +42,13 @@ def _asset_paths(index_html: str) -> list[str]:
     return re.findall(r'(?:src|href)="([^"]+)"', index_html)
 
 
-def _exercise(client, prefix: str) -> None:
-    """Shared flow, parametrised only by how the host app is built."""
+def _exercise(client, prefix: str, origin: str) -> None:
+    """Shared flow, parametrised only by how the host app is built.
+
+    `origin` is what a browser on the client's own host would send: the
+    POSTs carry it so the CSRF check runs through the mount (and, for
+    Flask, through a2wsgi's WSGI->ASGI header translation) rather than
+    being skipped as a no-Origin non-browser request."""
     index = client.get(f"{prefix}/")
     assert index.status_code == 200
     assert '<div id="root">' in index.text
@@ -57,15 +63,26 @@ def _exercise(client, prefix: str) -> None:
     # No cookie -> 401, through the prefixed path.
     assert client.get(f"{prefix}/api/whoami").status_code == 401
 
-    login = client.post(f"{prefix}/api/auth/login", json={"username": "admin", "password": PASSWORD})
+    credentials = {"username": "admin", "password": PASSWORD}
+    # A foreign Origin is refused through the mount too.
+    foreign = client.post(f"{prefix}/api/auth/login", json=credentials, headers={"Origin": "https://evil.example"})
+    assert foreign.status_code == 403
+
+    login = client.post(f"{prefix}/api/auth/login", json=credentials, headers={"Origin": origin})
     assert login.status_code == 200
     # The session cookie is scoped to the mount point, not the whole host.
-    assert f"Path={prefix}" in login.headers["set-cookie"]
+    assert SimpleCookie(login.headers["set-cookie"])["cm_session"]["path"] == prefix
 
     whoami = client.get(f"{prefix}/api/whoami")
     assert whoami.status_code == 200
     body = whoami.get_json() if hasattr(whoami, "get_json") else whoami.json()  # Flask vs httpx
     assert body == {"username": "admin"}
+
+    assert client.post(f"{prefix}/api/auth/logout", headers={"Origin": "https://evil.example"}).status_code == 403
+    assert client.get(f"{prefix}/api/whoami").status_code == 200  # the refused logout changed nothing
+    logout = client.post(f"{prefix}/api/auth/logout", headers={"Origin": origin})
+    assert logout.status_code == 200
+    assert client.get(f"{prefix}/api/whoami").status_code == 401
 
 
 def test_fastapi_mount(dashboard):
@@ -78,7 +95,7 @@ def test_fastapi_mount(dashboard):
     host.mount(PREFIX, dashboard)
 
     client = TestClient(host, follow_redirects=False)
-    _exercise(client, PREFIX)
+    _exercise(client, PREFIX, origin="http://testserver")  # TestClient's default base_url
     # The host's own routes are untouched by the mount.
     assert client.get("/hello").json() == {"hello": "host"}
 
@@ -119,7 +136,7 @@ def test_flask_mount_via_a2wsgi(dashboard):
     )
 
     client = flask_app.test_client()
-    _exercise(client, PREFIX)
+    _exercise(client, PREFIX, origin="http://localhost")  # werkzeug's test client sends Host: localhost
     assert client.get("/hello").get_json() == {"hello": "host"}
 
 
