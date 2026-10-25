@@ -1,5 +1,11 @@
 import os
 
+# Workaround for an upstream Celery 5.6 / billiard 4.3 bug on macOS: billiard
+# spawns (not forks) pool children there, and Celery only initialises a spawned
+# child when this is set; without it every task fails with
+# "ValueError: not enough values to unpack (expected 3, got 0)".
+os.environ.setdefault("FORKED_BY_MULTIPROCESSING", "1")
+
 from celery import Celery
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "demo.settings")

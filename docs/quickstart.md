@@ -118,6 +118,15 @@ Without them:
   exceptions and logs from the worker process, but never `worker` or `queue`,
   and undecorated tasks are not recorded at all.
 
+!!! warning "macOS: prefork workers"
+    On macOS, a prefork worker can fail every task with
+    `ValueError: not enough values to unpack (expected 3, got 0)`. The cause is
+    an upstream Celery 5.6 / billiard 4.3 bug: billiard spawns pool children
+    instead of forking them, and Celery only initialises a spawned child when
+    `FORKED_BY_MULTIPROCESSING` is set. This is not caused by celery-manager.
+    Workarounds: start the worker with `FORKED_BY_MULTIPROCESSING=1 celery -A yourapp worker ...`,
+    or, for local development, use `--pool=threads` or `--pool=solo`.
+
 The listener (`celery-manager events`) must run as its own long-lived process,
 next to the worker and beat.
 
