@@ -16,6 +16,8 @@ Django, Flask, or FastAPI project that already uses Celery.
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Status: alpha](https://img.shields.io/badge/status-alpha-orange)
 
+**[Documentation](https://pythondeveloper6.github.io/celery-manager/)** · [Quickstart](https://pythondeveloper6.github.io/celery-manager/quickstart/) · [PyPI](https://pypi.org/project/celery-manager/)
+
 </div>
 
 Point it at your existing Celery app and you get a web UI and a REST API to
@@ -137,7 +139,7 @@ immediately appear logged out.
 
 ## Documentation
 
-Full documentation lives in [`docs/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/docs/) (an MkDocs Material site — run
+Full documentation is at **<https://pythondeveloper6.github.io/celery-manager/>** (source in [`docs/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/docs/), an MkDocs Material site — run
 `mkdocs serve` after `pip install -e ".[docs]"`):
 
 - [Quickstart](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md) — install through first sign-in.

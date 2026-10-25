@@ -148,7 +148,7 @@ thousand times cannot flood your worker log.
     the **worker** process never called `celery_manager.setup(config)`. The
     dashboard process calling `create_app()` does not help — that is not
     where your tasks run. See
-    [Wiring](decorator.md#wiring-the-worker-process-must-call-celery_managersetup).
+    [Wiring](decorator.md#wiring--the-worker-process-must-call-celery_managersetup).
 
 ## Where the progress goes
 
