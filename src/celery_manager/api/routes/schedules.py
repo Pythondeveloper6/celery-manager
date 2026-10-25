@@ -46,10 +46,12 @@ def occurrences(name: str, request: Request, username: str = Depends(get_current
     ones) so the dashboard has something to act on — see
     list_upcoming_with_overrides in Task 6.
 
-    `list_upcoming_with_overrides` recomputes occurrence timestamps
-    relative to "now" on every call, so a `target_time` a user paused a
-    few seconds ago won't be byte-identical to the same logical
-    occurrence recomputed on this request. It handles that itself via
+    Interval-schedule occurrences are anchored to the schedule's last
+    observed run, so they are stable across requests once it has run at
+    least once (before that they are estimates relative to "now"). Either
+    way a `target_time` a user paused earlier need not be byte-identical
+    to the same logical occurrence recomputed on this request;
+    `list_upcoming_with_overrides` handles that itself via
     `eta_tolerance_seconds`-window matching (same concept as the
     decorator's own skip-check window) rather than exact equality — we
     just need to pass the configured tolerance through.
