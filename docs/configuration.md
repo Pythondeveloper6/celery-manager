@@ -10,7 +10,9 @@ from celery_manager.config import CeleryManagerConfig
 config = CeleryManagerConfig(
     celery_app=your_celery_app,
     db_url="sqlite:///celery_manager.db",
-    secret_key="change-me",
+    # Placeholder — replace with your own private random value, e.g. from
+    # python -c "import secrets; print(secrets.token_urlsafe(32))"
+    secret_key="<your-generated-secret>",
     eta_tolerance_seconds=60,
     cookie_secure=True,
 )
@@ -20,7 +22,7 @@ config = CeleryManagerConfig(
 |---|---|---|---|
 | `celery_app` | `celery.Celery` | *required* | Your application's Celery instance. Used for task introspection (dispatching tasks via `send_task`, reading `beat_schedule` to compute upcoming occurrences) and control calls (`revoke`/`terminate`). The API app and the events listener must both be given the *same* Celery app configuration (same broker, same `beat_schedule`) or their views of the world will disagree. |
 | `db_url` | `str` | `"sqlite:///celery_manager.db"` | SQLAlchemy connection URL for celery-manager's own storage (task runs, schedules, overrides, users, audit log — see `celery_manager.db.models`). Any SQLAlchemy-supported backend works; swap to Postgres/MySQL/etc. for production. For `sqlite:///:memory:` specifically, the engine is built with `StaticPool` so every connection shares one in-memory database — needed for it to behave sensibly under FastAPI's threadpool (as used in the test suite); other SQLite URLs use `check_same_thread=False` instead. Every process that needs to see the same data (API app + events listener) must point at the same `db_url`. |
-| `secret_key` | `str` | `"change-me"` | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for 7 days). **Must** be overridden to a real, private secret in any deployment other than local development — anyone who knows the key can forge a valid session cookie for any username. Rotating it invalidates every existing session (users are signed out). |
+| `secret_key` | `str` | `"change-me"` (a placeholder) | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for 7 days). Anyone who knows the key can forge a valid session cookie for any username, so **`create_app()` raises `ValueError` and refuses to start if it is empty or still `"change-me"`** — set a private random value in every process that serves the dashboard, local development included. Processes that don't serve HTTP (Celery workers calling `celery_manager.setup()`, the events listener) never sign sessions and may leave the default. Rotating it invalidates every existing session (users are signed out). See [`secret_key` in production](#secret_key-in-production). |
 | `eta_tolerance_seconds` | `int` | `60` | How close a stored `ScheduleOverride.target_time` must be to "now" (in the `@track` decorator, at task-run time) or to a freshly recomputed occurrence timestamp (in `GET /api/schedules/{name}/occurrences`, at read time) for them to be treated as the same logical occurrence. See the trade-off below. |
 | `cookie_secure` | `bool` | `True` | Sets the `Secure` flag on the session cookie, so browsers only ever send it back over HTTPS. See below for why the default is `True` and when to change it. |
 
@@ -156,8 +158,51 @@ Adopting a real migration framework is a Phase 2 backlog item (see
 
 ## `secret_key` in production
 
-Set it via your normal secrets-management path (environment variable, a
-secrets manager, etc.) — never commit a real value to source control. There
-is no separate signing key for the events listener; the `--secret-key` CLI
-flag exists only for `CeleryManagerConfig` symmetry and isn't used to sign
-or verify anything, since the listener doesn't serve HTTP.
+Generate a long random value once:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+and set it via your normal secrets-management path (environment variable, a
+secrets manager, etc.) — never commit a real value to source control. Every
+API process behind the same load balancer needs the *same* key, or a cookie
+signed by one is rejected by the next. There is no signing key for the
+events listener, which doesn't serve HTTP; its CLI takes no `--secret-key`.
+
+## Security model
+
+Know what celery-manager does and doesn't defend against before you expose
+it:
+
+- **Every dashboard account is a full administrator.** There are no roles
+  or scopes. Any signed-in user can dispatch *any* task name with *any*
+  args and kwargs (`POST /api/tasks/start` does not check the name against
+  registered tasks), cancel or terminate any task, retry runs, pause
+  schedule occurrences, and rebrand the dashboard. Only create accounts for
+  people you'd trust with that, and treat the dashboard as an admin
+  surface — ideally reachable only from a private network or VPN.
+- **There is no login rate limiting or lockout.** Put a rate limit on
+  `POST /api/auth/login` at your reverse proxy (e.g. nginx `limit_req`,
+  Traefik `RateLimit`, a cloud WAF rule). bcrypt makes each guess cost
+  ~0.2 s of server CPU, which slows brute force but is not a substitute.
+- **Sessions are stateless signed tokens, valid for 7 days.** The
+  `cm_session` cookie *is* the session; nothing is stored server-side.
+  Logging out deletes the cookie from that browser but does **not** revoke
+  a copy someone else already has — a stolen cookie keeps working until it
+  expires. Deleting the user does stop their cookie working (every request
+  checks the user still exists). To revoke *every* session at once, rotate
+  `secret_key`.
+- **`brand_logo_url` may point at an external host.** It lands in an
+  `<img src>` on every page, including the login screen, so whoever controls
+  that host sees a request (IP address, user agent) from each visitor, and
+  can change the image. Prefer a same-origin path (`/logo.png`) or a
+  raster `data:` URI; otherwise use a host you control.
+
+What *is* in place: `HttpOnly`, `SameSite=lax`, `Secure`-by-default session
+cookies; refusal of cross-origin `POST`/`PUT`/`PATCH`/`DELETE` requests by
+`Origin` check; `X-Frame-Options: DENY` and `frame-ancestors 'none'` against
+clickjacking; bcrypt password hashes, with login timing that doesn't reveal
+whether a username exists. See the [REST API auth notes](rest-api.md#auth)
+for the exact behaviour, including what a proxy in front of the app must
+forward.

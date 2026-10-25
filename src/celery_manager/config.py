@@ -15,7 +15,11 @@ class CeleryManagerConfig:
     db_url: SQLAlchemy connection URL for celery-manager's own storage.
         Defaults to a local SQLite file; swap to any SQLAlchemy-supported
         DB (Postgres, MySQL, ...) for production use.
-    secret_key: used to sign session cookies for the built-in auth.
+    secret_key: used to sign session cookies for the built-in auth. The
+        default is a public placeholder: `create_app()` refuses to start
+        with it (or an empty key), since anyone could forge a session from
+        it. Processes that don't serve HTTP (workers, the events listener)
+        never sign sessions and may leave it as-is.
     eta_tolerance_seconds: how close "now" must be to a schedule
         override's target time for the decorator to treat it as a match.
     cookie_secure: sets the `Secure` flag on the session cookie, so the

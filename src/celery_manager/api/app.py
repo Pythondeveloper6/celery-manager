@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from celery_manager.api.deps import get_current_user
 from celery_manager.api.routes import (
     audit as audit_routes,
 )
@@ -21,16 +22,34 @@ from celery_manager.api.routes import (
 from celery_manager.api.routes import (
     tasks as task_routes,
 )
+from celery_manager.api.security import SecurityMiddleware
 from celery_manager.api.sse import EventBus, sse_stream
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.control.schedules import sync_periodic_schedules
 from celery_manager.runtime import setup as setup_runtime
+
+# The placeholder `CeleryManagerConfig.secret_key` ships with. It is public —
+# it's in this file and the docs — so a session cookie signed with it can be
+# forged for any username by anyone.
+_DEFAULT_SECRET_KEY = "change-me"
 
 
 def create_app(config: CeleryManagerConfig):
     """Build the celery-manager FastAPI app. Returns (app, session_factory)
     — callers that need direct DB access (tests, the events listener CLI)
     use the session_factory; HTTP consumers just use the app."""
+    # Checked here rather than in CeleryManagerConfig: worker and listener
+    # processes build the same config but never sign or verify a session, so
+    # they're free to leave secret_key alone. Only a process serving HTTP is
+    # a forgery risk, and it should refuse to start, not start insecurely.
+    if not config.secret_key or not config.secret_key.strip() or config.secret_key == _DEFAULT_SECRET_KEY:
+        raise ValueError(
+            "CeleryManagerConfig.secret_key is unset or still the default "
+            f"{_DEFAULT_SECRET_KEY!r}; anyone could forge a dashboard session with it. "
+            "Set it to a private random value, e.g. the output of "
+            '`python -c "import secrets; print(secrets.token_urlsafe(32))"`.'
+        )
+
     # Single shared entry point for "wire celery-manager into this process"
     # (init_db + session factory + decorator configure) rather than an inline
     # copy of it, so the API process and the worker process — which must call
@@ -45,6 +64,7 @@ def create_app(config: CeleryManagerConfig):
     app.state.cm_config = config
     app.state.cm_session_factory = session_factory
     app.state.cm_event_bus = EventBus()
+    app.add_middleware(SecurityMiddleware)
 
     app.include_router(auth_routes.router)
     app.include_router(task_routes.router)
@@ -53,7 +73,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(settings_routes.router)
 
     @app.get("/api/stream")
-    def stream(request: Request):
+    def stream(request: Request, username: str = Depends(get_current_user)):
         return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
 
     static_dir = Path(__file__).parent.parent / "dashboard" / "static"

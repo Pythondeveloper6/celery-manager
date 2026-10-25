@@ -15,7 +15,6 @@ def main() -> None:
     events_parser = subparsers.add_parser("events", help="run the events listener")
     events_parser.add_argument("--celery-app", required=True, help="import path, e.g. demo.celery:app")
     events_parser.add_argument("--db-url", required=True)
-    events_parser.add_argument("--secret-key", default="change-me")
 
     args = parser.parse_args()
 
@@ -24,7 +23,9 @@ def main() -> None:
         module = importlib.import_module(module_path)
         celery_app = getattr(module, attr)
 
-        config = CeleryManagerConfig(celery_app=celery_app, db_url=args.db_url, secret_key=args.secret_key)
+        # No secret_key: the listener never signs or verifies a session, so
+        # the config default is fine here (create_app() is what refuses it).
+        config = CeleryManagerConfig(celery_app=celery_app, db_url=args.db_url)
         engine = init_db(config)
         session_factory = get_session_factory(engine)
         EventListener(config, session_factory).run()

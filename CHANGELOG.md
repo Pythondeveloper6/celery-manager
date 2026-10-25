@@ -7,8 +7,8 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [0.1.0a1] — 2026-10-25
 
 The initial release. Before this alpha, celery-manager had never been published, so everything
-below is new rather than changed — with one exception, called out first
-because anyone who pinned a git SHA during development *will* hit it.
+below is new rather than changed — with a few exceptions, called out first
+because anyone who pinned a git SHA during development *will* hit them.
 
 ### Breaking
 
@@ -27,6 +27,9 @@ because anyone who pinned a git SHA during development *will* hit it.
   deliberately while the package was unreleased and its only consumers were
   the bundled dashboard and `docs/rest-api.md`. See
   [the REST API reference](docs/rest-api.md#tasks).
+- **The session cookie is now `cm_session`, and `create_app()` refuses a
+  default `secret_key`.** Both are security fixes; see [Security](#security)
+  below for what changed and what you need to do.
 
 ### Added
 
@@ -211,6 +214,47 @@ because anyone who pinned a git SHA during development *will* hit it.
   JSON, then `ast.literal_eval`, and refuses rather than guessing if neither
   works.
 
+### Security
+
+- **`create_app()` refuses to start with an empty or default
+  (`"change-me"`) `secret_key`**, raising `ValueError`. The default is
+  public, so a dashboard running on it accepted a session cookie anyone
+  could sign for any username. Workers and the events listener, which never
+  sign sessions, are unaffected. Generate a key with
+  `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+- **`GET /api/stream` now requires a session**, like every other non-login
+  endpoint. It used to stream every task id and lifecycle event to anyone.
+- **Login no longer reveals whether a username exists.** A missing user now
+  pays for a bcrypt check against a dummy hash, so both cases take the same
+  time (was ~0.2 s vs ~2 ms). A password over bcrypt's 72-byte limit is a
+  `401` for every username instead of a `500` for existing ones only.
+- `create_user()` refuses an empty password (previously accepted) and one
+  over 72 bytes UTF-8-encoded with a clear `ValueError` — rather than
+  bcrypt's own error on bcrypt ≥ 5, or silent truncation to 72 bytes on
+  older bcrypt.
+- A session cookie for a user that has since been deleted is rejected with
+  a `401`; it used to keep working until it expired.
+- **Breaking for anyone on a dev SHA: the session cookie is renamed from
+  `session` to `cm_session`**, so it no longer collides with Flask's or
+  Starlette's own `session` cookie when celery-manager is mounted inside
+  another app. Its `Path` is now the app's mount point (`root_path`) rather
+  than always `/`. Existing sessions are not carried over — everyone signs in
+  once more, and the stale `session` cookie simply expires.
+- Logout deletes the cookie with the same `Path`, `HttpOnly`, `SameSite=lax`
+  and `Secure` attributes it was set with.
+- Cross-origin `POST`/`PUT`/`PATCH`/`DELETE` requests are refused with a
+  `403` when their `Origin` doesn't match `Host` (or `X-Forwarded-Host`).
+  Requests without `Origin` — curl, scripts — are unaffected. A proxy that
+  rewrites `Host` must forward the original as `X-Forwarded-Host`.
+- Every response carries `X-Frame-Options: DENY` and
+  `Content-Security-Policy: frame-ancestors 'none'` against clickjacking.
+- The `celery-manager events` CLI no longer accepts `--secret-key`, which it
+  never used. Drop it from any command line that passes it.
+- New [Security model](docs/configuration.md#security-model) section in the
+  configuration docs: every account is a full administrator, there is no
+  login rate limiting, logout does not revoke a stolen cookie, and
+  `brand_logo_url` may point at an external host.
+
 ### Known limitations
 
 - **SSE does not deliver across processes.** `EventBus` is in-memory in the
@@ -220,9 +264,14 @@ because anyone who pinned a git SHA during development *will* hit it.
   build on `/api/stream` yet.
 - **No schema migrations.** `init_db()` is `create_all` only; it creates
   missing tables and never alters existing ones.
-- **No role system.** Any authenticated user can perform any control action.
-- `GET /api/stream` has no auth dependency; `GET /api/settings` has none by
-  design.
+- **No role system.** Any authenticated user can perform any control action,
+  including dispatching any task name with any arguments.
+- **No login rate limiting.** Rate-limit `POST /api/auth/login` at your
+  reverse proxy.
+- **Sessions can't be revoked individually.** They are stateless signed
+  tokens valid for 7 days; rotating `secret_key` revokes all of them.
+- `GET /api/settings` is unauthenticated by design (the login screen needs
+  the branding).
 - `POST /api/tasks/retry-bulk` is not partial-failure aware: it stops at the
   first unknown id and reports a `404` for the whole batch, after having
   already dispatched the ids ahead of it.

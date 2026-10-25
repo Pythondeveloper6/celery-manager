@@ -3,11 +3,43 @@ import json
 
 import pytest
 from celery import Celery
+from fastapi.testclient import TestClient
 
 from celery_manager.api.app import create_app
 from celery_manager.api.sse import EventBus
 from celery_manager.auth.users import create_user
 from celery_manager.config import CeleryManagerConfig
+
+
+def _stream_scope(headers):
+    return {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "path": "/api/stream",
+        "raw_path": b"/api/stream",
+        "root_path": "",
+        "scheme": "https",
+        "query_string": b"",
+        "headers": headers,
+        "client": ("testclient", 123),
+        "server": ("testserver", 443),
+        "state": {},
+    }
+
+
+def _app_and_session_cookie():
+    """An app plus a real session cookie for it, obtained by logging in
+    through the API rather than signing one by hand."""
+    config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    app, session_factory = create_app(config)
+    with session_factory() as session:
+        create_user(session, "alice", "pw")
+    login = TestClient(app, base_url="https://testserver").post(
+        "/api/auth/login", json={"username": "alice", "password": "pw"}
+    )
+    assert login.status_code == 200
+    return app, login.cookies["cm_session"]
 
 
 def test_stream_emits_published_event():
@@ -23,27 +55,11 @@ def test_stream_emits_published_event():
     production code path (create_app -> EventBus -> sse_stream ->
     StreamingResponse) without that deadlock.
     """
-    config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
-    app, session_factory = create_app(config)
-    with session_factory() as session:
-        create_user(session, "alice", "pw")
+    app, token = _app_and_session_cookie()
 
     app.state.cm_event_bus.publish({"task_id": "t1", "status": "succeeded"})
 
-    scope = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "GET",
-        "path": "/api/stream",
-        "raw_path": b"/api/stream",
-        "root_path": "",
-        "scheme": "http",
-        "query_string": b"",
-        "headers": [],
-        "client": ("testclient", 123),
-        "server": ("testserver", 80),
-        "state": {},
-    }
+    scope = _stream_scope([(b"cookie", f"cm_session={token}".encode())])
 
     async def run():
         messages: asyncio.Queue = asyncio.Queue()
@@ -78,6 +94,40 @@ def test_stream_emits_published_event():
                 await task
 
     asyncio.run(run())
+
+
+def test_stream_without_a_session_cookie_is_a_401_and_leaks_no_events():
+    """The stream carries every task id, name and status in the deployment,
+    so it was an unauthenticated window onto the whole dashboard."""
+    app, _ = _app_and_session_cookie()
+    app.state.cm_event_bus.publish({"task_id": "secret-id", "status": "failed"})
+
+    async def run(headers):
+        messages = []
+
+        request_sent = False
+
+        async def receive():
+            nonlocal request_sent
+            if not request_sent:
+                request_sent = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await asyncio.sleep(3600)  # never disconnect on our own
+
+        async def send(message):
+            messages.append(message)
+
+        # A 401 is a finite response, so the app call returns on its own; a
+        # regression would stream forever, which the timeout turns into a
+        # failure instead of a hung suite.
+        await asyncio.wait_for(app(_stream_scope(headers), receive, send), timeout=5)
+        return messages
+
+    for headers in ([], [(b"cookie", b"cm_session=forged")]):
+        messages = asyncio.run(run(headers))
+        assert messages[0]["status"] == 401
+        body = b"".join(m.get("body", b"") for m in messages[1:])
+        assert b"secret-id" not in body
 
 
 # --- I1 (partial): EventBus.publish is called from the events listener's

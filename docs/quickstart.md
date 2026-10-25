@@ -29,6 +29,12 @@ config = CeleryManagerConfig(
 app, _ = create_app(config)
 ```
 
+`secret_key` signs every session cookie, so it must be private and random —
+generate one with
+`python -c "import secrets; print(secrets.token_urlsafe(32))"` and load it
+from your secrets store. `create_app` raises `ValueError` and refuses to
+start if it is empty or left at the `"change-me"` default.
+
 `create_app` returns `(app, session_factory)`. The FastAPI `app` serves the
 JSON API under `/api/*` and — once the frontend has been built and copied
 into `src/celery_manager/dashboard/static/` — the dashboard SPA at `/`.
@@ -64,10 +70,8 @@ upserts each task's status (`queued`, `started`, `succeeded`, `failed`,
 `retried`, `revoked`) into the same database the API reads from.
 
 `--db-url` must point at the same database as the one you pass to
-`CeleryManagerConfig` in the app process. `--secret-key` is accepted for
-symmetry with `CeleryManagerConfig` but isn't used by the listener itself
-(it doesn't serve HTTP or sign sessions); the default is fine to leave
-as-is here.
+`CeleryManagerConfig` in the app process. The listener takes no secret
+key: it doesn't serve HTTP or sign sessions.
 
 ## Create your first dashboard user
 
