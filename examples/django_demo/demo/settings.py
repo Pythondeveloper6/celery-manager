@@ -132,6 +132,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CELERY_BROKER_URL = "redis://localhost:6379/0"
 CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+# The events listener only sees what Celery emits: workers must send task events
+# and the publisher must send task-sent (worker/queue are null otherwise).
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
 CELERY_BEAT_SCHEDULE = {
     "send-demo-report-every-2-hours": {
         "task": "tasks_app.tasks.send_report",
