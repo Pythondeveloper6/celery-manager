@@ -21,3 +21,21 @@ site/
 # macOS Finder metadata. Ignored here rather than relying on every
 # contributor having it in their global excludes.
 .DS_Store
+
+# Dependency / tool caches
+node_modules/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local-only assistant/tooling state
+.superpowers/
+
+# Demo databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
