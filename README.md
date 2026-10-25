@@ -1,7 +1,22 @@
-# celery-manager
+<div align="center">
+
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-wordmark-light.svg">
+    <img alt="celery-manager" src="docs/assets/logo-wordmark-light.svg" height="56">
+  </picture>
+</h1>
 
 A dashboard and control API for Celery background tasks — for any
 Django, Flask, or FastAPI project that already uses Celery.
+
+[![CI](https://github.com/pythondeveloper6/celery-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pythondeveloper6/celery-manager/actions/workflows/ci.yml)
+![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776AB?logo=python&logoColor=white)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Status: alpha](https://img.shields.io/badge/status-alpha-orange)
+
+</div>
 
 Point it at your existing Celery app and you get a web UI and a REST API to
 see what your tasks are doing, act on them, and — the feature this project
