@@ -4,6 +4,38 @@ All notable changes to celery-manager are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0a3] — 2026-10-25
+
+### Fixed
+
+- **Interval-schedule occurrences** (`run_every` / seconds / `timedelta`) are
+  now anchored to the schedule's last observed run instead of "now + interval".
+  Skips on interval schedules display stably across page loads and actually
+  fire against beat's real run times.
+- **Race-free `task_runs` writes.** The events listener, the `@track`
+  decorator, `report_progress()` and the retry button used to check-then-insert
+  the same row. They now share one race-safe get-or-create (native upsert on
+  SQLite/PostgreSQL/MySQL, SAVEPOINT fallback elsewhere), so:
+    - retry no longer returns a 500 or loses its lineage when the worker's row
+      lands first;
+    - the listener no longer leaves `worker`/`queue` empty when it loses the race;
+    - late or out-of-order events can no longer downgrade a run's status;
+    - the producer's hostname from `task-sent` is no longer recorded as the worker;
+    - event arguments are stored as JSON, so retries from listener-created rows
+      decode correctly.
+
+### Added
+
+- Documentation site: <https://pythondeveloper6.github.io/celery-manager/>.
+- Dashboard screenshots in the README and docs, and an "Interval schedules"
+  section in the dashboard guide.
+- The race tests run against PostgreSQL in CI (`CM_TEST_DB_URL`).
+
+### Changed
+
+- README and docs no longer say tasks can be started from the UI; starting is
+  API-only (`POST /api/tasks/start`).
+
 ## [0.1.0a2] — 2026-10-25
 
 The first release published to PyPI (`pip install --pre celery-manager`).
@@ -321,5 +353,6 @@ because anyone who pinned a git SHA during development *will* hit them.
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
 
+[0.1.0a3]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a3
 [0.1.0a2]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a2
 [0.1.0a1]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a1

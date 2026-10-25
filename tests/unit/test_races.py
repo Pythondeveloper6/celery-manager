@@ -17,6 +17,7 @@ share one connection and hide the race).
 
 from __future__ import annotations
 
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
@@ -43,18 +44,40 @@ from celery_manager.events.listener import _normalise_call_argument, upsert_task
 @pytest.fixture
 def db(tmp_path):
     """(our_session_factory, competitor_session_factory, our_engine) over one
-    file-backed SQLite database, via two independent engines."""
-    url = f"sqlite:///{tmp_path / 'races.db'}"
-    ours = create_engine(url, connect_args={"check_same_thread": False})
-    theirs = create_engine(url, connect_args={"check_same_thread": False})
+    database, via two independent engines. File-backed SQLite by default;
+    set CM_TEST_DB_URL to run the same races against PostgreSQL or MySQL
+    (the tables are dropped and recreated for each test)."""
+    url = os.environ.get("CM_TEST_DB_URL")
+    server = bool(url)
+    if not url:
+        url = f"sqlite:///{tmp_path / 'races.db'}"
+    kwargs = {} if server else {"connect_args": {"check_same_thread": False}}
+    ours = create_engine(url, **kwargs)
+    theirs = create_engine(url, **kwargs)
+    if server:
+        Base.metadata.drop_all(ours)
     Base.metadata.create_all(ours)
     yield (
         sessionmaker(bind=ours, expire_on_commit=False),
         sessionmaker(bind=theirs, expire_on_commit=False),
         ours,
     )
+    if server:
+        Base.metadata.drop_all(ours)
     ours.dispose()
     theirs.dispose()
+
+
+# The hook-based tests run the competitor synchronously inside our own
+# INSERT. On MySQL, `lock_task_run`'s SELECT ... FOR UPDATE on the missing row
+# holds a gap lock that blocks that competitor's insert from the same thread —
+# a deadlock of the harness, not of the code (real concurrent writers just
+# queue behind the gap lock; see the threaded hammer test). So they run on
+# SQLite and PostgreSQL only.
+hook_race = pytest.mark.skipif(
+    os.environ.get("CM_TEST_DB_URL", "").startswith("mysql"),
+    reason="synchronous in-hook competitor self-deadlocks on MySQL gap locks",
+)
 
 
 def _race_on_first_task_runs_insert(engine, competitor):
@@ -101,6 +124,7 @@ def _app_returning(*ids):
 # --- Bug 1: retry vs. the worker's own row ---
 
 
+@hook_race
 def test_retry_succeeds_when_the_workers_row_lands_mid_retry(db):
     ours, theirs, engine = db
     _seed_failed_run(ours)
@@ -126,6 +150,7 @@ def test_retry_succeeds_when_the_workers_row_lands_mid_retry(db):
         assert [a.action for a in session.query(AuditLog).all()] == ["retry"]
 
 
+@hook_race
 def test_retry_never_downgrades_a_run_that_already_finished(db):
     """A fast task can be done before send_task() even returns."""
     ours, theirs, engine = db
@@ -141,6 +166,7 @@ def test_retry_never_downgrades_a_run_that_already_finished(db):
         assert run.retried_from_id == "orig-1"
 
 
+@hook_race
 def test_bulk_retry_survives_a_race_on_one_item_and_completes_the_rest(db):
     """The old IntegrityError also poisoned the shared session, so every
     later item in the bulk request failed with PendingRollbackError."""
@@ -165,6 +191,7 @@ def test_bulk_retry_survives_a_race_on_one_item_and_completes_the_rest(db):
 # --- Bug 2: listener / decorator / progress get-or-create ---
 
 
+@hook_race
 def test_listener_task_sent_merges_into_a_row_the_decorator_inserted_mid_event(db):
     ours, theirs, engine = db
     fired = _race_on_first_task_runs_insert(engine, _insert_with(
@@ -190,6 +217,7 @@ def test_listener_task_sent_merges_into_a_row_the_decorator_inserted_mid_event(d
         assert run.kwargs == '{"n": 1}'
 
 
+@hook_race
 def test_decorator_started_write_merges_into_a_row_the_listener_inserted_mid_write(db):
     ours, theirs, engine = db
     fired = _race_on_first_task_runs_insert(engine, _insert_with(
@@ -212,6 +240,7 @@ def test_decorator_started_write_merges_into_a_row_the_listener_inserted_mid_wri
         assert run.args == '["x"]'
 
 
+@hook_race
 def test_report_progress_on_an_undecorated_task_races_the_listener(db, monkeypatch):
     from celery_manager import decorator, progress
 
@@ -372,11 +401,13 @@ def test_generic_fallback_survives_a_lost_race_without_losing_pending_work(db, m
 
 
 def test_generic_fallback_still_raises_a_real_integrity_error(db, monkeypatch):
-    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.exc import IntegrityError, OperationalError
 
     ours, _theirs, _engine = db
     monkeypatch.setattr(runs_module, "_insert_if_absent", lambda dialect_name, values: None)
-    with ours() as session, pytest.raises(IntegrityError):
+    # MySQL strict mode reports a missing NOT NULL value as error 1364, which
+    # the driver surfaces as OperationalError; the point is it isn't swallowed.
+    with ours() as session, pytest.raises((IntegrityError, OperationalError)):
         lock_task_run(session, "g-2", seed={"task_name": "demo.echo"})  # status is NOT NULL
 
 

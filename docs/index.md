@@ -25,7 +25,7 @@ uses Celery.</p>
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-light.png){ .cm-shot .cm-only-light }
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-dark.png){ .cm-shot .cm-only-dark }
 
-!!! warning "Alpha — `0.1.0a2`"
+!!! warning "Alpha — `0.1.0a3`"
 
     Working and tested, but the API may still move, and there is no role system yet
     (any signed-in user can do anything). Use it on an internal tool and pin the
@@ -85,7 +85,7 @@ Celery settings, creating the first user and signing in.
 
     ---
 
-    Start, cancel, terminate and retry tasks, with retry lineage recorded in both
+    Cancel, terminate and retry tasks (single or bulk) from the UI, and start them through the API, with retry lineage recorded in both
     directions on the detail view.
 
     [:octicons-arrow-right-24: REST API](rest-api.md)

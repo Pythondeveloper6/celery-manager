@@ -277,6 +277,17 @@ schedules configured yet."
   doesn't block or hide the others; a page-level success notice
   auto-dismisses after 6 seconds.
 
+### Interval schedules
+
+**Interval schedules (`schedule(run_every=…)` / bare seconds / `timedelta`).** Celery beat fires these at "previous fire + interval", and beat's own record of the previous fire isn't visible to the dashboard. celery-manager therefore anchors upcoming occurrences to the schedule's most recent observed run: the newest `task_runs` row with that `schedule_name`, including skipped runs and excluding dashboard retries. It then projects forward by the interval. Once the schedule has run at least once while celery-manager was recording, the times shown are stable and match beat's real fire times to within queue latency, and a skip or cancel matches the real run.
+
+Limitations:
+- Before the first observed run, occurrences are only estimates ("now + interval") and shift on every page load. A skip saved then may not match the real fire. Wait for one run before pausing interval schedules.
+- Ad-hoc calls (`.delay()`/`apply_async` of the same `@track`ed task outside beat) are recorded under the same schedule name and will re-anchor the projection. A task that calls `self.retry()` also re-stamps the run's start time.
+- Beat restarts: beat may fire an overdue entry immediately when it comes back up after downtime, which is off the projected grid until the next observed run re-anchors it.
+- `relative=True` interval schedules aren't modelled.
+- The `@track(schedule_name=…)` value must equal the `beat_schedule` key. This was already required for skips to work.
+
 ## Audit log
 
 ![The audit log of control actions](assets/screenshots/audit-light.png){ .cm-shot .cm-only-light }
