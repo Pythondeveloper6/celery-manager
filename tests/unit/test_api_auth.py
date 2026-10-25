@@ -1,3 +1,5 @@
+from http.cookies import SimpleCookie
+
 import pytest
 from celery import Celery
 from fastapi.testclient import TestClient
@@ -23,6 +25,12 @@ def _client(**config_kwargs):
     with session_factory() as session:
         create_user(session, "alice", "correct-horse-battery-staple")
     return TestClient(app, base_url="https://testserver")
+
+
+def _cm_session(set_cookie: str):
+    # Parsed rather than substring-matched: `"Path=/" in header` would also
+    # pass for `Path=/anything`.
+    return SimpleCookie(set_cookie)["cm_session"]
 
 
 def test_login_succeeds_with_correct_credentials():
@@ -158,7 +166,7 @@ def test_session_cookie_is_named_cm_session():
     response = client.post("/api/auth/login", json={"username": "alice", "password": "correct-horse-battery-staple"})
     set_cookie = response.headers["set-cookie"]
     assert set_cookie.startswith("cm_session=")
-    assert "Path=/" in set_cookie
+    assert _cm_session(set_cookie)["path"] == "/"
     # The old name is no longer read.
     fresh = _client()
     fresh.cookies.set("session", response.cookies["cm_session"])
@@ -174,11 +182,11 @@ def test_session_cookie_path_is_scoped_to_the_mount_point():
 
     login = client.post("/api/auth/login", json={"username": "alice", "password": "correct-horse-battery-staple"})
     assert login.status_code == 200
-    assert "Path=/celery" in login.headers["set-cookie"]
+    assert _cm_session(login.headers["set-cookie"])["path"] == "/celery"
 
     # Deletion must use the same path, or the browser keeps the cookie.
     logout = client.post("/api/auth/logout")
-    assert "Path=/celery" in logout.headers["set-cookie"]
+    assert _cm_session(logout.headers["set-cookie"])["path"] == "/celery"
 
 
 def test_logout_deletes_the_cookie_with_the_same_attributes_it_was_set_with():
@@ -190,4 +198,4 @@ def test_logout_deletes_the_cookie_with_the_same_attributes_it_was_set_with():
     assert "HttpOnly" in set_cookie
     assert "SameSite=lax" in set_cookie
     assert "Secure" in set_cookie
-    assert "Path=/" in set_cookie
+    assert _cm_session(set_cookie)["path"] == "/"
