@@ -2079,3 +2079,61 @@ textarea:focus-visible,
   font-size: var(--cm-text-xs);
   color: var(--cm-color-text-muted);
 }
+
+/* Signed-in user and sign-out. Same mono/xs/uppercase voice as the brand
+   wordmark and the theme pills; the button is a quiet outlined pill so it
+   reads as a control without competing with the accent-filled theme option. */
+.cm-app-nav-user {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-3);
+  min-width: 0;
+}
+
+.cm-app-nav-username {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-app-nav-signout {
+  padding: 0.25rem 0.65rem;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--cm-color-text-muted);
+  background-color: transparent;
+  border: 1px solid var(--cm-color-border-strong);
+  border-radius: var(--cm-radius-full);
+  transition: color var(--cm-duration-fast) var(--cm-ease), border-color var(--cm-duration-fast) var(--cm-ease),
+    opacity var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-app-nav-signout:hover:not(:disabled) {
+  color: var(--cm-color-accent-text);
+  border-color: var(--cm-color-accent-text);
+}
+
+.cm-app-nav-signout:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cm-app-nav-signout:focus-visible {
+  border-radius: var(--cm-radius-full);
+}
+
+.cm-app-nav-error {
+  max-width: var(--cm-page-max);
+  margin: 0 auto;
+  padding: 0 var(--cm-page-pad-x) var(--cm-space-3);
+}

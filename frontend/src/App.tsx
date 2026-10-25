@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
-import { whoami } from "./api/client";
+import { logout, whoami } from "./api/client";
 import { BrandMark, ThemeSwitch, useBranding } from "./branding";
 import { Login } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
@@ -19,8 +19,23 @@ import { Settings } from "./pages/Settings";
 // (`/schedules/:name`) — ScheduleList (Task 18) is what gives "Schedules"
 // a single stable destination to link to, closing the gap Task 15 left
 // rather than papering over it with a guessed link.
-function AppNav() {
+function AppNav({ username, onSignedOut }: { username: string; onSignedOut: () => void }) {
   const { settings } = useBranding();
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  const signOut = () => {
+    setSigningOut(true);
+    setSignOutError(null);
+    logout().then(
+      // Unmounts the nav, so there is no need to clear signingOut.
+      onSignedOut,
+      (err) => {
+        setSignOutError(err instanceof Error ? err.message : "Sign out failed.");
+        setSigningOut(false);
+      },
+    );
+  };
   return (
     <nav className="cm-app-nav" aria-label="Primary">
       {/* The strip is full-bleed so its rule spans the window; this inner rail
@@ -52,8 +67,21 @@ function AppNav() {
               is three clicks too many. The settings screen carries the same
               control, since that is where people go looking for it. */}
           <ThemeSwitch />
+          <div className="cm-app-nav-user">
+            <span className="cm-app-nav-username" title={username}>
+              {username}
+            </span>
+            <button type="button" className="cm-app-nav-signout" onClick={signOut} disabled={signingOut}>
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
         </div>
       </div>
+      {signOutError && (
+        <p role="alert" className="cm-error cm-app-nav-error">
+          {signOutError}
+        </p>
+      )}
     </nav>
   );
 }
@@ -151,7 +179,7 @@ export function App() {
   // the "#".
   return (
     <HashRouter>
-      <AppNav />
+      <AppNav username={username} onSignedOut={() => setUsername(null)} />
       <Routes>
         <Route path="/" element={<TaskList />} />
         <Route path="/tasks/:taskId" element={<TaskDetail />} />
