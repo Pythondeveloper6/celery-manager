@@ -2,10 +2,23 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
+import sys
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.session import get_session_factory, init_db
 from celery_manager.events.listener import EventListener
+
+
+def load_celery_app(path: str):
+    """Import "module:attr". Console-script entry points, unlike `celery -A` and
+    uvicorn, do not put the current directory on sys.path, so the user's own
+    module (run from their project dir) would not be importable; mirror celery."""
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+    module_path, attr = path.split(":")
+    return getattr(importlib.import_module(module_path), attr)
 
 
 def main() -> None:
@@ -19,9 +32,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "events":
-        module_path, attr = args.celery_app.split(":")
-        module = importlib.import_module(module_path)
-        celery_app = getattr(module, attr)
+        celery_app = load_celery_app(args.celery_app)
 
         # No secret_key: the listener never signs or verifies a session, so
         # the config default is fine here (create_app() is what refuses it).

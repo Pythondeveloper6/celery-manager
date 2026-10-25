@@ -202,3 +202,50 @@ def test_publish_before_any_subscriber_is_buffered_and_replayed():
         assert await asyncio.wait_for(queue.get(), timeout=5) == {"n": "early"}
 
     asyncio.run(run())
+
+
+def test_idle_stream_sends_keepalive_comments_and_unsubscribes_on_disconnect(monkeypatch):
+    """Proxies drop silent connections, so an idle stream must emit `: keepalive`
+    frames; cancelling (client disconnect) must still remove the subscriber."""
+    from celery_manager.api import sse
+
+    monkeypatch.setattr(sse, "KEEPALIVE_SECONDS", 0.05)
+    app, token = _app_and_session_cookie()
+    bus = app.state.cm_event_bus
+    scope = _stream_scope([(b"cookie", f"cm_session={token}".encode())])
+
+    async def run():
+        messages: asyncio.Queue = asyncio.Queue()
+        request_sent = False
+
+        async def receive():
+            nonlocal request_sent
+            if not request_sent:
+                request_sent = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await asyncio.sleep(3600)
+
+        async def send(message):
+            await messages.put(message)
+
+        task = asyncio.create_task(app(scope, receive, send))
+        try:
+            start = await asyncio.wait_for(messages.get(), timeout=5)
+            assert start["status"] == 200
+            body = await asyncio.wait_for(messages.get(), timeout=5)
+            assert body["body"].decode() == ": keepalive\n\n"
+            assert len(bus._subscribers) == 1
+
+            bus.publish({"task_id": "t2"})  # real events still flow between keepalives
+            while True:
+                text = (await asyncio.wait_for(messages.get(), timeout=5))["body"].decode()
+                if text != ": keepalive\n\n":
+                    break
+            assert text.startswith("data: ")
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert bus._subscribers == []
+
+    asyncio.run(run())
