@@ -4,19 +4,48 @@ import bcrypt
 
 from celery_manager.db.models import User
 
+# bcrypt only ever looks at the first 72 bytes of its input, and bcrypt>=5
+# raises ValueError rather than silently truncating. Enforced here so an
+# over-long password is a clean rejection, not an unhandled 500 at login.
+MAX_PASSWORD_BYTES = 72
+
+# Hash of a throwaway value, at the same cost factor `bcrypt.gensalt()` uses
+# for real accounts (12). Checked against whenever there is no real hash to
+# check, so a login for a username that doesn't exist costs the same bcrypt
+# round as one for a username that does — otherwise response time alone tells
+# an attacker which usernames are real. A literal rather than computed at
+# import so importing this module doesn't pay for a hash.
+_DUMMY_HASH = b"$2b$12$ysd1eu9/3zS5P2WLJmNh0uTcSzFBUvlXuzcNVUY/x6F/VoRhuJA72"
+
 
 def create_user(session, username: str, password: str) -> User:
-    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    encoded = password.encode("utf-8")
+    if not encoded:
+        raise ValueError("password must not be empty")
+    if len(encoded) > MAX_PASSWORD_BYTES:
+        # Refused rather than truncated: a user who sets a 100-byte password
+        # would otherwise be able to log in with only its first 72 bytes.
+        raise ValueError(f"password must be at most {MAX_PASSWORD_BYTES} bytes when UTF-8 encoded")
+    password_hash = bcrypt.hashpw(encoded, bcrypt.gensalt()).decode("utf-8")
     user = User(username=username, password_hash=password_hash)
     session.add(user)
     session.commit()
     return user
 
 
+def user_exists(session, username: str) -> bool:
+    return session.query(User.id).filter_by(username=username).first() is not None
+
+
 def verify_password(session, username: str, password: str) -> User | None:
+    encoded = password.encode("utf-8")
     user = session.query(User).filter_by(username=username).one_or_none()
-    if user is None:
+    if user is None or len(encoded) > MAX_PASSWORD_BYTES:
+        # Spend the same bcrypt round a real check would (see _DUMMY_HASH).
+        # An over-long password can never match — create_user refuses them —
+        # so it takes this path too rather than reaching bcrypt's ValueError.
+        bcrypt.checkpw(b"not-the-password", _DUMMY_HASH)
         return None
-    if bcrypt.checkpw(password.encode("utf-8"), user.password_hash.encode("utf-8")):
+    if bcrypt.checkpw(encoded, user.password_hash.encode("utf-8")):
         return user
     return None

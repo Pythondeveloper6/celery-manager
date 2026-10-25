@@ -10,23 +10,37 @@ design notes.
 ## Auth
 
 All auth is cookie-based: `POST /api/auth/login` sets an `httponly`,
-`samesite=lax` session cookie (signed with `CeleryManagerConfig.secret_key`
-via `itsdangerous`, valid 7 days); every other endpoint below reads that
-cookie via the `get_current_user` dependency and returns **`401`** if it's
-missing, invalid, or expired. There are no API keys, bearer tokens, or
-scopes — one authenticated user can do everything.
+`samesite=lax` session cookie named **`cm_session`** (signed with
+`CeleryManagerConfig.secret_key` via `itsdangerous`, valid 7 days, `Path`
+set to the app's mount point — `/` unless it is mounted under a prefix);
+every other endpoint below reads that cookie via the `get_current_user`
+dependency and returns **`401`** if it's missing, invalid, expired, or names
+a user that no longer exists. There are no API keys, bearer tokens, or
+scopes — one authenticated user can do everything (see the
+[security model](configuration.md#security-model)).
 
-Two endpoints besides login and logout are not behind that dependency.
-[`GET /api/settings`](#settings-branding) is unauthenticated **on purpose** —
-the login screen has to render this deployment's branding before anyone has
-signed in — and [`GET /api/stream`](#live-updates-sse) simply has no auth
-dependency in its route definition; see the note there for what that
-exposes.
+Besides login and logout, only [`GET /api/settings`](#settings-branding) is
+not behind that dependency, and **on purpose** — the login screen has to
+render this deployment's branding before anyone has signed in.
+
+**Cross-origin writes are refused.** Any `POST`/`PUT`/`PATCH`/`DELETE`
+(login included) that carries an `Origin` header whose host doesn't match
+the request's `Host` (or the first `X-Forwarded-Host`, for proxies that
+rewrite `Host`) gets **`403 {"detail": "cross-origin request refused"}`**
+before reaching the route. Requests with no `Origin` — curl, scripts,
+server-to-server clients — are unaffected. If you put celery-manager behind a
+proxy that rewrites `Host`, make it forward the original as
+`X-Forwarded-Host` (or preserve `Host`), or the dashboard's own writes will
+be refused.
+
+Every response also carries `X-Frame-Options: DENY` and
+`Content-Security-Policy: frame-ancestors 'none'`, so the dashboard can't be
+framed by another site.
 
 | Method | Path | Auth | Request body | Response |
 |---|---|---|---|---|
-| `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str}` on success; `401 {"detail": "invalid credentials"}` on bad username/password. Sets the `session` cookie. |
-| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `session` cookie (no server-side session store to invalidate — the cookie itself is the only state). |
+| `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str}` on success; `401 {"detail": "invalid credentials"}` on bad username/password. Sets the `cm_session` cookie. |
+| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires; see the [security model](configuration.md#security-model). |
 | `GET` | `/api/whoami` | required | — | `200 {"username": str}` if authenticated; `401` otherwise. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
 
 ## Tasks
@@ -378,14 +392,12 @@ dispatches through the same `start_task` call underneath.
 
 | Method | Path | Auth | Response |
 |---|---|---|---|
-| `GET` | `/api/stream` | **none** | `text/event-stream`. Each event is `data: {"task_id": str, "type": str}\n\n` (default `message` event name, no custom `event:` field), one line per Celery task-lifecycle event forwarded from the events listener (`task-sent`, `task-received`, `task-started`, `task-succeeded`, `task-failed`, `task-retried`, `task-revoked`) plus any other event types the listener chooses to publish. Connection stays open indefinitely; the client (dashboard) reconnects with the browser's native `EventSource` retry behavior. |
+| `GET` | `/api/stream` | required | `text/event-stream`. Each event is `data: {"task_id": str, "type": str}\n\n` (default `message` event name, no custom `event:` field), one line per Celery task-lifecycle event forwarded from the events listener (`task-sent`, `task-received`, `task-started`, `task-succeeded`, `task-failed`, `task-retried`, `task-revoked`) plus any other event types the listener chooses to publish. Connection stays open indefinitely; the client (dashboard) reconnects with the browser's native `EventSource` retry behavior. |
 
-`/api/stream` is notably **not** behind `get_current_user` like every other
-endpoint on this page — it has no auth dependency in the route definition.
-The payload itself only carries a task id and event type (no task
-name/args/output), so the practical exposure is limited, but this is worth
-knowing if you're deploying somewhere the endpoint is reachable by
-unauthenticated clients.
+Like every other endpoint on this page, it returns `401` without a valid
+session cookie. (Before 0.1.0a1 it had no auth at all.) The browser's
+`EventSource` sends the cookie when opened with `withCredentials: true`,
+which is what the dashboard does.
 
 The dashboard's task list subscribes to this stream and refetches
 `/api/tasks` on every event rather than applying the event to its local
