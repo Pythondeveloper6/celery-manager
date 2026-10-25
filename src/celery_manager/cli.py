@@ -4,7 +4,7 @@ import argparse
 import importlib
 
 from celery_manager.config import CeleryManagerConfig
-from celery_manager.db.session import init_db, get_session_factory
+from celery_manager.db.session import get_session_factory, init_db
 from celery_manager.events.listener import EventListener
 
 

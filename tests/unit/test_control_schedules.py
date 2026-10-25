@@ -1,19 +1,20 @@
 # tests/unit/test_control_schedules.py
 from datetime import datetime, timedelta, timezone
 
-from celery.schedules import crontab, schedule as interval_schedule
+from celery.schedules import crontab
+from celery.schedules import schedule as interval_schedule
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from celery_manager.db.models import Base, PeriodicSchedule
 from celery_manager.control.schedules import (
-    upcoming_occurrences,
-    pause_occurrence,
     list_overrides,
-    sync_periodic_schedules,
-    list_upcoming_with_overrides,
     list_periodic_schedules,
+    list_upcoming_with_overrides,
+    pause_occurrence,
+    sync_periodic_schedules,
+    upcoming_occurrences,
 )
+from celery_manager.db.models import Base, PeriodicSchedule
 
 
 def _session():
@@ -73,6 +74,7 @@ def test_pause_occurrence_is_idempotent_for_same_target():
 
 def test_sync_periodic_schedules_upserts_from_beat_schedule():
     from unittest.mock import MagicMock
+
     from celery import Celery
 
     session = _session()
@@ -94,6 +96,7 @@ def test_sync_periodic_schedules_upserts_from_beat_schedule():
 
 def test_list_upcoming_with_overrides_merges_computed_occurrences_and_overrides():
     from unittest.mock import MagicMock
+
     from celery import Celery
 
     # Two independent Session objects on the same engine — mirrors two
@@ -128,6 +131,7 @@ def test_list_upcoming_with_overrides_merges_computed_occurrences_and_overrides(
 
 def test_list_upcoming_with_overrides_matches_within_tolerance_despite_time_drift():
     from unittest.mock import MagicMock
+
     from celery import Celery
 
     session = _session()
@@ -156,6 +160,7 @@ def test_list_upcoming_with_overrides_matches_within_tolerance_despite_time_drif
 
 def test_list_upcoming_with_overrides_does_not_match_outside_tolerance():
     from unittest.mock import MagicMock
+
     from celery import Celery
 
     session = _session()
@@ -214,6 +219,7 @@ def test_pause_occurrence_converges_repeated_calls_with_drifted_target_time_to_o
 
 def test_list_upcoming_with_overrides_does_not_double_match_closely_spaced_occurrences():
     from unittest.mock import MagicMock
+
     from celery import Celery
 
     session = _session()
@@ -268,6 +274,7 @@ def test_list_periodic_schedules_empty_when_none_configured():
 
 def _app_with_bare_schedules():
     from unittest.mock import MagicMock
+
     from celery import Celery
 
     app = MagicMock(spec=Celery)

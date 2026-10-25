@@ -147,7 +147,7 @@ def _resolve_run() -> tuple[str | None, str | None]:
         request = getattr(current_task, "request", None)
         fallback_id = getattr(request, "id", None)
         task_name = getattr(current_task, "name", None)
-    except Exception:  # deliberate: current_task is a proxy; never trust it
+    except Exception:  # noqa: BLE001, S110 — deliberate: current_task is a proxy; never trust it
         pass
 
     return fallback_id or None, task_name
@@ -159,7 +159,7 @@ def _coerce_current(value) -> int | None:
     — a bad argument from user code degrades to "no progress shown"."""
     try:
         current = int(value)
-    except Exception:  # int() can raise anything a custom __int__ raises
+    except Exception:  # noqa: BLE001 — int() can raise anything a custom __int__ raises
         return None
     if current < 0:
         # Negative progress is meaningless and would render as a broken bar.
@@ -174,7 +174,7 @@ def _coerce_total(value) -> int | None:
         return None
     try:
         total = int(value)
-    except Exception:
+    except Exception:  # noqa: BLE001 — same as _coerce_current: garbage means no total
         return None
     if total <= 0:
         return None
@@ -188,7 +188,7 @@ def _coerce_message(value) -> str | None:
         return None
     try:
         message = value if isinstance(value, str) else str(value)
-    except Exception:  # a __str__ that raises must not fail the task
+    except Exception:  # noqa: BLE001 — a __str__ that raises must not fail the task
         return None
     return message[:MAX_MESSAGE_CHARS]
 

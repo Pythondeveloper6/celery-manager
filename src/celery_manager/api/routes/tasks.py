@@ -10,14 +10,14 @@ from celery_manager.api.serialization import utc, utc_bound
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
     TaskRunNotFound,
-    list_task_runs,
+    bulk_retry,
+    cancel_task,
     count_task_runs,
     get_task_run,
-    start_task,
-    cancel_task,
-    retry_task,
-    bulk_retry,
     list_retries_of,
+    list_task_runs,
+    retry_task,
+    start_task,
 )
 
 router = APIRouter(prefix="/api/tasks")

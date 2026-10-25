@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
-from fastapi.testclient import TestClient
 from celery import Celery
+from fastapi.testclient import TestClient
 
-from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
+from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.models import AuditLog
 
 
@@ -48,7 +48,7 @@ def test_audit_created_at_carries_a_utc_offset():
 
     created_at = client.get("/api/audit").json()[0]["created_at"]
 
-    assert created_at.endswith("Z") or created_at.endswith("+00:00"), created_at
+    assert created_at.endswith(("Z", "+00:00")), created_at
     parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     assert parsed == datetime(2026, 8, 15, 6, 0, 0, tzinfo=timezone.utc)
 

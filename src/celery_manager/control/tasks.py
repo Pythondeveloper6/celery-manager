@@ -69,7 +69,8 @@ def _decode_stored_call_argument(raw: str | None, field: str, task_id: str, empt
     if isinstance(empty, list) and isinstance(value, tuple):
         value = list(value)
     if not isinstance(value, type(empty)):
-        raise ValueError(
+        # ValueError is the contract callers (and tests) rely on for bad input.
+        raise ValueError(  # noqa: TRY004
             f"the stored {field} for {task_id} decoded to "
             f"{type(value).__name__}, not {type(empty).__name__}; "
             f"pass {field} explicitly to retry this run"
