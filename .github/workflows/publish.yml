@@ -1,0 +1,124 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: |
+          python -m pip install build twine
+          python -m build
+          twine check --strict dist/*
+      - name: Determine and verify version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION=$(python - <<'PY'
+          import glob, os
+          whl = os.path.basename(glob.glob("dist/*.whl")[0])
+          print(whl.split("-")[1])
+          PY
+          )
+          echo "Built version: $VERSION"
+          if [ "$EVENT_NAME" = "release" ]; then
+            if [ "$VERSION" != "${TAG_NAME#v}" ]; then
+              echo "Built version $VERSION does not match tag $TAG_NAME" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/celery-manager
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  verify-testpypi:
+    needs: [build, testpypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install from TestPyPI and smoke test
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python -m venv /tmp/v
+          . /tmp/v/bin/activate
+          ok=0
+          for i in $(seq 1 30); do
+            if pip install --pre --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "celery-manager==$VERSION"; then
+              ok=1; break
+            fi
+            echo "Attempt $i failed; retrying in 10s"
+            sleep 10
+          done
+          [ "$ok" = 1 ] || { echo "Could not install from TestPyPI" >&2; exit 1; }
+          python -c "import celery_manager; assert celery_manager.__version__ == '$VERSION', celery_manager.__version__"
+          celery-manager events --help
+
+  pypi:
+    needs: [build, verify-testpypi]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/celery-manager
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  attach:
+    needs: pypi
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/* --clobber
