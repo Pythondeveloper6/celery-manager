@@ -127,6 +127,16 @@ because anyone who pinned a git SHA during development *will* hit them.
 - A branding settings screen with a live preview and a measured contrast
   readout for the accent colour.
 
+**Framework integration**
+
+- Mount the dashboard under a prefix inside a FastAPI app
+  (`app.mount("/celery-manager", dashboard)`) or a Flask app (via `a2wsgi`
+  and werkzeug's `DispatcherMiddleware`, new `flask` extra).
+- The SPA now uses relative asset and API URLs, so it works under any mount
+  prefix.
+- Runnable `examples/fastapi_demo` and `examples/flask_demo`.
+- New docs page `docs/integrations.md`.
+
 **Packaging and docs**
 
 - MkDocs Material documentation site under `docs/`.
@@ -277,5 +287,8 @@ because anyone who pinned a git SHA during development *will* hit them.
   already dispatched the ids ahead of it.
 - `task_runs.eta` is served by the detail endpoint but never written by
   anything, so it is always `null`.
+- Under Flask (a2wsgi) the SSE stream leaks a subscriber per disconnect, so
+  the Flask demo disables `/api/stream` and the dashboard falls back to
+  polling. Run the dashboard as its own uvicorn process for live push.
 
 [0.1.0a1]: https://github.com/pythondeveloper6/celery-manager/releases/tag/v0.1.0a1

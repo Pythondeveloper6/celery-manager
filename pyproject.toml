@@ -17,6 +17,7 @@ classifiers = [
     "Environment :: Web Environment",
     "Framework :: Celery",
     "Framework :: FastAPI",
+    "Framework :: Flask",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
@@ -26,6 +27,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: System :: Monitoring",
     "Topic :: System :: Distributed Computing",
     # No "Typing :: Typed" — the code is annotated throughout, but the package
@@ -57,8 +59,10 @@ Issues = "https://github.com/pythondeveloper6/celery-manager/issues"
 # uvicorn is only needed to *serve* celery-manager standalone (the demo's
 # run_dashboard.py, `uvicorn your_module:app`). Mounting the app into an
 # existing ASGI stack doesn't need it, so it isn't a core dependency.
+# Flask is WSGI; a2wsgi bridges the ASGI dashboard into it. See docs/integrations.md.
+flask = ["a2wsgi>=1.10", "flask>=3.0"]
 standalone = ["uvicorn>=0.29"]
-dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.4", "uvicorn>=0.29"]
+dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.17,<0.18", "uvicorn>=0.29", "flask>=3.0", "a2wsgi>=1.10"]
 docs = ["mkdocs-material>=9.5"]
 
 [project.scripts]
