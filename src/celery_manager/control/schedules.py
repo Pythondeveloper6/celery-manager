@@ -267,6 +267,59 @@ def _audit_pause(session, username: str, schedule_name: str, target_time: dateti
     )
 
 
+def get_periodic_schedule(session, schedule_name: str) -> PeriodicSchedule | None:
+    return session.query(PeriodicSchedule).filter_by(name=schedule_name).one_or_none()
+
+
+def pause_schedule(session, schedule_name: str, username: str) -> PeriodicSchedule | None:
+    """Pause every future firing of a schedule until `resume_schedule`.
+
+    Returns None for an unknown schedule. Idempotent: pausing an already
+    paused schedule keeps the original `paused_at`/`paused_by` (the pause
+    began then, by them) and writes no audit row, so repeated clicks cannot
+    rewrite history or flood the log.
+
+    celery-manager does not own beat, so beat keeps firing; what a pause
+    changes is what the `@track` decorator does when the firing reaches the
+    worker — it records the run as `skipped` and never calls the body (see
+    `celery_manager.decorator._schedule_is_paused`). Tasks without `@track`
+    are not affected.
+    """
+    row = get_periodic_schedule(session, schedule_name)
+    if row is None:
+        return None
+    if row.paused_at is not None:
+        return row
+    row.paused_at = datetime.now(timezone.utc)
+    row.paused_by = username
+    session.commit()
+    record_audit(session, username, "pause_schedule", "schedule", schedule_name, None)
+    return row
+
+
+def resume_schedule(session, schedule_name: str, username: str) -> PeriodicSchedule | None:
+    """Undo `pause_schedule`. Returns None for an unknown schedule.
+
+    Resuming does not run the task now and does not touch beat's own
+    interval clock: the next regular beat firing simply runs normally.
+    Firings missed while paused are not caught up — they already happened,
+    and were recorded as `skipped`. Idempotent: resuming a schedule that is
+    not paused is a no-op with no audit row. The audit row records when the
+    pause began and who started it, since resuming clears both columns.
+    """
+    row = get_periodic_schedule(session, schedule_name)
+    if row is None:
+        return None
+    if row.paused_at is None:
+        return row
+    details = {"paused_at": _as_aware_utc(row.paused_at).isoformat(), "paused_by": row.paused_by}
+    row.paused_at = None
+    row.paused_by = None
+    session.commit()
+    record_audit(session, username, "resume_schedule", "schedule", schedule_name, details)
+    return row
+
+
 def list_overrides(session, schedule_name: str) -> list[ScheduleOverride]:
     return (
         session.query(ScheduleOverride)
@@ -289,6 +342,10 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
         row.task_name = entry["task"]
         row.schedule_spec = str(_entry_schedule(entry))
         row.enabled = True
+        # `paused_at`/`paused_by` are deliberately not touched: they are an
+        # operator decision (`pause_schedule`), not part of the beat config,
+        # and resetting them here silently un-paused every schedule on each
+        # dashboard restart.
         synced.append(row)
     session.commit()
     return synced
@@ -340,6 +397,7 @@ def list_upcoming_with_overrides(
     occurrences = upcoming_occurrences(periodic, celery_schedule, count=count, from_time=from_time, anchor=anchor)
     pool = [o for o in list_overrides(session, schedule_name) if not o.consumed]
     window = timedelta(seconds=eta_tolerance_seconds)
+    paused = periodic.paused_at is not None
 
     result = []
     for t in occurrences:
@@ -350,6 +408,9 @@ def list_upcoming_with_overrides(
             "target_time": t,
             "action": match.action if match is not None else None,
             "consumed": match.consumed if match is not None else False,
+            # True when the whole schedule is paused (`pause_schedule`): this
+            # firing will be recorded as skipped however `action` reads.
+            "paused": paused,
         })
     return result
 

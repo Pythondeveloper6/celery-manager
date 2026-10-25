@@ -4,6 +4,38 @@ All notable changes to celery-manager are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Pause and resume a whole schedule.** `POST /api/schedules/{name}/pause`
+  and `POST /api/schedules/{name}/resume` (also
+  `celery_manager.control.schedules.pause_schedule` / `resume_schedule`).
+  While a schedule is paused, every firing is recorded as a `skipped` run and
+  the task body does not run — the same mechanism as an occurrence skip.
+  Both endpoints are idempotent, return `404` for an unknown schedule, and
+  write `pause_schedule` / `resume_schedule` audit rows. `GET /api/schedules`
+  items gain `paused`, `paused_at` and `paused_by`; each occurrence from
+  `GET /api/schedules/{name}/occurrences` gains `paused`. The frontend API
+  client gains `pauseSchedule()` / `resumeSchedule()`. Limitations:
+    - only `@track`-decorated tasks are affected — celery-manager does not
+      own beat, so beat keeps firing and an undecorated task still runs;
+    - resume waits for the next regular beat firing. It doesn't run the task
+      now, doesn't reset beat's interval clock, and doesn't catch up firings
+      missed while paused (they were recorded as `skipped`).
+
+  The pause survives restarts: the startup sync from `beat_schedule` leaves
+  it alone.
+
+### Changed
+
+- **Schema:** `periodic_schedules` gains two nullable columns, `paused_at`
+  and `paused_by`. `init_db()` now adds a known list of nullable columns to
+  an existing database itself (`ALTER TABLE ... ADD COLUMN`), so upgrading
+  needs no manual DDL — but the database user needs `ALTER` permission on
+  that table the first time the new version starts. Other schema changes
+  still aren't migrated.
+
 ## [0.1.0a3] — 2026-10-25
 
 ### Fixed
