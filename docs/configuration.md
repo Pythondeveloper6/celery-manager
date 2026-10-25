@@ -143,7 +143,16 @@ flag describes the browser-to-edge connection, not the edge-to-app hop.
   column, starting the new version against an older database will not update
   the schema, and you will get errors about missing columns rather than an
   automatic upgrade.
-- **Upgrading across a schema change may require manual work**: either
+- **One exception: known nullable columns are added for you.** A short,
+  explicit list of nullable columns added to an existing table after it
+  first shipped (`_ADDITIVE_COLUMNS` in `celery_manager.db.session`) is
+  checked on every `init_db()`, and any that are missing are added with
+  `ALTER TABLE ... ADD COLUMN`. Adding a nullable column is safe on every
+  backend and rewrites no data. Today that list is
+  `periodic_schedules.paused_at` and `periodic_schedules.paused_by` (the
+  whole-schedule pause). The database user therefore needs `ALTER`
+  permission on that table the first time a new version starts.
+- **Any other schema change may require manual work**: either
   hand-writing the DDL (`ALTER TABLE ...`) to match the new models in
   `celery_manager.db.models`, or dropping and recreating celery-manager's
   database. Recreating it is usually acceptable — the tables hold

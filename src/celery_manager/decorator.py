@@ -74,6 +74,20 @@ def _find_matching_override(session, schedule_name: str):
     return None
 
 
+def _schedule_is_paused(session, schedule_name: str) -> bool:
+    """True if the whole schedule is paused (`pause_schedule`). Unknown
+    names — a `@track`ed task that is not in `beat_schedule` at all, or one
+    whose `schedule_name` doesn't match a beat key — are never paused."""
+    from celery_manager.db.models import PeriodicSchedule
+
+    paused_at = (
+        session.query(PeriodicSchedule.paused_at)
+        .filter_by(name=schedule_name)
+        .scalar()
+    )
+    return paused_at is not None
+
+
 def _safe_json(value) -> str:
     """Serialize a run's args/kwargs for `task_runs`, without ever raising.
 
@@ -264,7 +278,8 @@ def track(schedule_name: str | None = None):
 
     Checks for a matching schedule_overrides entry before running; if found
     and action is skip/cancel, records the run as 'skipped' and does not
-    call the wrapped function. Otherwise it writes a `started` row, runs the
+    call the wrapped function. Does the same if the whole schedule is
+    paused (`PeriodicSchedule.paused_at` set via `pause_schedule`). Otherwise it writes a `started` row, runs the
     task with log capture on, and rewrites that row with the outcome —
     `succeeded`, `failed`, or `retried` if the body raised Celery's `Retry`
     to schedule another attempt.
@@ -308,6 +323,16 @@ def track(schedule_name: str | None = None):
                         # run of this schedule.
                         override.consumed = True
                         session.commit()
+                        skipped = True
+                    # Whole-schedule pause. Checked *after* the occurrence
+                    # override on purpose: an override aimed at this firing
+                    # is consumed whether or not the schedule is also paused.
+                    # The firing it targeted has happened (and is being
+                    # skipped either way); leaving it unconsumed would keep a
+                    # stale row in the pool that `pause_occurrence`'s
+                    # tolerance matching and the occurrences view would have
+                    # to keep stepping around.
+                    if not skipped and _schedule_is_paused(session, effective_schedule_name):
                         skipped = True
             except Exception:  # deliberate fail-open: see _persist_run's docstring
                 logger.exception(
