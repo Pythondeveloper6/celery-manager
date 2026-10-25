@@ -2,29 +2,46 @@
 
 ## Install
 
+celery-manager 0.1.0a1 is an alpha in a **private** GitHub repository and is
+**not on PyPI yet** (publication is planned), so `pip install --pre
+celery-manager` will not find it. Install the tagged release from git (this
+needs access to the repository):
+
 ```bash
-pip install --pre celery-manager
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"
 ```
+
+or from the wheel attached to the GitHub release:
+
+```bash
+pip install ./celery_manager-0.1.0a1-py3-none-any.whl
+```
+
+Extras go after the name, e.g. `"celery-manager[standalone] @
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"`. Once the
+package is published, `pip install --pre celery-manager` will work (`--pre`
+because 0.1.0a1 is a pre-release).
 
 `uvicorn` is **not** a core dependency — celery-manager is an ASGI app, and
 mounting it into a server you already run needs no server of its own. If you
 want to serve the dashboard standalone (`uvicorn your_module:app`, or the
-bundled demo's `run_dashboard.py`), install the extra:
-
-```bash
-pip install --pre "celery-manager[standalone]"
-```
+bundled demo's `run_dashboard.py`), install the `standalone` extra
+(`celery-manager[standalone]`). To mount it in a Flask app, install the `flask`
+extra (`celery-manager[flask]`, which adds Flask and `a2wsgi`) — see
+[Integrating with your app](integrations.md#flask-wsgi).
 
 ## Wire it into your app
 
 ```python
+import os
+
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
 
 config = CeleryManagerConfig(
     celery_app=your_celery_app,
     db_url="sqlite:///celery_manager.db",  # or any SQLAlchemy URL
-    secret_key="a-real-secret-in-production",
+    secret_key=os.environ["CELERY_MANAGER_SECRET_KEY"],  # private + random
 )
 app, _ = create_app(config)
 ```
@@ -37,7 +54,9 @@ start if it is empty or left at the `"change-me"` default.
 
 `create_app` returns `(app, session_factory)`. The FastAPI `app` serves the
 JSON API under `/api/*` and — once the frontend has been built and copied
-into `src/celery_manager/dashboard/static/` — the dashboard SPA at `/`.
+into `src/celery_manager/dashboard/static/` — the dashboard SPA at `/` (or at
+whatever prefix you [mount it under](integrations.md); the SPA uses relative
+URLs).
 `create_app` also runs a one-time sync of `celery_app.conf.beat_schedule`
 into the `periodic_schedules` table on startup, so the dashboard's schedule
 list reflects whatever periodic tasks your app has configured.
@@ -84,7 +103,9 @@ create_user(Session(), "admin", "a-real-password")
 ```
 
 Passwords are hashed with bcrypt before being stored; there's no
-plaintext-password path anywhere in the auth code.
+plaintext-password path anywhere in the auth code. A password must be 1 to 72
+bytes when UTF-8 encoded (bcrypt's limit): `create_user` raises `ValueError` for
+an empty one or a longer one rather than silently truncating it.
 
 There is no default account and no first-run setup screen, so **the
 dashboard is unusable until you run this** — it is the second thing that

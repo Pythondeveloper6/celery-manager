@@ -57,8 +57,8 @@ explicit about limitations and failure modes rather than tidy.
 ## Rebuilding the dashboard bundle
 
 The React dashboard is committed **prebuilt** into
-`src/celery_manager/dashboard/static/`, which is what lets `pip install
-celery-manager` serve a UI with no Node toolchain. `frontend/dist/` is
+`src/celery_manager/dashboard/static/`, which is what lets an installed celery-manager (the wheel or a git install)
+serve a UI with no Node toolchain. `frontend/dist/` is
 gitignored; the copy under `src/` is the one that ships.
 
 So a change under `frontend/src/` has no effect on the installed package
