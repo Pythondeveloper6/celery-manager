@@ -60,6 +60,9 @@ with; see [Appearance and branding](#appearance-and-branding) below.
 
 ## Task list
 
+![The task list with filter panel, status badges and runtimes](assets/screenshots/task-list-light.png){ .cm-shot .cm-only-light }
+![The task list with filter panel, status badges and runtimes](assets/screenshots/task-list-dark.png){ .cm-shot .cm-only-dark }
+
 The default screen after login (`/`), and the one that gets the most
 attention. Filters live in a panel down the left; results, and everything
 that describes them, live to the right.
@@ -172,6 +175,9 @@ with **Try again**.
 
 ## Task detail
 
+![Task detail for a running import, with live progress and cancel and terminate buttons](assets/screenshots/task-detail-light.png){ .cm-shot .cm-only-light }
+![Task detail for a running import, with live progress and cancel and terminate buttons](assets/screenshots/task-detail-dark.png){ .cm-shot .cm-only-dark }
+
 `/tasks/:taskId`. Shows one task run in full:
 
 - Status badge, and a **Retry** button shown only when `status ===
@@ -220,7 +226,13 @@ left polling forever. If one of those refreshes fails the page keeps the
 data it has and says so ("Live updates paused… Still retrying every 2s.")
 rather than blanking.
 
+![Task detail for a failed run: traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-light.png){ .cm-shot .cm-only-light }
+![Task detail for a failed run: traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-dark.png){ .cm-shot .cm-only-dark }
+
 ## Schedules list
+
+![The schedules view, with one upcoming occurrence skipped](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
+![The schedules view, with one upcoming occurrence skipped](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
 
 `/schedules`, and where the **Schedules** nav link lands. A card per
 configured periodic schedule, backed by `GET /api/schedules`: the schedule's
@@ -266,6 +278,9 @@ schedules configured yet."
   auto-dismisses after 6 seconds.
 
 ## Audit log
+
+![The audit log of control actions](assets/screenshots/audit-light.png){ .cm-shot .cm-only-light }
+![The audit log of control actions](assets/screenshots/audit-dark.png){ .cm-shot .cm-only-dark }
 
 `/audit`. A read-only table of every manually-triggered control action, with
 **When**, **User**, **Action**, and **Target**

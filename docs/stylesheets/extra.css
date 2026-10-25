@@ -122,6 +122,8 @@
 }
 
 .cm-shot {
+  max-width: 100%;
+  height: auto;
   border-radius: 0.75rem;
   box-shadow: 0 20px 50px -12px rgb(11 15 20 / 0.35), 0 0 0 1px rgb(11 15 20 / 0.08);
   margin: 1.5rem 0;

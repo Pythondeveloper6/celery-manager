@@ -22,7 +22,8 @@ uses Celery.</p>
 
 </div>
 
-![The celery-manager task list: filters, status badges, runtimes and start times](assets/tasks-light.png){ .cm-shot }
+![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-light.png){ .cm-shot .cm-only-light }
+![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-dark.png){ .cm-shot .cm-only-dark }
 
 !!! warning "Alpha — `0.1.0a2`"
 
@@ -128,13 +129,30 @@ Celery settings, creating the first user and signing in.
 
 ## A closer look
 
-=== "Task detail"
-
-    ![A running task with a live progress bar, elapsed time and estimated finish](assets/task-detail-light.png){ .cm-shot }
-
 === "Task list"
 
-    ![The task list](assets/tasks-light.png){ .cm-shot }
+    ![The task list with filters, status badges and runtimes](assets/screenshots/task-list-light.png){ .cm-shot .cm-only-light }
+    ![The task list with filters, status badges and runtimes](assets/screenshots/task-list-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Task detail"
+
+    ![A running import with a live progress bar, with cancel and terminate controls](assets/screenshots/task-detail-light.png){ .cm-shot .cm-only-light }
+    ![A running import with a live progress bar, with cancel and terminate controls](assets/screenshots/task-detail-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Failure & retry"
+
+    ![A failed task showing its traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-light.png){ .cm-shot .cm-only-light }
+    ![A failed task showing its traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Schedules"
+
+    ![The schedules view with one future occurrence skipped](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
+    ![The schedules view with one future occurrence skipped](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Audit log"
+
+    ![The audit log of control actions, attributed to users](assets/screenshots/audit-light.png){ .cm-shot .cm-only-light }
+    ![The audit log of control actions, attributed to users](assets/screenshots/audit-dark.png){ .cm-shot .cm-only-dark }
 
 ## How it works
 
