@@ -145,6 +145,12 @@ because anyone who pinned a git SHA during development *will* hit them.
   you already run needs no server of its own.
 - MIT license.
 
+- `celery-manager events --celery-app module:app` now imports the app from the
+  current directory (console scripts don't put it on `sys.path`).
+- SSE stream sends a `: keepalive` comment every 15s when idle so proxies don't
+  close it.
+- Dashboard: sign-out control in the nav.
+
 ### Changed
 
 - **`@track` now writes a `started` row before calling your task body**, not
@@ -267,11 +273,10 @@ because anyone who pinned a git SHA during development *will* hit them.
 
 ### Known limitations
 
-- **SSE does not deliver across processes.** `EventBus` is in-memory in the
-  API process, while the documented deployment runs the events listener as a
-  separate OS process, so `/api/stream` connects and then never delivers.
-  The dashboard's 5-second poll is what actually keeps it current. Don't
-  build on `/api/stream` yet.
+- **SSE only carries web-process events.** `EventBus` is in-memory in the API
+  process, so with the documented deployment (events listener as a separate
+  process) `/api/stream` never delivers the listener's task events. The
+  dashboard's 5-second poll keeps it current. Don't build on `/api/stream` yet.
 - **No schema migrations.** `init_db()` is `create_all` only; it creates
   missing tables and never alters existing ones.
 - **No role system.** Any authenticated user can perform any control action,
@@ -287,14 +292,16 @@ because anyone who pinned a git SHA during development *will* hit them.
   already dispatched the ids ahead of it.
 - `task_runs.eta` is served by the detail endpoint but never written by
   anything, so it is always `null`.
-- Live push via SSE only carries events published in the web process. With the
-  separate events listener, the dashboard updates via its 5-second poll.
 - Revoked runs have no `finished_at` (only `task-succeeded`/`task-failed` set it).
 - Dispatching an unregistered task name records `task_name` as `"unknown"` when
   the listener creates the row.
 - The events listener needs `worker_send_task_events` (or `-E`) and
   `task_send_sent_event` to be set; without them `worker`/`queue` are null. See
   [Required Celery settings](docs/quickstart.md#required-celery-settings).
+- **macOS prefork workers fail every task** (`ValueError: not enough values to
+  unpack`). Upstream Celery 5.6 / billiard 4.3 bug, not celery-manager. Start
+  the worker with `FORKED_BY_MULTIPROCESSING=1`, or use `--pool=threads` /
+  `--pool=solo` for local dev. See the [quickstart](docs/quickstart.md#required-celery-settings).
 - Under Flask (a2wsgi) the SSE stream leaks a subscriber per disconnect, so
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
