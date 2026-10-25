@@ -3,10 +3,11 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timedelta, timezone
 
-from celery.schedules import maybe_schedule
+from celery.schedules import crontab, maybe_schedule, solar
+from celery.schedules import schedule as interval_schedule
 
 from celery_manager.control.audit import record as record_audit
-from celery_manager.db.models import PeriodicSchedule, ScheduleOverride
+from celery_manager.db.models import PeriodicSchedule, ScheduleOverride, TaskRun
 
 
 def _entry_schedule(entry: dict):
@@ -29,13 +30,79 @@ def _entry_schedule(entry: dict):
     return maybe_schedule(entry["schedule"])
 
 
-def upcoming_occurrences(schedule: PeriodicSchedule, celery_schedule, count: int = 10, from_time: datetime | None = None) -> list[datetime]:
+def _is_interval_schedule(celery_schedule) -> bool:
+    """True for a fixed-interval `celery.schedules.schedule(run_every=...)`
+    (which is also what a bare number / `timedelta` entry normalizes to),
+    False for wall-clock-anchored schedules like `crontab` and `solar`.
+    crontab/solar are not subclasses of `schedule` today; they are excluded
+    explicitly anyway so a future Celery reshuffle can't silently route them
+    through interval projection."""
+    return isinstance(celery_schedule, interval_schedule) and not isinstance(celery_schedule, (crontab, solar))
+
+
+def _last_observed_run_at(session, schedule_name: str) -> datetime | None:
+    """When this schedule most recently actually ran, as far as
+    celery-manager has seen — the anchor for interval-schedule projection.
+
+    Celery beat fires an interval entry at `last_run_at + run_every`, where
+    `last_run_at` is the moment beat *sent* the previous run (beat.py
+    `ScheduleEntry._next_instance` stamps `default_now()`). That state lives
+    in beat's own process/shelve file and is invisible to the API process,
+    but every run of a `@track`ed task writes a `task_runs` row carrying
+    `schedule_name` and `started_at` (including skipped runs), which is the
+    same instant plus queue latency — normally well inside
+    `eta_tolerance_seconds`.
+
+    Runs dispatched by the dashboard's retry (`retried_from_id` set) are not
+    beat fires and are excluded. Ad-hoc `.delay()` calls of the same task
+    cannot be told apart from beat fires (the decorator records the same
+    `schedule_name` for both) — a known limitation, see
+    `upcoming_occurrences`.
+    """
+    row = (
+        session.query(TaskRun.started_at)
+        .filter(
+            TaskRun.schedule_name == schedule_name,
+            TaskRun.started_at.isnot(None),
+            TaskRun.retried_from_id.is_(None),
+        )
+        .order_by(TaskRun.started_at.desc())
+        .first()
+    )
+    return _as_aware_utc(row[0]) if row is not None else None
+
+
+def upcoming_occurrences(
+    schedule: PeriodicSchedule,
+    celery_schedule,
+    count: int = 10,
+    from_time: datetime | None = None,
+    anchor: datetime | None = None,
+) -> list[datetime]:
     """Compute the next `count` run times for a periodic schedule.
 
     `celery_schedule` is the actual celery.schedules.schedule/crontab
     instance the host app configured for this entry (not derivable from
     our stored display string alone — callers look it up from the host
     app's beat_schedule by `schedule.name`).
+
+    Interval schedules and `anchor`: a `schedule(run_every=...)` has no
+    wall-clock grid of its own — beat fires it at "previous fire +
+    run_every". Computing it from `from_time` (i.e. "now") therefore yields
+    `now + run_every`, a value that moves forward on every call and has no
+    relation to when beat will actually fire. That broke the headline
+    feature twice over: a saved skip/cancel stopped matching the displayed
+    occurrence once more than `eta_tolerance_seconds` had passed since it
+    was saved (display), and the saved `target_time` itself could be up to
+    a whole interval away from the real fire time, so the decorator's
+    run-time check missed it (enforcement). When `anchor` — the schedule's
+    last observed actual run, see `_last_observed_run_at` — is given for an
+    interval schedule, occurrences are instead projected on the fixed grid
+    `anchor + k * run_every`, which is stable across calls and lines up
+    with beat. Without an anchor (no run observed yet) we fall back to the
+    from-`from_time` estimate below, which is only an estimate and still
+    drifts; the first observed run fixes it. crontab/solar are wall-clock
+    anchored already and ignore `anchor`.
 
     `celery.schedules.schedule.remaining_estimate()` measures "time
     remaining until due" relative to the schedule's own `now()` (real
@@ -58,6 +125,10 @@ def upcoming_occurrences(schedule: PeriodicSchedule, celery_schedule, count: int
     state is ever mutated and there is nothing to restore.
     """
     from_time = from_time or datetime.now(timezone.utc)
+
+    if anchor is not None and _is_interval_schedule(celery_schedule):
+        return _project_interval(_as_aware_utc(anchor), celery_schedule.run_every, count, from_time)
+
     occurrences: list[datetime] = []
     last_run_at = from_time
     local_schedule = copy.copy(celery_schedule)
@@ -68,6 +139,18 @@ def upcoming_occurrences(schedule: PeriodicSchedule, celery_schedule, count: int
         occurrences.append(next_run)
         last_run_at = next_run
     return occurrences
+
+
+def _project_interval(anchor: datetime, run_every: timedelta, count: int, from_time: datetime) -> list[datetime]:
+    """The first `count` points of the grid `anchor + k * run_every` that
+    lie strictly after `from_time`. Pure arithmetic on the two datetimes —
+    deterministic for a given anchor, however much wall-clock time passes
+    between calls."""
+    if run_every <= timedelta(0):
+        return []
+    k = (from_time - anchor) // run_every + 1
+    first = anchor + k * run_every
+    return [first + i * run_every for i in range(count)]
 
 
 def _as_aware_utc(dt: datetime) -> datetime:
@@ -122,9 +205,11 @@ def pause_occurrence(
     reschedule behaviour is implemented, and silently storing an override
     nothing acts on is worse than refusing it.
 
-    Idempotent by *tolerance window*, not exact equality: since
-    `upcoming_occurrences` recomputes occurrence timestamps relative to
-    "now" on every call (see its docstring), two separate pause requests
+    Idempotent by *tolerance window*, not exact equality: occurrence
+    timestamps are not guaranteed byte-identical between calls (an
+    interval schedule with no observed run yet is estimated relative to
+    "now", and an anchored one shifts by the queue latency each time a new
+    run re-anchors it — see `upcoming_occurrences`), so two separate pause requests
     a human would consider "about the same occurrence" (e.g. re-deciding
     the action after a page reload) can arrive with slightly different
     `target_time` values. Re-calling with a `target_time` within
@@ -220,11 +305,14 @@ def list_upcoming_with_overrides(
     """The data the dashboard's future-schedule view renders: every
     upcoming occurrence, each annotated with any existing override.
 
-    `upcoming_occurrences` recomputes occurrence timestamps relative to
-    "now" on every call (see its docstring), so a `target_time` a user
-    paused a few seconds or minutes ago via `pause_occurrence` will not
-    be byte-identical to the same logical occurrence recomputed just
-    now. Matching by `eta_tolerance_seconds` (same concept, and same
+    Interval schedules are projected from the schedule's last observed
+    run (`_last_observed_run_at`), so their occurrence times are stable
+    across requests once the schedule has run at least once; before that
+    they are estimated relative to "now" and do drift (see
+    `upcoming_occurrences`). Even anchored, a `target_time` a user paused
+    via `pause_occurrence` need not be byte-identical to the same logical
+    occurrence recomputed later (a new run re-anchors the grid by its queue
+    latency; the client may round-trip the timestamp). Matching by `eta_tolerance_seconds` (same concept, and same
     default, as the decorator's own skip-check window — see
     `celery_manager.decorator._find_matching_override` — configured via
     `CeleryManagerConfig.eta_tolerance_seconds`) instead of exact
@@ -247,7 +335,9 @@ def list_upcoming_with_overrides(
     if periodic is None or entry is None:
         return []
 
-    occurrences = upcoming_occurrences(periodic, _entry_schedule(entry), count=count, from_time=from_time)
+    celery_schedule = _entry_schedule(entry)
+    anchor = _last_observed_run_at(session, schedule_name) if _is_interval_schedule(celery_schedule) else None
+    occurrences = upcoming_occurrences(periodic, celery_schedule, count=count, from_time=from_time, anchor=anchor)
     pool = [o for o in list_overrides(session, schedule_name) if not o.consumed]
     window = timedelta(seconds=eta_tolerance_seconds)
 
