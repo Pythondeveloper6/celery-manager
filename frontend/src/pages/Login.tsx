@@ -2,6 +2,24 @@ import { useId, useState } from "react";
 import { login } from "../api/client";
 import { BrandMark, useBranding } from "../branding";
 
+// Twelve bars, oldest to newest: mostly quiet successes, one failure, one
+// retry, one still running and one waiting. Heights in px, on the same 6–32
+// scale the live strip uses.
+const MOTIF: [string, number][] = [
+  ["succeeded", 14],
+  ["succeeded", 20],
+  ["succeeded", 11],
+  ["failed", 26],
+  ["succeeded", 16],
+  ["retried", 22],
+  ["succeeded", 13],
+  ["succeeded", 18],
+  ["succeeded", 9],
+  ["succeeded", 15],
+  ["started", 30],
+  ["queued", 6],
+];
+
 export function Login({ onSuccess }: { onSuccess: (username: string) => void }) {
   // Branding is already in context by the time this renders (BrandingProvider
   // wraps App in main.tsx, above the authentication check) — that is the whole
@@ -39,14 +57,19 @@ export function Login({ onSuccess }: { onSuccess: (username: string) => void }) 
             <BrandMark large />
             {settings.brand_name}
           </h1>
-          <p className="cm-login-tagline">Queue control</p>
-          <div className="cm-pulse-rule" aria-hidden="true" />
+          {/* The run strip from the task list, as a still motif. */}
+          <div className="cm-login-motif" aria-hidden="true">
+            {MOTIF.map(([status, height], i) => (
+              <span key={i} data-status={status} style={{ height }} />
+            ))}
+          </div>
         </div>
 
         <div className="cm-field">
           <label htmlFor={usernameId}>Username</label>
           <input
             id={usernameId}
+            className="cm-input"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoFocus
@@ -62,6 +85,7 @@ export function Login({ onSuccess }: { onSuccess: (username: string) => void }) 
           <label htmlFor={passwordId}>Password</label>
           <input
             id={passwordId}
+            className="cm-input"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -79,11 +103,9 @@ export function Login({ onSuccess }: { onSuccess: (username: string) => void }) 
           </p>
         )}
 
-        <button type="submit" disabled={loading} data-loading={loading || undefined}>
+        <button type="submit" className="cm-btn cm-btn-solid" disabled={loading} data-loading={loading || undefined}>
           {loading ? "Signing in…" : "Sign in"}
         </button>
-
-        <p className="cm-login-meta">Self-hosted &middot; session-based auth</p>
       </form>
     </div>
   );

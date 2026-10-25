@@ -9,7 +9,7 @@ import {
   useResolvedTheme,
   useThemePreference,
 } from "./theme";
-import type { ResolvedTheme } from "./theme";
+import type { ResolvedTheme, ThemePreference } from "./theme";
 
 /* ==========================================================================
    Appearance: deployment branding, and the control for the per-browser theme.
@@ -59,8 +59,8 @@ const AA_TEXT = 4.5;
  * colour clears AA on every surface in that theme, not just the common one.
  */
 const TEXT_BACKDROP: Record<ResolvedTheme, Rgb> = {
-  light: { r: 0xea, g: 0xed, b: 0xef },
-  dark: { r: 0x12, g: 0x18, b: 0x20 },
+  light: { r: 0xec, g: 0xee, b: 0xea },
+  dark: { r: 0x17, g: 0x1c, b: 0x19 },
 };
 
 /** `#rgb` or `#rrggbb`, matching what the server accepts, or null. */
@@ -115,8 +115,8 @@ function mix(colour: Rgb, target: Rgb, amount: number): Rgb {
  * `backdrop`, and return the first step that does.
  *
  * Terminates by construction: the last step *is* `target`, and both endpoints
- * clear AA against both backdrops (black on #eaedef is 14.7:1, white on
- * #121820 is 15.9:1), so the loop always has an answer. Small steps keep as
+ * clear AA against both backdrops (black on #eceeea is 18.0:1, white on
+ * #171c19 is 17.3:1), so the loop always has an answer. Small steps keep as
  * much of the operator's colour as the contrast requirement allows — a brand
  * that already passes is returned untouched at step 0.
  */
@@ -148,7 +148,7 @@ export interface DerivedAccent {
  *
  * Returns null when there is nothing to derive (empty value, or a string the
  * server would have rejected anyway) — callers then leave the built-in
- * phosphor-cyan tokens alone rather than applying a broken palette.
+ * celery-leaf tokens alone rather than applying a broken palette.
  *
  * The five decisions, and why:
  *
@@ -175,8 +175,9 @@ export interface DerivedAccent {
  *     against whatever is behind it and barely moves the luminance of the
  *     surface, so text sitting on it keeps the contrast it had.
  *
- * The focus ring is derived from (4) rather than the raw brand colour: a ring
- * is a visibility affordance, and a pale ring on a pale surface is not one.
+ * The focus ring needs nothing here: tokens.css draws it in
+ * --cm-color-accent-text, i.e. (4), not the raw brand colour — a ring is a
+ * visibility affordance, and a pale ring on a pale surface is not one.
  */
 export function deriveAccent(accent: string, theme: ResolvedTheme): DerivedAccent | null {
   const brand = parseHexColour(accent);
@@ -202,7 +203,6 @@ export function deriveAccent(accent: string, theme: ResolvedTheme): DerivedAccen
       "--cm-color-accent-soft": toRgba(brand, 0.14),
       "--cm-color-accent-text": toHex(linkText),
       "--cm-color-accent-text-hover": toHex(linkTextHover),
-      "--cm-focus-ring": `0 0 0 3px ${toRgba(linkText, 0.4)}`,
     },
     fill: toHex(brand),
     fillText: toHex(fillText),
@@ -294,8 +294,8 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   // Custom accent, applied as inline custom properties on <html> so it
   // overrides the tokens from either theme without the stylesheet knowing
   // anything about branding. Re-derived when the resolved theme changes,
-  // because "readable as text" means something different on #eaedef and
-  // #121820. The cleanup removes exactly the properties it set, so clearing
+  // because "readable as text" means something different on #eceeea and
+  // #171c19. The cleanup removes exactly the properties it set, so clearing
   // the accent restores the built-in palette with no reload.
   useEffect(() => {
     const derived = deriveAccent(settings.brand_accent, resolvedTheme);
@@ -352,19 +352,51 @@ export function BrandMark({ large = false }: { large?: boolean }) {
   );
 }
 
+const THEME_ICONS: Record<ThemePreference, ReactNode> = {
+  system: (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 2.25a5.75 5.75 0 0 1 0 11.5z" fill="currentColor" />
+    </svg>
+  ),
+  light: (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M8 1v1.75M8 13.25V15M1 8h1.75M13.25 8H15M3.05 3.05l1.24 1.24M11.71 11.71l1.24 1.24M3.05 12.95l1.24-1.24M11.71 4.29l1.24-1.24"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
+  dark: (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
+};
+
 /**
  * The theme switch: a three-position selector, not a toggle.
  *
  * A single icon button would hide two of the three states and give no way to
  * get back to "follow the OS" once you'd left it. Buttons with `aria-pressed`
- * (the convention the filter bar already uses) rather than a radio group, so
- * every option is reachable with Tab and activated with Enter or Space, and
- * the group's label names what is being chosen.
+ * rather than a radio group, so every option is reachable with Tab and
+ * activated with Enter or Space. Icon-only in the rail, where `aria-label`
+ * and `title` carry the word; icon plus word where there is room
+ * (`labelled`, on the settings screen).
  */
-export function ThemeSwitch() {
+export function ThemeSwitch({ labelled = false }: { labelled?: boolean }) {
   const preference = useThemePreference();
   return (
-    <div className="cm-segmented" role="group" aria-label="Theme">
+    <div className={labelled ? "cm-segmented cm-segmented-labelled" : "cm-segmented"} role="group" aria-label="Theme">
       {THEME_PREFERENCES.map((option) => (
         <button
           key={option}
@@ -372,9 +404,11 @@ export function ThemeSwitch() {
           className="cm-segmented-option"
           aria-pressed={preference === option}
           aria-label={`${THEME_LABELS[option]} theme`}
+          title={labelled ? undefined : `${THEME_LABELS[option]} theme`}
           onClick={() => setThemePreference(option)}
         >
-          {THEME_LABELS[option]}
+          {THEME_ICONS[option]}
+          {labelled && <span aria-hidden="true">{THEME_LABELS[option]}</span>}
         </button>
       ))}
     </div>

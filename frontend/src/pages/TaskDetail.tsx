@@ -3,6 +3,7 @@ import "../styles/task-detail.css";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { cancelTask, getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
+import { StatusBadge } from "../components/Status";
 import {
   elapsedSeconds,
   formatDuration,
@@ -99,6 +100,43 @@ function Absent({ reason }: { reason: string }) {
       <span aria-hidden="true">—</span>
       <span className="cm-visually-hidden">{reason}</span>
     </span>
+  );
+}
+
+/** Copy the full task id. The visible id is selectable too; this is the
+ *  one-click path for pasting it into a log search mid-incident. */
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <button
+      type="button"
+      className="cm-copy-btn"
+      onClick={() => {
+        navigator.clipboard?.writeText(value).then(
+          () => setCopied(true),
+          () => undefined
+        );
+      }}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        {copied ? (
+          <path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        ) : (
+          <>
+            <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M10.75 3.25v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          </>
+        )}
+      </svg>
+      <span aria-live="polite">{copied ? "Copied" : "Copy ID"}</span>
+    </button>
   );
 }
 
@@ -279,9 +317,12 @@ export function TaskDetail() {
   const hasLineage = task !== null && (task.retried_from_id !== null || task.retried_by.length > 0);
 
   return (
-    <div className="cm-page cm-detail-page">
+    <div className="cm-page">
       <Link to="/" className="cm-back-link">
-        &larr; All tasks
+        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        All tasks
       </Link>
 
       {error ? (
@@ -296,72 +337,79 @@ export function TaskDetail() {
       ) : (
         <>
           <header className="cm-detail-header">
-            <h1 className="cm-page-title">{task.task_name}</h1>
-            <span className="cm-status-badge" data-status={task.status}>
-              {task.status}
-            </span>
-            {task.status === "failed" && (
-              <button
-                type="button"
-                className="cm-btn cm-btn-solid"
-                onClick={handleRetry}
-                disabled={retrying}
-                aria-busy={retrying}
-              >
-                {retrying ? "Retrying…" : "Retry"}
-              </button>
-            )}
-          </header>
-          <p className="cm-task-id cm-detail-task-id">{task.task_id}</p>
+            <div className="cm-detail-titles">
+              <h1 className="cm-page-title">{task.task_name}</h1>
+              <div className="cm-detail-sub">
+                <StatusBadge status={task.status} />
+                <code className="cm-detail-id">{task.task_id}</code>
+                <CopyButton value={task.task_id} />
+              </div>
+            </div>
 
-          {canCancel && (
-            <div className="cm-task-actions" role="group" aria-label="Task actions">
-              {confirmTerminate && canTerminate ? (
-                <>
-                  <span className="cm-task-actions-warn">Kills the worker process running this task. Unsaved work is lost.</span>
-                  <button
-                    type="button"
-                    className="cm-btn cm-btn-danger"
-                    onClick={() => handleCancel(true)}
-                    disabled={cancelBusy !== null}
-                    aria-busy={cancelBusy === "terminate"}
-                  >
-                    {cancelBusy === "terminate" ? "Terminating…" : "Confirm terminate"}
-                  </button>
-                  <button
-                    type="button"
-                    className="cm-btn cm-btn-outline"
-                    onClick={() => setConfirmTerminate(false)}
-                    disabled={cancelBusy !== null}
-                  >
-                    Keep running
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="cm-btn cm-btn-outline"
-                    onClick={() => handleCancel(false)}
-                    disabled={cancelBusy !== null}
-                    aria-busy={cancelBusy === "cancel"}
-                  >
-                    {cancelBusy === "cancel" ? "Cancelling…" : "Cancel"}
-                  </button>
-                  {canTerminate && (
+            {(canCancel || task.status === "failed") && (
+              <div className="cm-task-actions" role="group" aria-label="Task actions">
+                {confirmTerminate && canTerminate ? (
+                  <>
+                    <span className="cm-task-actions-warn">
+                      Kills the worker process running this task. Unsaved work is lost.
+                    </span>
                     <button
                       type="button"
-                      className="cm-btn cm-btn-outline cm-btn-danger-outline"
-                      onClick={() => setConfirmTerminate(true)}
+                      className="cm-btn cm-btn-outline"
+                      onClick={() => setConfirmTerminate(false)}
                       disabled={cancelBusy !== null}
                     >
-                      Terminate
+                      Keep running
                     </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-danger"
+                      onClick={() => handleCancel(true)}
+                      disabled={cancelBusy !== null}
+                      aria-busy={cancelBusy === "terminate"}
+                    >
+                      {cancelBusy === "terminate" ? "Terminating…" : "Confirm terminate"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {canCancel && (
+                      <button
+                        type="button"
+                        className="cm-btn cm-btn-outline"
+                        onClick={() => handleCancel(false)}
+                        disabled={cancelBusy !== null}
+                        aria-busy={cancelBusy === "cancel"}
+                      >
+                        {cancelBusy === "cancel" ? "Cancelling…" : "Cancel"}
+                      </button>
+                    )}
+                    {canTerminate && (
+                      <button
+                        type="button"
+                        className="cm-btn cm-btn-danger-outline"
+                        onClick={() => setConfirmTerminate(true)}
+                        disabled={cancelBusy !== null}
+                      >
+                        Terminate
+                      </button>
+                    )}
+                  </>
+                )}
+                {task.status === "failed" && (
+                  <button
+                    type="button"
+                    className="cm-btn cm-btn-solid"
+                    onClick={handleRetry}
+                    disabled={retrying}
+                    aria-busy={retrying}
+                  >
+                    {retrying ? "Retrying…" : "Retry"}
+                  </button>
+                )}
+              </div>
+            )}
+          </header>
 
           {cancelNotice && (
             <p className="cm-notice" role="status">
@@ -376,11 +424,10 @@ export function TaskDetail() {
 
           {retryNotice && (
             <p className="cm-notice" role="status">
-              Retried as a new run &mdash;{" "}
-              <Link to={`/tasks/${retryNotice.newTaskId}`} className="cm-back-link">
-                view {retryNotice.newTaskId}
+              Retried as a new run.{" "}
+              <Link to={`/tasks/${retryNotice.newTaskId}`} className="cm-link">
+                Open {retryNotice.newTaskId.slice(0, 8)}
               </Link>
-              .
             </p>
           )}
           {retryError && (
@@ -389,305 +436,295 @@ export function TaskDetail() {
             </p>
           )}
           {liveError && (
-            <p className="cm-run-alert" role="status">
+            <p className="cm-alert" role="status">
               Live updates paused. {liveError} Still retrying every {POLL_INTERVAL_MS / 1000}s.
             </p>
           )}
 
-          {/* Panel order is "what does someone debugging at 2am read first".
-              The failure only renders when there is one, so on a running task
-              the run panel is effectively the top of the page — and on a
-              failed one the exception is, ahead of every timing. */}
-          {task.exception && (
-            <section className="cm-panel cm-failure-panel">
-              <h2>Why it failed</h2>
-              <p className="cm-failure-message">{task.exception}</p>
-              {task.traceback && <pre className="cm-traceback">{task.traceback}</pre>}
-            </section>
-          )}
-
-          <section className="cm-panel cm-run-panel" aria-labelledby="cm-run-heading">
-            <div className="cm-run-head">
-              <h2 id="cm-run-heading">Run</h2>
-              {live && (
-                <span className="cm-live-indicator" title={`Refreshing every ${POLL_INTERVAL_MS / 1000}s while this run is active`}>
-                  <span className="cm-live-dot" aria-hidden="true" />
-                  Live
-                </span>
+          <div className="cm-detail-grid">
+            <div className="cm-detail-main">
+              {/* Panel order is "what does someone debugging at 2am read
+                  first": on a failed run the exception, ahead of every
+                  timing; on a running one the progress. */}
+              {task.exception && (
+                <section className="cm-panel cm-detail-section cm-failure-panel" aria-labelledby="cm-failure-heading">
+                  <h2 className="cm-section-title" id="cm-failure-heading">
+                    Why it failed
+                  </h2>
+                  <p className="cm-failure-message">{task.exception}</p>
+                  {task.traceback && <pre className="cm-code">{task.traceback}</pre>}
+                </section>
               )}
-            </div>
 
-            {task.status === "queued" ? (
-              <p className="cm-empty-state cm-run-hint">
-                Queued &mdash; waiting for a worker to pick this up.
-                {task.eta ? ` Not before ${formatTimestamp(task.eta)}.` : ""}
-              </p>
-            ) : running ? (
-              <>
-                {fraction !== null && percent !== null && (
-                  <div className="cm-run-progress">
-                    {/* aria-hidden for the same reason .cm-run-message below
-                        is: the progressbar's aria-valuetext already says
-                        "21% — 4,182 of 20,000", and without this the tree
-                        reads "21% 4,182 of 20,000" and then immediately
-                        "Run progress, 21% — 4,182 of 20,000 — …". Verified
-                        against a real accessibility tree, not inferred. Safe
-                        because this head only ever renders in the branch
-                        that also renders the bar; the open-ended branch
-                        below has no bar, so its head stays announced. */}
-                    <div className="cm-run-progress-head" aria-hidden="true">
-                      <span className="cm-run-pct">
-                        {percent}
-                        <span className="cm-run-pct-unit">%</span>
-                      </span>
-                      <span className="cm-run-count">
-                        {formatCount(task.progress_current ?? 0)} of {formatCount(task.progress_total ?? 0)}
-                      </span>
-                    </div>
-                    <div
-                      className="cm-run-track"
-                      // The list drains its run lane when a run stops
-                      // reporting; without the same flag here the same run
-                      // looked healthy on its own page and stalled in the
-                      // table one click away.
-                      data-stalled={stale ? "true" : undefined}
-                      role="progressbar"
-                      aria-label="Run progress"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={percent}
-                      aria-valuetext={`${percent}% — ${formatCount(task.progress_current ?? 0)} of ${formatCount(
-                        task.progress_total ?? 0
-                      )}${task.progress_message ? ` — ${task.progress_message}` : ""}`}
+              <section className="cm-panel cm-detail-section" aria-labelledby="cm-run-heading">
+                <div className="cm-run-head">
+                  <h2 className="cm-section-title" id="cm-run-heading">
+                    Run
+                  </h2>
+                  {live && (
+                    <span
+                      className="cm-live-indicator"
+                      title={`Refreshing every ${POLL_INTERVAL_MS / 1000}s while this run is active`}
                     >
-                      <div className="cm-run-fill" style={{ width: `${percent}%` }} />
-                    </div>
-                    {/* aria-hidden because the progressbar's aria-valuetext
-                        above already ends with this same message; without it a
-                        screen reader reads it twice in a row. The open-ended
-                        branch below has no progressbar, so its copy of this
-                        line stays announced — it is the only announcement
-                        there is. */}
-                    {task.progress_message && (
-                      <p className="cm-run-message" aria-hidden="true">
-                        {task.progress_message}
+                      <span className="cm-live-dot" aria-hidden="true" />
+                      Live
+                    </span>
+                  )}
+                </div>
+
+                {task.status === "queued" ? (
+                  <p className="cm-run-hint">
+                    Queued, waiting for a worker to pick this up.
+                    {task.eta ? ` Not before ${formatTimestamp(task.eta)}.` : ""}
+                  </p>
+                ) : running ? (
+                  <>
+                    {fraction !== null && percent !== null && (
+                      <div className="cm-run-progress">
+                        {/* aria-hidden: the progressbar's aria-valuetext
+                            already says "21%, 4,182 of 20,000", so without
+                            this a screen reader hears it twice. Only ever
+                            rendered alongside the bar. */}
+                        <div className="cm-run-progress-head" aria-hidden="true">
+                          <span className="cm-run-pct">
+                            {percent}
+                            <span className="cm-run-pct-unit">%</span>
+                          </span>
+                          <span className="cm-run-count">
+                            {formatCount(task.progress_current ?? 0)} of {formatCount(task.progress_total ?? 0)}
+                          </span>
+                        </div>
+                        <div
+                          className="cm-run-track"
+                          // Drained when the run stops reporting, matching
+                          // the task list's lane for the same run.
+                          data-stalled={stale ? "true" : undefined}
+                          role="progressbar"
+                          aria-label="Run progress"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={percent}
+                          aria-valuetext={`${percent}%, ${formatCount(task.progress_current ?? 0)} of ${formatCount(
+                            task.progress_total ?? 0
+                          )}${task.progress_message ? `, ${task.progress_message}` : ""}`}
+                        >
+                          <div className="cm-run-fill" style={{ width: `${percent}%` }} />
+                        </div>
+                        {/* aria-hidden: the progressbar's value text already
+                            ends with this message. */}
+                        {task.progress_message && (
+                          <p className="cm-run-message" aria-hidden="true">
+                            {task.progress_message}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Open-ended progress: a count with no denominator, so
+                        no bar and no percentage — the count is the headline. */}
+                    {fraction === null && task.progress_current !== null && (
+                      <div className="cm-run-progress">
+                        <div className="cm-run-progress-head">
+                          <span className="cm-run-pct">{formatCount(task.progress_current)}</span>
+                          <span className="cm-run-count">No total reported</span>
+                        </div>
+                        {task.progress_message && <p className="cm-run-message">{task.progress_message}</p>}
+                      </div>
+                    )}
+
+                    {fraction !== null ? (
+                      <dl className="cm-run-stats">
+                        <div>
+                          <dt>Elapsed</dt>
+                          <dd>{elapsed === null ? <Absent reason="Not recorded" /> : formatDuration(elapsed)}</dd>
+                        </div>
+                        {showEstimate && remaining !== null && (
+                          <>
+                            <div>
+                              <dt>Est. remaining</dt>
+                              <dd>≈ {formatDuration(remaining)}</dd>
+                            </div>
+                            <div>
+                              <dt>Est. finish</dt>
+                              <dd>≈ {formatClock(now + remaining * 1000)}</dd>
+                            </div>
+                          </>
+                        )}
+                      </dl>
+                    ) : elapsed === null ? (
+                      <p className="cm-run-hint">No elapsed time to show: this run has no recorded start time.</p>
+                    ) : (
+                      <p className="cm-run-hero">
+                        <span className="cm-run-hero-label">Elapsed</span>
+                        <span className="cm-run-hero-value">{formatDuration(elapsed)}</span>
                       </p>
                     )}
-                  </div>
-                )}
 
-                {/* Open-ended progress: a count with no denominator. No bar
-                    and no percentage, because there is no percentage to
-                    compute — the count itself becomes the headline figure,
-                    and the caption says why there's nothing to fill. */}
-                {fraction === null && task.progress_current !== null && (
-                  <div className="cm-run-progress">
-                    <div className="cm-run-progress-head">
-                      <span className="cm-run-pct">{formatCount(task.progress_current)}</span>
-                      <span className="cm-run-count">no total reported</span>
-                    </div>
-                    {task.progress_message && <p className="cm-run-message">{task.progress_message}</p>}
-                  </div>
-                )}
-
-                {fraction !== null ? (
-                  <dl className="cm-detail-meta cm-run-stats">
-                    <div>
-                      <dt>Elapsed</dt>
-                      <dd>{elapsed === null ? <Absent reason="Not recorded" /> : formatDuration(elapsed)}</dd>
-                    </div>
-                    {showEstimate && remaining !== null && (
-                      <>
-                        <div>
-                          <dt>Est. remaining</dt>
-                          <dd>≈ {formatDuration(remaining)}</dd>
-                        </div>
-                        <div>
-                          <dt>Est. finish</dt>
-                          <dd>≈ {formatClock(now + remaining * 1000)}</dd>
-                        </div>
-                      </>
+                    {/* Both estimates are marked "Est." and ≈, and this line
+                        says what they are made of. */}
+                    {fraction !== null && showEstimate && (
+                      <p className="cm-run-note">
+                        Estimated by projecting the average rate so far. Work with uneven cost per item will move it.
+                      </p>
                     )}
-                  </dl>
-                ) : elapsed === null ? (
-                  <p className="cm-empty-state cm-run-hint">
-                    No elapsed time to show &mdash; this run has no recorded start time.
-                  </p>
+                    {fraction !== null && !showEstimate && !stale && (
+                      <p className="cm-run-note">
+                        No finish estimate yet. There isn&rsquo;t enough progress to extrapolate a rate from.
+                      </p>
+                    )}
+
+                    {/* A wedged run and a fast one look identical without this. */}
+                    {stale && sinceProgress !== null && (
+                      <p className="cm-alert" role="status">
+                        No progress update in {formatDuration(sinceProgress)}. This run may be wedged; estimates are
+                        paused until it reports again.
+                      </p>
+                    )}
+
+                    {fraction === null && task.progress_current === null && (
+                      <p className="cm-run-hint">
+                        This task doesn&rsquo;t report progress, so there&rsquo;s nothing to fill in. Call{" "}
+                        <code className="cm-inline-code">celery_manager.report_progress(current, total, message)</code>{" "}
+                        inside the task body and a live bar appears here on the next run.
+                      </p>
+                    )}
+                  </>
+                ) : elapsed !== null ? (
+                  <>
+                    <p className="cm-run-hero">
+                      <span className="cm-run-hero-label">Duration</span>
+                      <span className="cm-run-hero-value">{formatDuration(elapsed)}</span>
+                    </p>
+                    {startedMillis !== null && finishedMillis !== null && (
+                      <p className="cm-run-window">
+                        <time dateTime={task.started_at ?? undefined}>{formatClock(startedMillis)}</time>
+                        {" to "}
+                        <time dateTime={task.finished_at ?? undefined}>{formatClock(finishedMillis)}</time>
+                      </p>
+                    )}
+                    {task.progress_current !== null && (
+                      <p className="cm-run-message">
+                        Last reported {formatCount(task.progress_current)}
+                        {task.progress_total !== null ? ` of ${formatCount(task.progress_total)}` : ""}
+                        {task.progress_message ? `: ${task.progress_message}` : ""}
+                      </p>
+                    )}
+                  </>
                 ) : (
-                  <p className="cm-run-hero">
-                    <span className="cm-run-hero-label">Elapsed</span>
-                    <span className="cm-run-hero-value">{formatDuration(elapsed)}</span>
-                  </p>
+                  <p className="cm-run-hint">No duration recorded: this run never reported a start time.</p>
                 )}
+              </section>
 
-                {/* Both estimate figures are marked "Est." and prefixed with
-                    ≈, and this line says what the estimate is actually made
-                    of. A countdown answers "do I wait?"; the clock time
-                    answers "will it be done before the 15:00 deploy" — they
-                    aren't the same question, so both are shown. */}
-                {fraction !== null && showEstimate && (
-                  <p className="cm-run-estimate-note">
-                    Estimated by projecting the average rate so far. Work with uneven cost per item will move it.
-                  </p>
+              {/* Logs before args: the log is what you read next after the
+                  traceback; args/kwargs are the reproduction recipe. */}
+              <section className="cm-panel cm-detail-section" aria-labelledby="cm-log-heading">
+                <h2 className="cm-section-title" id="cm-log-heading">
+                  Log output
+                </h2>
+                {task.log_output ? (
+                  <pre className="cm-code cm-code-tall">{task.log_output}</pre>
+                ) : (
+                  <p className="cm-run-hint">No log output captured for this run.</p>
                 )}
-                {fraction !== null && !showEstimate && !stale && (
-                  <p className="cm-run-estimate-note">
-                    No finish estimate yet &mdash; there isn't enough progress to extrapolate a rate from.
-                  </p>
-                )}
+              </section>
 
-                {/* A wedged run and a fast one look identical without this. */}
-                {stale && sinceProgress !== null && (
-                  <p className="cm-run-alert" role="status">
-                    No progress update in {formatDuration(sinceProgress)} &mdash; this run may be wedged. Estimates are
-                    paused until it reports again.
-                  </p>
-                )}
-
-                {fraction === null && task.progress_current === null && (
-                  <p className="cm-empty-state cm-run-hint">
-                    This task doesn't report progress, so there's nothing to fill in. Call{" "}
-                    <code className="cm-run-code">celery_manager.report_progress(current, total, message)</code>{" "}
-                    inside the task body and a live bar appears here on the next run.
-                  </p>
-                )}
-              </>
-            ) : elapsed !== null ? (
-              <>
-                <p className="cm-run-hero">
-                  <span className="cm-run-hero-label">Duration</span>
-                  <span className="cm-run-hero-value">{formatDuration(elapsed)}</span>
-                </p>
-                {startedMillis !== null && finishedMillis !== null && (
-                  <p className="cm-run-window">
-                    <time dateTime={task.started_at ?? undefined}>{formatClock(startedMillis)}</time>
-                    {" → "}
-                    <time dateTime={task.finished_at ?? undefined}>{formatClock(finishedMillis)}</time>
-                  </p>
-                )}
-                {task.progress_current !== null && (
-                  <p className="cm-run-message">
-                    Last reported {formatCount(task.progress_current)}
-                    {task.progress_total !== null ? ` of ${formatCount(task.progress_total)}` : ""}
-                    {task.progress_message ? ` — ${task.progress_message}` : ""}
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="cm-empty-state cm-run-hint">
-                No duration recorded &mdash; this run never reported a start time.
-              </p>
-            )}
-          </section>
-
-          {/* Where it ran. Second because "which box, off which queue" is the
-              next question after "what broke", and it's what you correlate
-              against infra graphs. Every value falls back to a dash with a
-              spoken reason, so a queued-but-never-started run renders a
-              complete row set rather than a ragged one. */}
-          <section className="cm-panel cm-exec-panel" aria-labelledby="cm-exec-heading">
-            <h2 id="cm-exec-heading">Execution</h2>
-            <dl className="cm-detail-meta">
-              <div>
-                <dt>Worker</dt>
-                <dd>{task.worker ?? <Absent reason="Not recorded" />}</dd>
-              </div>
-              <div>
-                <dt>Queue</dt>
-                <dd>{task.queue ?? <Absent reason="Not recorded" />}</dd>
-              </div>
-              <div>
-                <dt>ETA</dt>
-                <dd>{task.eta ? formatTimestamp(task.eta) : <Absent reason="No ETA set" />}</dd>
-              </div>
-              <div>
-                <dt>Started</dt>
-                <dd>{task.started_at ? formatTimestamp(task.started_at) : <Absent reason="Hasn't started yet" />}</dd>
-              </div>
-              <div>
-                <dt>Finished</dt>
-                <dd>
-                  {task.finished_at ? (
-                    formatTimestamp(task.finished_at)
-                  ) : (
-                    <Absent reason={pendingReason} />
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Runtime</dt>
-                <dd>
-                  {task.runtime_seconds !== null ? (
-                    formatDuration(task.runtime_seconds)
-                  ) : (
-                    <Absent reason={pendingReason} />
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          {/* Omitted entirely when there's no chain — an empty "Retry
-              lineage" panel would be a row of dashes saying nothing. */}
-          {hasLineage && (
-            <section className="cm-panel cm-lineage-panel" aria-labelledby="cm-lineage-heading">
-              <h2 id="cm-lineage-heading">Retry lineage</h2>
-              <ol className="cm-lineage-chain">
-                {task.retried_from_id && (
-                  <li className="cm-lineage-item" data-node="from">
-                    <span className="cm-lineage-label">Retried from</span>
-                    <Link to={`/tasks/${task.retried_from_id}`} className="cm-lineage-link">
-                      {task.retried_from_id}
-                    </Link>
-                  </li>
-                )}
-                <li className="cm-lineage-item" data-node="self" aria-current="page">
-                  <span className="cm-lineage-label">This run</span>
-                  <span className="cm-lineage-id">{task.task_id}</span>
-                </li>
-                {/* Numbered only when there is more than one, because then
-                    the number carries real information: the order an
-                    operator retried this same failed run in. */}
-                {task.retried_by.map((id, index) => (
-                  <li key={id} className="cm-lineage-item" data-node="to">
-                    <span className="cm-lineage-label">
-                      {task.retried_by.length > 1 ? `Retry ${index + 1}` : "Retried as"}
-                    </span>
-                    <Link to={`/tasks/${id}`} className="cm-lineage-link">
-                      {id}
-                    </Link>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
-
-          {/* Logs before args: the log is what you read next after the
-              traceback, while args/kwargs are the reproduction recipe you
-              copy out once you already know what went wrong. */}
-          <section className="cm-panel cm-log-panel">
-            <h2>Log output</h2>
-            {task.log_output ? (
-              <pre className="cm-log-output">{task.log_output}</pre>
-            ) : (
-              <p className="cm-empty-state">No log output captured for this run.</p>
-            )}
-          </section>
-
-          <dl className="cm-detail-meta">
-            <div>
-              <dt>Args</dt>
-              <dd>
-                <pre className="cm-code-block">{formatPayload(task.args)}</pre>
-              </dd>
+              <section className="cm-panel cm-detail-section" aria-labelledby="cm-args-heading">
+                <h2 className="cm-section-title" id="cm-args-heading">
+                  Arguments
+                </h2>
+                <dl className="cm-args">
+                  <div>
+                    <dt>Args</dt>
+                    <dd>
+                      <pre className="cm-code">{formatPayload(task.args)}</pre>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Kwargs</dt>
+                    <dd>
+                      <pre className="cm-code">{formatPayload(task.kwargs)}</pre>
+                    </dd>
+                  </div>
+                </dl>
+              </section>
             </div>
-            <div>
-              <dt>Kwargs</dt>
-              <dd>
-                <pre className="cm-code-block">{formatPayload(task.kwargs)}</pre>
-              </dd>
-            </div>
-          </dl>
+
+            {/* Where and when it ran, and where it came from: the facts you
+                correlate against infra graphs. Every value falls back to a
+                dash with a spoken reason. */}
+            <aside className="cm-detail-aside" aria-labelledby="cm-exec-heading">
+              <h2 className="cm-section-title" id="cm-exec-heading">
+                Execution
+              </h2>
+              <dl className="cm-exec-list">
+                <div>
+                  <dt>Worker</dt>
+                  <dd className="cm-exec-code">{task.worker ?? <Absent reason="Not recorded" />}</dd>
+                </div>
+                <div>
+                  <dt>Queue</dt>
+                  <dd className="cm-exec-code">{task.queue ?? <Absent reason="Not recorded" />}</dd>
+                </div>
+                <div>
+                  <dt>ETA</dt>
+                  <dd>{task.eta ? formatTimestamp(task.eta) : <Absent reason="No ETA set" />}</dd>
+                </div>
+                <div>
+                  <dt>Started</dt>
+                  <dd>{task.started_at ? formatTimestamp(task.started_at) : <Absent reason="Hasn't started yet" />}</dd>
+                </div>
+                <div>
+                  <dt>Finished</dt>
+                  <dd>{task.finished_at ? formatTimestamp(task.finished_at) : <Absent reason={pendingReason} />}</dd>
+                </div>
+                <div>
+                  <dt>Runtime</dt>
+                  <dd>
+                    {task.runtime_seconds !== null ? (
+                      formatDuration(task.runtime_seconds)
+                    ) : (
+                      <Absent reason={pendingReason} />
+                    )}
+                  </dd>
+                </div>
+              </dl>
+
+              {/* Omitted entirely when there's no chain. */}
+              {hasLineage && (
+                <div className="cm-lineage">
+                  <h3 className="cm-lineage-title" id="cm-lineage-heading">
+                    Retry lineage
+                  </h3>
+                  <ol className="cm-lineage-chain" aria-labelledby="cm-lineage-heading">
+                    {task.retried_from_id && (
+                      <li className="cm-lineage-item" data-node="from">
+                        <span className="cm-lineage-label">Retried from</span>
+                        <Link to={`/tasks/${task.retried_from_id}`} className="cm-lineage-link">
+                          {task.retried_from_id}
+                        </Link>
+                      </li>
+                    )}
+                    <li className="cm-lineage-item" data-node="self" aria-current="page">
+                      <span className="cm-lineage-label">This run</span>
+                      <span className="cm-lineage-id">{task.task_id}</span>
+                    </li>
+                    {/* Numbered only when there is more than one, because
+                        then the order carries information. */}
+                    {task.retried_by.map((id, index) => (
+                      <li key={id} className="cm-lineage-item" data-node="to">
+                        <span className="cm-lineage-label">
+                          {task.retried_by.length > 1 ? `Retry ${index + 1}` : "Retried as"}
+                        </span>
+                        <Link to={`/tasks/${id}`} className="cm-lineage-link">
+                          {id}
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </aside>
+          </div>
         </>
       )}
     </div>

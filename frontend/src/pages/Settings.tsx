@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { DEFAULT_BRAND_SETTINGS, updateSettings } from "../api/settings";
 import type { BrandSettings } from "../api/settings";
-import { BrandMark, ThemeSwitch, deriveAccent, parseHexColour, useBranding } from "../branding";
+import { ThemeSwitch, deriveAccent, parseHexColour, useBranding } from "../branding";
 import { useResolvedTheme, useThemePreference } from "../theme";
 
 const BRAND_KEYS = ["brand_name", "brand_accent", "brand_logo_url"] as const;
@@ -122,22 +122,16 @@ export function Settings() {
   return (
     <div className="cm-page">
       <header className="cm-page-header">
-        <div className="cm-page-header-titles">
-          <p className="cm-page-eyebrow">
-            <BrandMark />
-            {settings.brand_name}
-          </p>
-          <h1 className="cm-page-title">Settings</h1>
-        </div>
+        <h1 className="cm-page-title">Settings</h1>
       </header>
 
-      <section className="cm-panel" aria-labelledby={brandingHeadingId}>
-        <div className="cm-panel-head">
-          <h2 className="cm-panel-title" id={brandingHeadingId}>
+      <section className="cm-settings-section" aria-labelledby={brandingHeadingId}>
+        <div className="cm-settings-head">
+          <h2 className="cm-section-title" id={brandingHeadingId}>
             Branding
           </h2>
           <p className="cm-scope-note">
-            <span className="cm-scope-tag">Deployment-wide</span>
+            <span className="cm-scope-tag">Deployment-wide.</span>{" "}
             <span>
               Saved on the server. Everyone who opens this dashboard sees the name, colour and logo you
               set here, including on the sign-in screen.
@@ -182,7 +176,7 @@ export function Settings() {
                   aria-invalid={errorField === "brand_name" || undefined}
                 />
                 <p className="cm-field-hint" id={`${nameId}-hint`}>
-                  Up to 64 characters. Shown in the nav, on the sign-in card and in the browser tab.
+                  Up to 64 characters. Shown in the sidebar, on the sign-in screen and in the browser tab.
                   Leave it empty to go back to {DEFAULT_BRAND_SETTINGS.brand_name}.
                 </p>
                 {errorField === "brand_name" && (
@@ -197,7 +191,7 @@ export function Settings() {
                 <div className="cm-field-inline">
                   <input
                     id={accentId}
-                    className="cm-input"
+                    className="cm-input cm-input-code"
                     value={draft.brand_accent}
                     onChange={(e) => edit("brand_accent", e.target.value)}
                     placeholder={effectiveAccent}
@@ -218,7 +212,7 @@ export function Settings() {
                   />
                 </div>
                 <p className="cm-field-hint" id={`${accentId}-hint`}>
-                  One hex value, like #0a7478. Hover, pressed, link and tint variants are derived from
+                  One hex value, like #2f6b4f. Hover, pressed, link and tint variants are derived from
                   it, and text on buttons is picked by measuring contrast. Empty means the built-in
                   accent.
                 </p>
@@ -238,7 +232,7 @@ export function Settings() {
                 <label htmlFor={logoId}>Logo URL</label>
                 <input
                   id={logoId}
-                  className="cm-input"
+                  className="cm-input cm-input-code"
                   value={draft.brand_logo_url}
                   onChange={(e) => edit("brand_logo_url", e.target.value)}
                   spellCheck={false}
@@ -266,7 +260,7 @@ export function Settings() {
                 inputs are locked. */}
             <div className="cm-preview" style={previewStyle} role="group" aria-label="Branding preview">
               <div className="cm-preview-chrome">
-                <span className="cm-app-nav-brand">
+                <span className="cm-rail-brand">
                   {previewLogo && !logoFailed ? (
                     <img
                       className="cm-brand-logo"
@@ -282,21 +276,22 @@ export function Settings() {
                 <span className="cm-badge">Preview</span>
               </div>
               <div className="cm-preview-body">
-                <span className="cm-btn cm-btn-solid">Retry task</span>
-                <span className="cm-notice">3 tasks queued for retry</span>
+                <span className="cm-preview-nav">Tasks</span>
+                <span className="cm-btn cm-btn-solid">Retry</span>
+                <span className="cm-link">All tasks</span>
               </div>
               <p className="cm-preview-readout">
                 {derived ? (
                   <>
                     <span>
-                      Button text {derived.fillText} · {derived.fillRatio.toFixed(2)}:1 AA
+                      Button text {derived.fillText}, {derived.fillRatio.toFixed(2)}:1
                     </span>
                     <span>
-                      Link text {derived.linkText} · {derived.linkRatio.toFixed(2)}:1 AA
+                      Link text {derived.linkText}, {derived.linkRatio.toFixed(2)}:1
                     </span>
                   </>
                 ) : (
-                  <span>Built-in accent · contrast checked for both themes</span>
+                  <span>Built-in accent, contrast checked for both themes</span>
                 )}
               </p>
             </div>
@@ -339,13 +334,13 @@ export function Settings() {
         )}
       </section>
 
-      <section className="cm-panel" aria-labelledby={appearanceHeadingId}>
-        <div className="cm-panel-head">
-          <h2 className="cm-panel-title" id={appearanceHeadingId}>
+      <section className="cm-settings-section" aria-labelledby={appearanceHeadingId}>
+        <div className="cm-settings-head">
+          <h2 className="cm-section-title" id={appearanceHeadingId}>
             Appearance
           </h2>
           <p className="cm-scope-note">
-            <span className="cm-scope-tag">This browser only</span>
+            <span className="cm-scope-tag">This browser only.</span>{" "}
             <span>
               Your theme is stored on this device and takes effect immediately. Colleagues, and your
               own other browsers, keep their own choice.
@@ -353,10 +348,10 @@ export function Settings() {
           </p>
         </div>
 
-        {/* Same control as the nav, same store behind it — changing it in
+        {/* Same control as the rail, same store behind it — changing it in
             either place moves the other. */}
         <div className="cm-settings-actions">
-          <ThemeSwitch />
+          <ThemeSwitch labelled />
           <span className="cm-field-hint">
             {themePreference === "system"
               ? `Auto follows this device, which is set to ${resolvedTheme} right now.`
