@@ -126,6 +126,8 @@ because anyone who pinned a git SHA during development *will* hit them.
   in local storage, applied before first paint and synced across tabs.
 - A branding settings screen with a live preview and a measured contrast
   readout for the accent colour.
+- Dashboard: sign-out control in the nav.
+- Dashboard: Cancel and Terminate controls on the task detail page (terminate asks for inline confirmation)
 
 **Framework integration**
 
@@ -144,12 +146,6 @@ because anyone who pinned a git SHA during development *will* hit them.
   moved into a `standalone` extra since mounting the ASGI app into a server
   you already run needs no server of its own.
 - MIT license.
-
-- `celery-manager events --celery-app module:app` now imports the app from the
-  current directory (console scripts don't put it on `sys.path`).
-- SSE stream sends a `: keepalive` comment every 15s when idle so proxies don't
-  close it.
-- Dashboard: sign-out control in the nav.
 
 ### Changed
 
@@ -229,6 +225,10 @@ because anyone who pinned a git SHA during development *will* hit them.
   `json.loads` failed for every undecorated task; the retry path now tries
   JSON, then `ast.literal_eval`, and refuses rather than guessing if neither
   works.
+- `celery-manager events --celery-app module:app` now imports the app from the
+  current directory (console scripts don't put it on `sys.path`).
+- SSE stream sends a `: keepalive` comment every 15s when idle so proxies don't
+  close it.
 
 ### Security
 
