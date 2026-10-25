@@ -7,6 +7,11 @@ import threading
 
 logger = logging.getLogger(__name__)
 
+# Idle streams get a comment frame this often. Proxies and load balancers close
+# connections that stay silent (nginx's proxy_read_timeout defaults to 60s), and
+# EventSource would then reconnect in a loop. Read at call time, so tests can shrink it.
+KEEPALIVE_SECONDS = 15.0
+
 
 class EventBus:
     """In-process pub/sub for task-status-change events. Publishers push here;
@@ -73,7 +78,12 @@ async def sse_stream(bus: EventBus):
     queue = bus.subscribe()
     try:
         while True:
-            event = await queue.get()
+            try:
+                # Cancelling queue.get() on timeout is safe: no item is consumed.
+                event = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_SECONDS)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                continue
             yield f"data: {json.dumps(event, default=str)}\n\n"
     finally:
         bus.unsubscribe(queue)
