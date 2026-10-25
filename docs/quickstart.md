@@ -3,7 +3,7 @@
 ## Install
 
 ```bash
-pip install celery-manager
+pip install --pre celery-manager
 ```
 
 `uvicorn` is **not** a core dependency — celery-manager is an ASGI app, and
@@ -12,7 +12,7 @@ want to serve the dashboard standalone (`uvicorn your_module:app`, or the
 bundled demo's `run_dashboard.py`), install the extra:
 
 ```bash
-pip install "celery-manager[standalone]"
+pip install --pre "celery-manager[standalone]"
 ```
 
 ## Wire it into your app

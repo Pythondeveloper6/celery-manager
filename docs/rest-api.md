@@ -53,7 +53,7 @@ exposes.
     Callers must change `await res.json()` to `(await res.json()).items`.
     The list items also gained `runtime_seconds` and the four `progress_*`
     fields. This is a deliberate break, taken while the package is
-    unreleased at `0.1.0` and its only consumers are the bundled SPA and
+    unreleased, before the `0.1.0a1` alpha, and its only consumers are the bundled SPA and
     this page — see the docstring on `list_tasks` in
     `src/celery_manager/api/routes/tasks.py`.
 

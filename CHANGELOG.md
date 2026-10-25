@@ -4,9 +4,9 @@ All notable changes to celery-manager are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — unreleased
+## [0.1.0a1] — 2026-10-25
 
-The initial release. celery-manager has never been published, so everything
+The initial release. Before this alpha, celery-manager had never been published, so everything
 below is new rather than changed — with one exception, called out first
 because anyone who pinned a git SHA during development *will* hit it.
 
@@ -229,4 +229,4 @@ because anyone who pinned a git SHA during development *will* hit it.
 - `task_runs.eta` is served by the detail endpoint but never written by
   anything, so it is always `null`.
 
-[0.1.0]: https://github.com/pythondeveloper6/celery-manager
+[0.1.0a1]: https://github.com/pythondeveloper6/celery-manager/releases/tag/v0.1.0a1
