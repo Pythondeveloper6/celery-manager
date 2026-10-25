@@ -1,4 +1,4 @@
-const BASE = "/api";
+import { API_BASE as BASE } from "./base";
 
 export async function login(username: string, password: string): Promise<{ username: string }> {
   const response = await fetch(`${BASE}/auth/login`, {

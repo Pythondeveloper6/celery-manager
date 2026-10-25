@@ -1,4 +1,4 @@
-const BASE = "/api";
+import { API_BASE as BASE } from "./base";
 
 export interface AuditEntry {
   username: string;

@@ -1,4 +1,4 @@
-const BASE = "/api";
+import { API_BASE as BASE } from "./base";
 
 // Every datetime below arrives as an ISO string carrying an explicit UTC
 // offset. That is load-bearing, not incidental: SQLite drops tzinfo on
