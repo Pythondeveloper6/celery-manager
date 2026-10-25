@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { bulkRetryTasks, listTasks, subscribeToUpdates, type TaskSummary } from "../api/tasks";
-import { BrandMark, useBranding } from "../branding";
+import { RunStrip } from "../components/RunStrip";
+import { StatusBadge } from "../components/Status";
+import { statusLabel } from "../lib/status";
 import {
   elapsedSeconds,
   formatDuration,
@@ -58,7 +60,7 @@ type GroupBy = "none" | "status" | "name" | "date";
 type ViewMode = "live" | "history";
 
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
-  { value: "none", label: "Nothing" },
+  { value: "none", label: "None" },
   { value: "status", label: "Status" },
   { value: "name", label: "Task name" },
   { value: "date", label: "Date" },
@@ -181,7 +183,7 @@ interface TaskGroup {
  *  Client-side over `tasks` — i.e. over the rows currently loaded, never over
  *  the whole matching history. There is no grouped endpoint and this does not
  *  pretend to be one: with pagination active, a "failed — 12" header means
- *  twelve failures *among the rows on screen*, and the ledger above the table
+ *  twelve failures *among the rows on screen*, and the note above the table
  *  says as much whenever more history is still unloaded. Getting that wrong is
  *  the difference between a summary and a lie.
  *
@@ -229,7 +231,13 @@ function groupTasks(tasks: TaskSummary[], groupBy: GroupBy): TaskGroup[] {
   return keys.map((key) => ({
     key,
     label:
-      groupBy === "date" ? (key === NOT_STARTED_KEY ? "Not started" : dayLabel(key)) : key,
+      groupBy === "date"
+        ? key === NOT_STARTED_KEY
+          ? "Not started"
+          : dayLabel(key)
+        : groupBy === "status"
+          ? statusLabel(key)
+          : key,
     tasks: buckets.get(key)!,
   }));
 }
@@ -264,7 +272,9 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
     meta.push(`~${formatDuration(remaining)} left`);
   }
   if (task.progress_message) meta.push(task.progress_message);
-  const metaText = meta.join(" · ");
+  // Spoken as one comma-separated phrase; shown as separate spans with space
+  // between them rather than a " · "-joined string.
+  const metaText = meta.join(", ");
 
   return (
     // The flex box is an inner <div>, NOT the <td> itself. Setting
@@ -273,7 +283,7 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
     // wraps it in an anonymous cell — its border and vertical alignment then
     // stop matching the rest of the row. Visible as staggered row rules once
     // the table is wide.
-    <td className="cm-run-cell cm-tasks-col-runtime">
+    <td className="cm-col-fit">
       <div className="cm-run-cell-inner">
         <span className="cm-run-clock" data-running={running ? "true" : undefined}>
           {formatDuration(elapsed)}
@@ -314,7 +324,9 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
             title={metaText}
             aria-hidden={percent !== null ? true : undefined}
           >
-            {metaText}
+            {meta.map((part, i) => (
+              <span key={i}>{part}</span>
+            ))}
           </span>
         )}
       </div>
@@ -323,10 +335,6 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
 }
 
 export function TaskList() {
-  // The deployment's own name and mark. Without this the nav read "Acme Ops"
-  // while the eyebrow one line below it still said "celery-manager".
-  const { settings } = useBranding();
-
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [total, setTotal] = useState(0);
 
@@ -340,12 +348,9 @@ export function TaskList() {
   const [dateTo, setDateTo] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
 
-  // Filter-panel UI state. `filtersOpen` only has an effect below the
-  // two-column breakpoint, where the rail collapses behind a toggle; on wide
-  // viewports CSS shows the rail regardless, and the toggle is display:none
-  // so its aria-expanded never describes something the user can see.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // The date range is a popover off the toolbar.
   const [dateOpen, setDateOpen] = useState(false);
+  const dateRef = useRef<HTMLDetailsElement>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -711,7 +716,7 @@ export function TaskList() {
   // so a chip never claims a filter the server hasn't been told about yet.
   const activeFilters = useMemo(() => {
     const chips: { key: string; label: string; value: string; clear: () => void }[] = [];
-    if (status !== "all") chips.push({ key: "status", label: "Status", value: status, clear: () => setStatus("all") });
+    if (status !== "all") chips.push({ key: "status", label: "Status", value: statusLabel(status), clear: () => setStatus("all") });
     if (search !== "")
       chips.push({
         key: "search",
@@ -737,23 +742,50 @@ export function TaskList() {
     if (dateFilterActive) setDateOpen(true);
   }, [dateFilterActive]);
 
+  // A popover closes the way popovers do: a click anywhere else, or Escape
+  // (which hands focus back to the toggle so the keyboard user isn't lost).
+  useEffect(() => {
+    if (!dateOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!dateRef.current?.contains(event.target as Node)) setDateOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setDateOpen(false);
+      dateRef.current?.querySelector("summary")?.focus();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [dateOpen]);
+
+  const dateSummary =
+    dateFrom && dateTo
+      ? `${shortDate(dateFrom)} – ${shortDate(dateTo)}`
+      : dateFrom
+        ? `From ${shortDate(dateFrom)}`
+        : dateTo
+          ? `Until ${shortDate(dateTo)}`
+          : "Date range";
+
+  const stripCaption = historyMode
+    ? `The ${loadedCount.toLocaleString()} runs on this page, newest on the right`
+    : `Last ${loadedCount.toLocaleString()} run${loadedCount === 1 ? "" : "s"} shown below, newest on the right`;
+
   return (
     <div className="cm-page">
       <header className="cm-page-header">
-        <div className="cm-page-header-titles">
-          <p className="cm-page-eyebrow">
-            <BrandMark />
-            {settings.brand_name}
-          </p>
-          <h1 className="cm-page-title">Task runs</h1>
-        </div>
+        <h1 className="cm-page-title">Task runs</h1>
 
-        {/* The mode is legible from the top of the page, not only from the
-            bar above the table: the pulsing "Live" dot is a claim about the
-            data, and it would be a lie while the poll is stopped. */}
+        {/* The mode is legible from the top of the page: the pulsing "Live"
+            dot is a claim about the data, and it would be a lie while the
+            poll is stopped. */}
         {historyMode ? (
           <div className="cm-live-indicator" title="Live updates are paused while you browse history">
-            <span className="cm-tasks-paused-dot" aria-hidden="true" />
+            <span className="cm-paused-dot" aria-hidden="true" />
             Paused
           </div>
         ) : (
@@ -764,443 +796,405 @@ export function TaskList() {
         )}
       </header>
 
-      {/* Below the two-column breakpoint the rail collapses behind this
-          toggle. It is display:none above that breakpoint, where the rail is
-          always visible — so aria-expanded never describes a panel the user
-          can already see. */}
-      <button
-        type="button"
-        className="cm-tasks-filters-toggle"
-        aria-expanded={filtersOpen}
-        aria-controls="cm-tasks-filters"
-        onClick={() => setFiltersOpen((open) => !open)}
-      >
-        <span>{filtersOpen ? "Hide filters" : "Filters"}</span>
-        {activeFilters.length > 0 && <span className="cm-badge">{activeFilters.length}</span>}
-      </button>
+      {!loading && tasks.length > 0 && <RunStrip tasks={tasks} now={now} caption={stripCaption} />}
 
-      <div className="cm-tasks-layout" data-filters-open={filtersOpen ? "true" : "false"}>
-        {/* The rail is what you SET; the deck beside it is what you READ.
-            A labelled <section> is a real landmark, so "filters" is a place a
-            screen-reader user can jump to rather than a stack of stray
-            inputs. */}
-        <section className="cm-tasks-rail" id="cm-tasks-filters" aria-labelledby="cm-tasks-filters-heading">
-          <div className="cm-tasks-rail-head">
-            <h2 className="cm-tasks-rail-title" id="cm-tasks-filters-heading">
-              Filters
-            </h2>
-            {activeFilters.length > 0 && (
-              <button type="button" className="cm-tasks-clear-all" onClick={clearFilters}>
-                Clear all
-              </button>
-            )}
-          </div>
+      {/* Status first: "show me the failures" is the question people arrive
+          with mid-incident. The API gives one filtered total, not a count per
+          status, so the tabs carry no numbers rather than invented ones. */}
+      <div className="cm-status-tabs" role="group" aria-label="Filter by status">
+        {STATUS_FILTERS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            className="cm-status-tab"
+            data-status={s}
+            aria-pressed={s === status}
+            onClick={() => setStatus(s)}
+          >
+            {s === "all" ? "All" : statusLabel(s)}
+          </button>
+        ))}
+      </div>
 
-          {/* The single biggest thing a rail buys over a top bar: what is
-              narrowing this list, in one place, each one removable on its
-              own. This is what answers "why does the list look empty?". */}
-          {activeFilters.length > 0 && (
-            <ul className="cm-tasks-active" aria-label="Active filters">
-              {activeFilters.map((chip) => (
-                <li key={chip.key}>
-                  <button
-                    type="button"
-                    className="cm-tasks-active-chip"
-                    onClick={chip.clear}
-                    aria-label={`Remove ${chip.label.toLowerCase()} filter ${chip.value}`}
-                  >
-                    <span className="cm-tasks-active-label">{chip.label}</span>
-                    <span className="cm-tasks-active-value">{chip.value}</span>
-                    <span className="cm-tasks-active-x" aria-hidden="true">
-                      &times;
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+      <div className="cm-tasks-toolbar">
+        <div className="cm-tasks-search">
+          <label className="cm-visually-hidden" htmlFor="cm-tasks-search">
+            Search runs
+          </label>
+          <svg className="cm-tasks-search-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <circle cx="7" cy="7" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <input
+            id="cm-tasks-search"
+            className="cm-input cm-tasks-search-input"
+            type="search"
+            value={searchInput}
+            placeholder="Search task name, ID or arguments"
+            aria-describedby="cm-tasks-search-hint"
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+          {searchInput && (
+            <button
+              type="button"
+              className="cm-tasks-search-clear"
+              aria-label="Clear search"
+              onClick={() => setSearchInput("")}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="m4.5 4.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
           )}
+          <p className="cm-visually-hidden" id="cm-tasks-search-hint">
+            Matches task name, task ID, and argument values.
+          </p>
+        </div>
 
-          {/* Order is by how often it is touched mid-incident: you type an
-              id, then narrow by status. Group-by and date range follow. */}
-          <div className="cm-tasks-rail-section">
-            <label className="cm-tasks-rail-section-title" htmlFor="cm-tasks-search">
-              Search
-            </label>
-            <div className="cm-tasks-search">
+        <div className="cm-tasks-group">
+          <label htmlFor="cm-tasks-group">Group by</label>
+          <select
+            id="cm-tasks-group"
+            className="cm-select"
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+          >
+            {GROUP_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* <details> rather than a hand-rolled disclosure: it already does
+            the keyboard and screen-reader work. */}
+        <details
+          ref={dateRef}
+          className="cm-tasks-dates"
+          open={dateOpen}
+          onToggle={(e) => setDateOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary className="cm-tasks-dates-summary" data-active={dateFilterActive ? "true" : undefined}>
+            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <rect x="2.25" y="3.25" width="11.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M2.5 6.75h11M5.5 1.75v3M10.5 1.75v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            {dateSummary}
+          </summary>
+          <div className="cm-tasks-dates-pop">
+            <div className="cm-field">
+              <label htmlFor="cm-tasks-from">From</label>
               <input
-                id="cm-tasks-search"
-                className="cm-tasks-input"
-                type="search"
-                value={searchInput}
-                placeholder="invoice, 3f9a…, customer_id"
-                aria-describedby="cm-tasks-search-hint"
-                onChange={(e) => setSearchInput(e.target.value)}
+                id="cm-tasks-from"
+                className="cm-input"
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => setDateFrom(e.target.value)}
               />
-              {searchInput && (
+            </div>
+            <div className="cm-field">
+              <label htmlFor="cm-tasks-to">To</label>
+              <input
+                id="cm-tasks-to"
+                className="cm-input"
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => setDateTo(e.target.value)}
+              />
+            </div>
+            <p className="cm-field-hint">Matches on start time, so runs that never started are excluded.</p>
+          </div>
+        </details>
+      </div>
+
+      {/* What is narrowing this list, each removable on its own — the
+          answer to "why does the list look empty?". */}
+      {activeFilters.length > 0 && (
+        <div className="cm-tasks-active-row">
+          <ul className="cm-tasks-active" aria-label="Active filters">
+            {activeFilters.map((chip) => (
+              <li key={chip.key}>
                 <button
                   type="button"
-                  className="cm-tasks-search-clear"
-                  aria-label="Clear search"
-                  onClick={() => setSearchInput("")}
+                  className="cm-tasks-chip"
+                  onClick={chip.clear}
+                  aria-label={`Remove ${chip.label.toLowerCase()} filter ${chip.value}`}
                 >
-                  &times;
+                  <span className="cm-tasks-chip-label">{chip.label}</span>
+                  <span className="cm-tasks-chip-value">{chip.value}</span>
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="m4.5 4.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
                 </button>
-              )}
-            </div>
-            <p className="cm-tasks-hint" id="cm-tasks-search-hint">
-              Matches task name, task ID, and argument values.
-            </p>
-          </div>
+              </li>
+            ))}
+          </ul>
+          <button type="button" className="cm-link-btn" onClick={clearFilters}>
+            Clear filters
+          </button>
+        </div>
+      )}
 
-          <div className="cm-tasks-rail-section">
-            <span className="cm-tasks-rail-section-title" id="cm-tasks-status-label">
-              Status
+      <div className="cm-tasks-deck" ref={deckRef}>
+        {historyMode && (
+          <div className="cm-tasks-mode-bar" role="status">
+            <span className="cm-tasks-mode-text">
+              <span className="cm-paused-dot" aria-hidden="true" />
+              Live updates are paused while you browse history
             </span>
-            {/* Same chip vocabulary the app already uses for status, just
-                reflowed into the rail — reskinning it here would make one
-                control look like two different things. */}
-            <div className="cm-filter-bar" role="group" aria-labelledby="cm-tasks-status-label">
-              {STATUS_FILTERS.map((s) => (
-                <button key={s} type="button" aria-pressed={s === status} onClick={() => setStatus(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
+            <button type="button" className="cm-btn cm-btn-solid cm-btn-sm" onClick={backToLive}>
+              Back to live
+            </button>
           </div>
+        )}
 
-          <div className="cm-tasks-rail-section">
-            <label className="cm-tasks-rail-section-title" htmlFor="cm-tasks-group">
-              Group by
-            </label>
-            <select
-              id="cm-tasks-group"
-              className="cm-tasks-select"
-              value={groupBy}
-              onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+        {showSelectColumn && selected.size > 0 && (
+          <div className="cm-bulk-bar">
+            <span className="cm-bulk-bar-label">
+              {selected.size} task{selected.size === 1 ? "" : "s"} selected
+            </span>
+            <button
+              type="button"
+              className="cm-btn cm-btn-solid cm-btn-sm"
+              onClick={handleBulkRetry}
+              disabled={bulkRetrying}
             >
-              {GROUP_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              {bulkRetrying ? "Retrying…" : `Retry ${selected.size} selected`}
+            </button>
           </div>
+        )}
+        {bulkNotice && (
+          <p className="cm-notice" role="status">
+            {bulkNotice}
+          </p>
+        )}
+        {bulkError && (
+          <p className="cm-error" role="alert">
+            {bulkError}
+          </p>
+        )}
 
-          {/* Date range is the rarely-touched control, so it is folded away by
-              default rather than costing four rows of rail height on every
-              visit. <details> is used rather than a hand-rolled disclosure
-              because it already does the keyboard and screen-reader work. */}
-          <details
-            className="cm-tasks-details"
-            open={dateOpen}
-            onToggle={(e) => setDateOpen((e.currentTarget as HTMLDetailsElement).open)}
-          >
-            <summary className="cm-tasks-details-summary">Date range</summary>
-            <div className="cm-tasks-details-body">
-              <div className="cm-tasks-field">
-                <label htmlFor="cm-tasks-from">From</label>
-                <input
-                  id="cm-tasks-from"
-                  className="cm-tasks-input"
-                  type="date"
-                  value={dateFrom}
-                  max={dateTo || undefined}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-              </div>
-              <div className="cm-tasks-field">
-                <label htmlFor="cm-tasks-to">To</label>
-                <input
-                  id="cm-tasks-to"
-                  className="cm-tasks-input"
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom || undefined}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
-              </div>
-              <p className="cm-tasks-hint">Matches on start time, so runs that never started are excluded.</p>
-            </div>
-          </details>
-        </section>
+        {(dateFilterActive || (groupBy !== "none" && (historyMode || remainingCount > 0))) && tasks.length > 0 && (
+          <ul className="cm-tasks-notes">
+            {dateFilterActive && (
+              <li>A date range matches on start time, so runs that never started aren&rsquo;t included.</li>
+            )}
+            {/* Grouping is client-side over what is loaded, and says so
+                rather than letting a group count imply a total. */}
+            {groupBy !== "none" && historyMode && (
+              <li>
+                Groups cover the {loadedCount.toLocaleString()} runs on this page, not all {total.toLocaleString()}{" "}
+                matches.
+              </li>
+            )}
+            {groupBy !== "none" && !historyMode && remainingCount > 0 && (
+              <li>
+                Groups cover the {loadedCount.toLocaleString()} runs loaded here, not all {total.toLocaleString()}{" "}
+                matches.
+              </li>
+            )}
+          </ul>
+        )}
 
-        {/* The deck: results and the state of those results. Nothing here is
-            an input. */}
-        <div className="cm-tasks-deck" ref={deckRef}>
-          {historyMode && (
-            <div className="cm-tasks-mode-bar" role="status">
-              <span className="cm-tasks-mode-text">
-                <span className="cm-tasks-paused-dot" aria-hidden="true" />
-                Live updates paused while you browse history
-              </span>
-              <button type="button" className="cm-btn cm-btn-solid" onClick={backToLive}>
-                Back to live
-              </button>
-            </div>
-          )}
-
-          {showSelectColumn && selected.size > 0 && (
-            <div className="cm-bulk-bar">
-              <span className="cm-bulk-bar-label">
-                {selected.size} task{selected.size === 1 ? "" : "s"} selected
-              </span>
-              <button type="button" className="cm-btn cm-btn-solid" onClick={handleBulkRetry} disabled={bulkRetrying}>
-                {bulkRetrying ? "Retrying…" : `Retry ${selected.size} selected`}
-              </button>
-            </div>
-          )}
-          {bulkNotice && (
-            <p className="cm-notice" role="status">
-              {bulkNotice}
-            </p>
-          )}
-          {bulkError && (
-            <p className="cm-error" role="alert">
-              {bulkError}
-            </p>
-          )}
-
-          <div
-            className={`cm-panel cm-tasks-panel${refreshing ? " cm-panel-refreshing" : ""}`}
-            aria-busy={refreshing || loadingMore}
-          >
-            {/* A failed *background* poll must not blow the table away — the
-                rows on screen are still the last good answer, and a
-                five-second network blip that empties the list looks far more
-                broken than it is. So an error with rows behind it is a
-                banner; only an error with nothing behind it takes over. */}
-            {error && !loading && tasks.length > 0 && (
-              <p className="cm-error cm-tasks-inline-error" role="alert">
+        <div
+          className={`cm-panel cm-panel-flush cm-tasks-panel${refreshing ? " cm-panel-refreshing" : ""}`}
+          aria-busy={refreshing || loadingMore}
+        >
+          {/* A failed *background* poll must not blow the table away — the
+              rows on screen are still the last good answer. An error with
+              rows behind it is a banner; only an error with nothing behind it
+              takes over. */}
+          {error && !loading && tasks.length > 0 && (
+            <div className="cm-panel-pad">
+              <p className="cm-error" role="alert">
                 {error} Showing the last results loaded;{" "}
                 {historyMode ? "use Back to live to resume updates." : "retrying every few seconds."}
               </p>
-            )}
+            </div>
+          )}
 
-            {loading ? (
+          {loading ? (
+            <div className="cm-panel-pad">
               <p className="cm-loading">
                 <span className="cm-live-dot" aria-hidden="true" />
-                Loading tasks&hellip;
+                Loading task runs&hellip;
               </p>
-            ) : error && tasks.length === 0 ? (
-              <>
-                <p className="cm-error" role="alert">
-                  {error}
+            </div>
+          ) : error && tasks.length === 0 ? (
+            <div className="cm-panel-pad cm-panel-stack">
+              <p className="cm-error" role="alert">
+                {error}
+              </p>
+              <button type="button" className="cm-btn cm-btn-outline" onClick={() => refresh()}>
+                Try again
+              </button>
+            </div>
+          ) : tasks.length === 0 ? (
+            // "Nothing matches your filters" and "nothing has ever run" are
+            // different problems with different fixes.
+            filtersActive ? (
+              <div className="cm-tasks-empty">
+                <p className="cm-tasks-empty-title">No runs match these filters</p>
+                <p className="cm-tasks-empty-body">
+                  {dateFilterActive
+                    ? "Widen the date range or drop a filter. A date range also excludes runs that never started."
+                    : "Drop a filter, or search for something else."}
                 </p>
-                <div className="cm-tasks-retry">
-                  <button type="button" className="cm-btn cm-btn-outline" onClick={() => refresh()}>
-                    Try again
-                  </button>
-                </div>
-              </>
-            ) : tasks.length === 0 ? (
-              // "Nothing matches your filters" and "nothing has ever run" are
-              // different problems with different fixes, so they are
-              // different screens — and the first one names the filters doing
-              // the narrowing instead of leaving the user to guess.
-              filtersActive ? (
-                <div className="cm-tasks-empty">
-                  <p className="cm-tasks-empty-title">No runs match these filters</p>
-                  <ul className="cm-tasks-empty-filters" aria-label="Filters currently applied">
-                    {activeFilters.map((chip) => (
-                      <li key={chip.key}>
-                        <span className="cm-tasks-active-label">{chip.label}</span>
-                        <span className="cm-tasks-active-value">{chip.value}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="cm-tasks-empty-body">
-                    {dateFilterActive
-                      ? "Widen the date range or drop a filter. A date range also excludes runs that never started."
-                      : "Drop a filter, or search for something else."}
-                  </p>
-                  <button type="button" className="cm-btn cm-btn-outline" onClick={clearFilters}>
-                    Clear all filters
-                  </button>
-                </div>
-              ) : (
-                <div className="cm-tasks-empty">
-                  <p className="cm-tasks-empty-title">No task runs recorded yet</p>
-                  <p className="cm-tasks-empty-body">
-                    Runs appear here as soon as a worker reports one. Start the events listener and dispatch a task
-                    to see it.
-                  </p>
-                </div>
-              )
+                <button type="button" className="cm-btn cm-btn-outline" onClick={clearFilters}>
+                  Clear filters
+                </button>
+              </div>
             ) : (
-              <>
-                <div className="cm-tasks-ledger">
-                  <span className="cm-tasks-ledger-count">
-                    {historyMode
-                      ? `Runs ${rangeFrom.toLocaleString()}–${rangeTo.toLocaleString()} of ${total.toLocaleString()}`
-                      : remainingCount > 0
-                        ? `Showing ${loadedCount.toLocaleString()} of ${total.toLocaleString()} runs`
-                        : `Showing all ${total.toLocaleString()} run${total === 1 ? "" : "s"}`}
-                  </span>
+              <div className="cm-tasks-empty">
+                <p className="cm-tasks-empty-title">No task runs recorded yet</p>
+                <p className="cm-tasks-empty-body">
+                  Runs appear here as soon as a worker reports one. Start the events listener and dispatch a task to
+                  see it.
+                </p>
+              </div>
+            )
+          ) : (
+            <>
+              <div className="cm-table-scroll">
+                <table className="cm-table cm-table-stack cm-tasks-table" data-select={showSelectColumn ? "true" : undefined}>
+                  <thead>
+                    <tr>
+                      {showSelectColumn && (
+                        <th scope="col" className="cm-select-cell">
+                          <span className="cm-visually-hidden">Select</span>
+                        </th>
+                      )}
+                      <th scope="col">Task</th>
+                      <th scope="col" className="cm-col-fit">
+                        Status
+                      </th>
+                      <th scope="col" className="cm-col-fit">
+                        Runtime
+                      </th>
+                      <th scope="col" className="cm-col-fit">
+                        Started
+                      </th>
+                    </tr>
+                  </thead>
 
-                  {(dateFilterActive || (groupBy !== "none" && (historyMode || remainingCount > 0))) && (
-                    <ul className="cm-tasks-notes">
-                      {dateFilterActive && (
-                        <li>A date range matches on start time, so runs that never started aren&rsquo;t included.</li>
-                      )}
-                      {/* Grouping is client-side over what is loaded. In live
-                          mode that is "the rows loaded so far"; in history
-                          mode it is "this page". Both are stated plainly
-                          rather than letting a group count imply a total. */}
-                      {groupBy !== "none" && historyMode && (
-                        <li>
-                          Groups cover the {loadedCount.toLocaleString()} runs on this page, not all{" "}
-                          {total.toLocaleString()} matches.
-                        </li>
-                      )}
-                      {groupBy !== "none" && !historyMode && remainingCount > 0 && (
-                        <li>
-                          Groups cover the {loadedCount.toLocaleString()} runs loaded here, not all{" "}
-                          {total.toLocaleString()} matches.
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="cm-table-scroll">
-                  <table className="cm-task-table cm-tasks-table">
-                    <thead>
-                      <tr>
-                        {showSelectColumn && (
-                          <th scope="col" className="cm-select-cell">
-                            <span className="cm-visually-hidden">Select</span>
+                  {/* One <tbody> per group — real table structure, so the
+                      grouping survives for assistive tech. */}
+                  {groups.map((group) => (
+                    <tbody key={group.key}>
+                      {groupBy !== "none" && (
+                        <tr className="cm-tasks-group-head">
+                          <th scope="colgroup" colSpan={columnCount}>
+                            {group.label}
+                            <span className="cm-tasks-group-count">{group.tasks.length} loaded</span>
                           </th>
-                        )}
-                        <th scope="col">Task</th>
-                        <th scope="col" className="cm-tasks-col-status">
-                          Status
-                        </th>
-                        <th scope="col" className="cm-tasks-col-runtime">
-                          Runtime
-                        </th>
-                        <th scope="col" className="cm-tasks-col-started">
-                          Started
-                        </th>
-                      </tr>
-                    </thead>
+                        </tr>
+                      )}
+                      {group.tasks.map((t) => (
+                        <tr key={t.task_id} data-status={t.status}>
+                          {showSelectColumn && (
+                            <td className="cm-select-cell">
+                              <input
+                                type="checkbox"
+                                checked={selected.has(t.task_id)}
+                                onChange={() => toggle(t.task_id)}
+                                aria-label={`Select ${t.task_name} (${t.task_id}) for bulk retry`}
+                              />
+                            </td>
+                          )}
+                          <td className="cm-cell-primary">
+                            {/* The id is cut to its first eight characters
+                                here; the full id is in the title, on the
+                                detail page, and still searchable. */}
+                            <Link to={`/tasks/${t.task_id}`} className="cm-task-link" title={t.task_id}>
+                              <span className="cm-task-name">{t.task_name}</span>
+                              <span className="cm-task-id">{t.task_id.slice(0, 8)}</span>
+                            </Link>
+                          </td>
+                          <td className="cm-col-fit">
+                            <StatusBadge status={t.status} />
+                          </td>
+                          <RuntimeCell task={t} now={now} />
+                          <td className="cm-col-fit cm-timestamp">{formatTimestamp(t.started_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  ))}
+                </table>
+              </div>
 
-                    {/* One <tbody> per group — real table structure, so the
-                        grouping survives for assistive tech instead of being
-                        fake header rows in a single body. */}
-                    {groups.map((group) => (
-                      <tbody key={group.key}>
-                        {groupBy !== "none" && (
-                          <tr className="cm-tasks-group-head">
-                            <th scope="colgroup" colSpan={columnCount}>
-                              <span className="cm-tasks-group-label">
-                                {group.label}
-                                <span className="cm-tasks-group-count">{group.tasks.length} loaded</span>
-                              </span>
-                            </th>
-                          </tr>
-                        )}
-                        {group.tasks.map((t) => (
-                          <tr key={t.task_id} data-running={isRunning(t) ? "true" : undefined}>
-                            {showSelectColumn && (
-                              <td className="cm-select-cell">
-                                <input
-                                  type="checkbox"
-                                  checked={selected.has(t.task_id)}
-                                  onChange={() => toggle(t.task_id)}
-                                  aria-label={`Select ${t.task_name} (${t.task_id}) for bulk retry`}
-                                />
-                              </td>
-                            )}
-                            <td>
-                              <Link to={`/tasks/${t.task_id}`} className="cm-task-link">
-                                <span className="cm-task-name">{t.task_name}</span>
-                                <span className="cm-task-id">{t.task_id}</span>
-                              </Link>
-                            </td>
-                            <td className="cm-tasks-col-status">
-                              <span className="cm-status-badge" data-status={t.status}>
-                                {t.status}
-                              </span>
-                            </td>
-                            <RuntimeCell task={t} now={now} />
-                            <td className="cm-timestamp cm-tasks-col-started">{formatTimestamp(t.started_at)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    ))}
-                  </table>
-                </div>
+              <div className="cm-tasks-foot">
+                <span className="cm-tasks-count">
+                  {historyMode
+                    ? `Runs ${rangeFrom.toLocaleString()}–${rangeTo.toLocaleString()} of ${total.toLocaleString()}`
+                    : remainingCount > 0
+                      ? `Showing ${loadedCount.toLocaleString()} of ${total.toLocaleString()} runs`
+                      : `Showing all ${total.toLocaleString()} run${total === 1 ? "" : "s"}`}
+                </span>
 
                 {historyMode ? (
-                  <div className="cm-tasks-more cm-tasks-pager">
-                    {/* "Newer"/"Older" rather than Prev/Next: the list is
-                        ordered newest-first, so direction in time is the
-                        thing the user is actually navigating. */}
-                    <div className="cm-tasks-pager-controls">
-                      <button
-                        type="button"
-                        className="cm-btn cm-btn-outline"
-                        onClick={() => goToOffset(Math.max(0, offset - PAGE_SIZE))}
-                        disabled={offset === 0 || refreshing}
-                      >
-                        &larr; Newer
-                      </button>
-                      <span className="cm-tasks-pager-position">
-                        Page {currentPage.toLocaleString()} of {pageCount.toLocaleString()}
-                      </span>
-                      <button
-                        type="button"
-                        className="cm-btn cm-btn-outline"
-                        onClick={() => goToOffset(offset + PAGE_SIZE)}
-                        disabled={currentPage >= pageCount || refreshing}
-                      >
-                        Older &rarr;
-                      </button>
-                    </div>
+                  // "Newer"/"Older" rather than Prev/Next: the list is
+                  // newest-first, so direction in time is what the user is
+                  // actually navigating.
+                  <div className="cm-tasks-pager">
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-outline cm-btn-sm"
+                      onClick={() => goToOffset(Math.max(0, offset - PAGE_SIZE))}
+                      disabled={offset === 0 || refreshing}
+                    >
+                      Newer
+                    </button>
+                    <span className="cm-tasks-pager-position">
+                      Page {currentPage.toLocaleString()} of {pageCount.toLocaleString()}
+                    </span>
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-outline cm-btn-sm"
+                      onClick={() => goToOffset(offset + PAGE_SIZE)}
+                      disabled={currentPage >= pageCount || refreshing}
+                    >
+                      Older
+                    </button>
                   </div>
-                ) : (
-                  (canLoadMore || atApiCap || total > PAGE_SIZE) && (
-                    <div className="cm-tasks-more">
-                      {canLoadMore ? (
-                        <>
-                          <button
-                            type="button"
-                            className="cm-btn cm-btn-outline"
-                            onClick={loadMore}
-                            disabled={loadingMore}
-                          >
-                            {loadingMore ? "Loading…" : `Load ${Math.min(PAGE_SIZE, remainingCount)} more`}
-                          </button>
-                          {total > MAX_PAGE_SIZE && (
-                            <button type="button" className="cm-tasks-link-btn" onClick={() => enterHistory(0)}>
-                              Browse all {total.toLocaleString()} runs by page
-                            </button>
-                          )}
-                        </>
-                      ) : atApiCap ? (
-                        <>
-                          <p className="cm-tasks-more-note">
-                            The live view holds the newest {MAX_PAGE_SIZE.toLocaleString()} matching runs, so it
-                            never drops what you&rsquo;ve loaded when it refreshes. Older runs are reachable a page
-                            at a time — live updates pause while you read them.
-                          </p>
-                          <button
-                            type="button"
-                            className="cm-btn cm-btn-solid"
-                            onClick={() => enterHistory(MAX_PAGE_SIZE)}
-                          >
-                            Browse older runs
-                          </button>
-                        </>
-                      ) : (
-                        <p className="cm-tasks-more-note">That&rsquo;s every run matching these filters.</p>
-                      )}
-                    </div>
-                  )
-                )}
-              </>
-            )}
-          </div>
+                ) : canLoadMore ? (
+                  <div className="cm-tasks-more">
+                    {total > MAX_PAGE_SIZE && (
+                      <button type="button" className="cm-link-btn" onClick={() => enterHistory(0)}>
+                        Browse all {total.toLocaleString()} runs by page
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-outline cm-btn-sm"
+                      onClick={loadMore}
+                      disabled={loadingMore}
+                      data-loading={loadingMore || undefined}
+                    >
+                      {loadingMore ? "Loading…" : `Load ${Math.min(PAGE_SIZE, remainingCount)} more`}
+                    </button>
+                  </div>
+                ) : atApiCap ? (
+                  <div className="cm-tasks-more">
+                    <p className="cm-tasks-more-note">
+                      The live view holds the newest {MAX_PAGE_SIZE.toLocaleString()} matching runs, so it never
+                      drops what you&rsquo;ve loaded when it refreshes. Older runs are reachable a page at a time,
+                      with live updates paused.
+                    </p>
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-outline cm-btn-sm"
+                      onClick={() => enterHistory(MAX_PAGE_SIZE)}
+                    >
+                      Browse older runs
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

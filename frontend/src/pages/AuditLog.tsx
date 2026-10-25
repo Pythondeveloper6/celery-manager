@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { listAuditLog, type AuditEntry } from "../api/audit";
-import { BrandMark, useBranding } from "../branding";
 
 function formatTimestamp(value: string): string {
   const parsed = new Date(value);
@@ -15,7 +14,6 @@ function formatTimestamp(value: string): string {
 }
 
 export function AuditLog() {
-  const { settings } = useBranding();
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,17 +36,14 @@ export function AuditLog() {
     <div className="cm-page">
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
-          <p className="cm-page-eyebrow">
-            <BrandMark />
-            {settings.brand_name}
-          </p>
           <h1 className="cm-page-title">Audit log</h1>
+          <p className="cm-page-lede">Every manual action taken from this dashboard, newest first.</p>
         </div>
       </header>
 
-      <div className="cm-panel">
+      <div className="cm-panel cm-panel-flush">
         {error ? (
-          <div className="cm-panel-stack">
+          <div className="cm-panel-pad cm-panel-stack">
             <p className="cm-error" role="alert">
               {error}
             </p>
@@ -57,31 +52,39 @@ export function AuditLog() {
             </button>
           </div>
         ) : entries === null ? (
-          <p className="cm-loading">
-            <span className="cm-live-dot" aria-hidden="true" />
-            Loading audit log&hellip;
-          </p>
+          <div className="cm-panel-pad">
+            <p className="cm-loading">
+              <span className="cm-live-dot" aria-hidden="true" />
+              Loading audit log&hellip;
+            </p>
+          </div>
         ) : entries.length === 0 ? (
-          <p className="cm-empty-state">No manual actions recorded yet.</p>
+          <p className="cm-empty-state">
+            No manual actions recorded yet. Retries, cancels and schedule changes made here will be listed.
+          </p>
         ) : (
           <div className="cm-table-scroll">
-            <table className="cm-audit-log">
+            <table className="cm-table cm-table-stack">
               <thead>
                 <tr>
-                  <th scope="col">When</th>
-                  <th scope="col">User</th>
-                  <th scope="col">Action</th>
+                  <th scope="col" className="cm-col-fit">
+                    When
+                  </th>
+                  <th scope="col" className="cm-col-fit">
+                    User
+                  </th>
+                  <th scope="col" className="cm-col-fit">
+                    Action
+                  </th>
                   <th scope="col">Target</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((e, i) => (
                   <tr key={i}>
-                    <td className="cm-timestamp">{formatTimestamp(e.created_at)}</td>
-                    <td className="cm-audit-user">{e.username}</td>
-                    <td>
-                      <span className="cm-audit-action">{e.action}</span>
-                    </td>
+                    <td className="cm-col-fit cm-timestamp">{formatTimestamp(e.created_at)}</td>
+                    <td className="cm-col-fit cm-audit-user">{e.username}</td>
+                    <td className="cm-col-fit cm-cell-primary cm-audit-action">{e.action}</td>
                     <td className="cm-audit-target">
                       {e.target_type}:{e.target_id}
                     </td>

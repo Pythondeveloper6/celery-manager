@@ -1,19 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSchedules, type ScheduleSummary } from "../api/schedules";
-import { BrandMark, useBranding } from "../branding";
 
-// This is the missing discovery step for ScheduleOccurrences (Task 14):
-// that view is keyed by an exact schedule name with no way to reach it
-// except a hand-typed URL. Structurally this mirrors TaskList (fetch on
-// mount, cm-panel loading/error/empty states, a Link-wrapped row leading
-// into the detail screen) since both are "browse then drill into one
-// item" screens — but each row renders as its own card, matching the
-// occurrence-list visual family (Task 14) rather than TaskList's table,
-// since a schedule row carries no per-column data dense enough to need
-// tabular alignment (just a name, a task, and a spec).
+// The discovery step for ScheduleOccurrences, which is keyed by an exact
+// schedule name. Same shape as the other list screens — fetch on mount,
+// loading/error/empty states, and the shared table style — with each name
+// linking into that schedule's upcoming runs.
 export function ScheduleList() {
-  const { settings } = useBranding();
   const [schedules, setSchedules] = useState<ScheduleSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,20 +28,17 @@ export function ScheduleList() {
     <div className="cm-page">
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
-          <p className="cm-page-eyebrow">
-            <BrandMark />
-            {settings.brand_name}
-          </p>
-          <h1 className="cm-page-title">Periodic schedules</h1>
+          <h1 className="cm-page-title">Schedules</h1>
+          <p className="cm-page-lede">Periodic tasks. Open one to skip or cancel an upcoming run.</p>
         </div>
       </header>
 
-      <div className="cm-panel">
+      <div className="cm-panel cm-panel-flush">
         {error ? (
           // Same error treatment as TaskList and the audit log: the server's
           // message, and a button that retries it. An error screen with
           // nothing to click is a dead end.
-          <div className="cm-panel-stack">
+          <div className="cm-panel-pad cm-panel-stack">
             <p className="cm-error" role="alert">
               {error}
             </p>
@@ -57,26 +47,51 @@ export function ScheduleList() {
             </button>
           </div>
         ) : schedules === null ? (
-          <p className="cm-loading">
-            <span className="cm-live-dot" aria-hidden="true" />
-            Loading schedules&hellip;
-          </p>
+          <div className="cm-panel-pad">
+            <p className="cm-loading">
+              <span className="cm-live-dot" aria-hidden="true" />
+              Loading schedules&hellip;
+            </p>
+          </div>
         ) : schedules.length === 0 ? (
-          <p className="cm-empty-state">No periodic schedules configured yet.</p>
+          <p className="cm-empty-state">
+            No periodic schedules configured yet. Add one to your Celery beat schedule and it appears here.
+          </p>
         ) : (
-          <ul className="cm-schedule-list">
-            {schedules.map((s) => (
-              <li key={s.name} className="cm-schedule-list-row">
-                <Link to={`/schedules/${encodeURIComponent(s.name)}`} className="cm-schedule-list-link">
-                  <span className="cm-schedule-list-name">{s.name}</span>
-                  <span className="cm-schedule-list-meta">
-                    {s.task_name} &middot; {s.schedule_spec}
-                  </span>
-                </Link>
-                {!s.enabled && <span className="cm-badge">disabled</span>}
-              </li>
-            ))}
-          </ul>
+          <div className="cm-table-scroll">
+            <table className="cm-table cm-table-stack cm-schedules-table">
+              <thead>
+                <tr>
+                  <th scope="col">Schedule</th>
+                  <th scope="col">Task</th>
+                  <th scope="col">Runs</th>
+                  <th scope="col" className="cm-col-fit">
+                    State
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedules.map((s) => (
+                  <tr key={s.name}>
+                    <td className="cm-cell-primary">
+                      <Link to={`/schedules/${encodeURIComponent(s.name)}`} className="cm-schedule-link">
+                        {s.name}
+                      </Link>
+                    </td>
+                    <td>{s.task_name}</td>
+                    <td>{s.schedule_spec}</td>
+                    <td className="cm-col-fit">
+                      {s.enabled ? (
+                        <span className="cm-schedule-enabled">Enabled</span>
+                      ) : (
+                        <span className="cm-badge">Disabled</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
