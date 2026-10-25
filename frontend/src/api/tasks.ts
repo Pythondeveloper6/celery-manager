@@ -86,6 +86,17 @@ export async function retryTask(taskId: string): Promise<{ new_task_id: string }
   return response.json();
 }
 
+// `terminate=false` is a plain revoke: a queued task is skipped once a worker
+// reaches it, but one already running is left to finish. `terminate=true`
+// additionally asks the worker to kill the child process executing it.
+export async function cancelTask(taskId: string, terminate = false): Promise<void> {
+  const response = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}/cancel${terminate ? "?terminate=true" : ""}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error(terminate ? "Terminate failed." : "Cancel failed.");
+}
+
 export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids: string[] }> {
   const response = await fetch(`${BASE}/tasks/retry-bulk`, {
     method: "POST",

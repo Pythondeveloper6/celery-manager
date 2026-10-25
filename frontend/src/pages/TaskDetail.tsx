@@ -2,7 +2,7 @@ import "../styles/task-detail.css";
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
+import { cancelTask, getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
 import {
   elapsedSeconds,
   formatDuration,
@@ -34,6 +34,11 @@ const ACTIVE_STATUSES = new Set(["queued", "started", "retried"]);
 // visibly moves, cheap enough that a tab left open on a long import isn't a
 // problem. (TaskList polls the whole list, so it uses 5s.)
 const POLL_INTERVAL_MS = 2000;
+
+// Statuses a revoke can still mean something for. `received` is not a status
+// of its own here: the events listener folds task-received into "queued".
+// `retried` is waiting to run again, so it is revocable too.
+const CANCELLABLE_STATUSES = new Set(["queued", "started", "retried"]);
 
 // How long a running task can go without reporting progress before the page
 // says so. Tasks that report per-item typically update several times a
@@ -108,6 +113,12 @@ export function TaskDetail() {
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<{ newTaskId: string } | null>(null);
+  // "cancel" | "terminate" while a request is in flight; confirmTerminate is
+  // the inline second step that guards the destructive option.
+  const [cancelBusy, setCancelBusy] = useState<"cancel" | "terminate" | null>(null);
+  const [confirmTerminate, setConfirmTerminate] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelNotice, setCancelNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setTask(null);
@@ -116,6 +127,10 @@ export function TaskDetail() {
     setRetrying(false);
     setRetryError(null);
     setRetryNotice(null);
+    setCancelBusy(null);
+    setConfirmTerminate(false);
+    setCancelError(null);
+    setCancelNotice(null);
     if (!taskId) return;
     // Guarded so a slow response for the *previous* task id can't land after
     // the user has already navigated to another run and overwrite it.
@@ -205,6 +220,35 @@ export function TaskDetail() {
     }
   }
 
+  async function handleCancel(terminate: boolean) {
+    if (!task) return;
+    setCancelBusy(terminate ? "terminate" : "cancel");
+    setCancelError(null);
+    setCancelNotice(null);
+    try {
+      await cancelTask(task.task_id, terminate);
+      setConfirmTerminate(false);
+      // Worded as a request on purpose: revoke is fire-and-forget. A queued
+      // task is only skipped when a worker reaches it, and the status does
+      // not change until the worker reports back.
+      setCancelNotice(
+        terminate
+          ? "Terminate requested — the worker will be asked to kill this run."
+          : task.status === "started"
+            ? "Cancel requested. A run already in progress keeps going; use Terminate to stop it."
+            : "Cancel requested — it takes effect when a worker reaches this task."
+      );
+      await refreshTask(task.task_id);
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Cancel failed.");
+    } finally {
+      setCancelBusy(null);
+    }
+  }
+
+  const canCancel = task !== null && CANCELLABLE_STATUSES.has(task.status);
+  const canTerminate = task !== null && task.status === "started";
+
   const fraction = task ? progressFraction(task) : null;
   const elapsed = task ? elapsedSeconds(task, now) : null;
   const remaining = task ? projectedRemainingSeconds(task, elapsed) : null;
@@ -269,6 +313,66 @@ export function TaskDetail() {
             )}
           </header>
           <p className="cm-task-id cm-detail-task-id">{task.task_id}</p>
+
+          {canCancel && (
+            <div className="cm-task-actions" role="group" aria-label="Task actions">
+              {confirmTerminate && canTerminate ? (
+                <>
+                  <span className="cm-task-actions-warn">Kills the worker process running this task. Unsaved work is lost.</span>
+                  <button
+                    type="button"
+                    className="cm-btn cm-btn-danger"
+                    onClick={() => handleCancel(true)}
+                    disabled={cancelBusy !== null}
+                    aria-busy={cancelBusy === "terminate"}
+                  >
+                    {cancelBusy === "terminate" ? "Terminating…" : "Confirm terminate"}
+                  </button>
+                  <button
+                    type="button"
+                    className="cm-btn cm-btn-outline"
+                    onClick={() => setConfirmTerminate(false)}
+                    disabled={cancelBusy !== null}
+                  >
+                    Keep running
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="cm-btn cm-btn-outline"
+                    onClick={() => handleCancel(false)}
+                    disabled={cancelBusy !== null}
+                    aria-busy={cancelBusy === "cancel"}
+                  >
+                    {cancelBusy === "cancel" ? "Cancelling…" : "Cancel"}
+                  </button>
+                  {canTerminate && (
+                    <button
+                      type="button"
+                      className="cm-btn cm-btn-outline cm-btn-danger-outline"
+                      onClick={() => setConfirmTerminate(true)}
+                      disabled={cancelBusy !== null}
+                    >
+                      Terminate
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {cancelNotice && (
+            <p className="cm-notice" role="status">
+              {cancelNotice}
+            </p>
+          )}
+          {cancelError && (
+            <p className="cm-error" role="alert">
+              {cancelError}
+            </p>
+          )}
 
           {retryNotice && (
             <p className="cm-notice" role="status">

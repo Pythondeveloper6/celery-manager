@@ -382,3 +382,46 @@
   color: var(--cm-color-accent-text-hover);
   text-decoration: underline;
 }
+
+/* ==========================================================================
+   Cancel / terminate actions
+   --------------------------------------------------------------------------
+   Sits on its own row under the task id so the header (title + badge) never
+   has to share a line with a two-button confirm pair at 390px. Danger colours
+   come from the existing --cm-color-danger* tokens; two-class selectors beat
+   tokens.css's single-class .cm-btn-* rules, which load after this file.
+   ========================================================================== */
+.cm-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-task-actions-warn {
+  flex: 1 0 100%;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-danger);
+}
+
+.cm-btn.cm-btn-danger-outline {
+  color: var(--cm-color-danger);
+  border-color: var(--cm-color-danger-border);
+}
+
+.cm-btn.cm-btn-danger-outline:hover:not(:disabled) {
+  color: var(--cm-color-danger);
+  border-color: var(--cm-color-danger);
+  background-color: var(--cm-color-danger-bg);
+}
+
+.cm-btn.cm-btn-danger {
+  color: var(--cm-color-danger);
+  background-color: var(--cm-color-danger-bg);
+  border-color: var(--cm-color-danger);
+}
+
+.cm-btn.cm-btn-danger:hover:not(:disabled) {
+  color: var(--cm-color-surface);
+  background-color: var(--cm-color-danger);
+}
