@@ -64,8 +64,8 @@ without touching your beat schedule or restarting anything.
 - **Log capture** — `logging` output from inside a task body (and `print()`
   too, in a real worker — [see why](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/decorator.md#what-log-capture-actually-captures)),
   attached to that run and readable in the dashboard.
-- **Control** — start, cancel/terminate, retry, and bulk retry, from the UI
-  or the API. Retries keep their lineage, so you can walk the chain.
+- **Control** — cancel/terminate, retry, and bulk retry from the UI; starting
+  a task is available through the API (`POST /api/tasks/start`). Retries keep their lineage, so you can walk the chain.
 - **Per-occurrence schedule control** — skip or cancel one upcoming run of a
   periodic task, and see it stay paused.
 - **Audit log** — who did what, when, for every control action.
@@ -95,11 +95,11 @@ pip install --pre "celery-manager[flask]"        # adds Flask and a2wsgi
 Alternatively, install a tagged release straight from git:
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a2"
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a3"
 ```
 
 (Extras with git: `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a2"`.)
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a3"`.)
 
 Optional extras:
 
@@ -191,7 +191,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is the first alpha, **0.1.0a2**. It is feature-complete for the v1 scope,
+This is the first alpha, **0.1.0a3**. It is feature-complete for the v1 scope,
 but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
 backlog of known gaps and planned follow-ups.
 
