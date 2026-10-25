@@ -9,6 +9,7 @@ from sqlalchemy import or_
 
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
+from celery_manager.db.runs import lock_task_run
 
 # Maximum rows a list endpoint will hand back in one response, and the ceiling
 # each route clamps a caller-supplied `limit` to (`GET /api/tasks` and
@@ -37,10 +38,12 @@ class TaskRunNotFound(ValueError):
 def _decode_stored_call_argument(raw: str | None, field: str, task_id: str, empty):
     """Decode a stored `task_runs.args`/`.kwargs` back into real Python.
 
-    Two writers, two formats, and only one of them is JSON. The decorator
-    writes `json.dumps(...)`; the events listener writes `str(event["args"])`
-    (`listener.upsert_task_run`), and Celery's event payload is already a
-    *repr* — `"(5,)"`, `"{'b': 2}"`. So `json.loads` alone raised
+    Two writers, and historically two formats. The decorator writes
+    `json.dumps(...)`; the events listener used to write `str(event["args"])`,
+    and Celery's event payload is already a *repr* — `"(5,)"`, `"{'b': 2}"`.
+    The listener now normalises those to JSON (`listener._normalise_call_argument`),
+    but it keeps the repr when it cannot convert it, and rows written by
+    older versions are still repr. So `json.loads` alone raised
     `JSONDecodeError` for every run the listener recorded and the decorator
     did not, i.e. every undecorated task, which surfaced as a 500 from the
     dashboard's retry button. Try JSON first (the format we write), then
@@ -280,31 +283,35 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
 
     new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
 
-    # Upsert, never a blind insert. `task_runs.task_id` is UNIQUE, and by the
-    # time send_task() returns, the events listener may already have written a
-    # row for this brand-new uuid from `task-sent`. Blindly adding a second
-    # one raises IntegrityError — that exact race was finding C1 of this
-    # project's final review, and it is why `decorator._upsert_task_run`
-    # exists. Written out here rather than imported: that helper is private to
-    # the decorator and, by design, skips None values so a decorator write can
-    # never null out a listener-owned field. This site has the opposite
-    # requirement (it must always write retried_from_id), so it owns its own
-    # three lines rather than bending a helper with a different contract.
+    # Upsert, never check-then-insert. `task_runs.task_id` is UNIQUE, and by
+    # the time send_task() returns, two other writers may already be racing
+    # us for this brand-new uuid: the events listener (task-sent /
+    # task-received) and, if the worker is quick, the `@track` decorator's
+    # `started` row. The previous version *checked* for an existing row and
+    # then inserted, which only narrowed the window — a row landing between
+    # the check and the commit still raised IntegrityError, so the dashboard's
+    # retry button returned 500 for a retry that had in fact been dispatched,
+    # and the lineage was lost. `lock_task_run` makes the insert itself
+    # tolerate a concurrent one (see db/runs.py), which also covers
+    # bulk_retry, whose next item used to fail on the poisoned session.
+    #
+    # Why not pre-assign the uuid and write the lineage row *before*
+    # dispatching? It would close the window from the other side, but a
+    # dispatch that then fails would leave a phantom `queued` run behind, and
+    # it changes the send_task call every caller and test asserts on. The
+    # upsert is sufficient on its own.
     #
     # Only `retried_from_id` is forced on an existing row. The listener owns
-    # status/queue/worker and knows more about them than we do; the seed
-    # values below are for the row-doesn't-exist-yet case only, so the
-    # dashboard has something to show for the new run in the meantime.
-    new_run = get_task_run(session, new_id)
-    if new_run is None:
-        new_run = TaskRun(
-            task_id=new_id,
-            task_name=run.task_name,
-            status="queued",
-            args=json.dumps(final_args),
-            kwargs=json.dumps(final_kwargs),
-        )
-        session.add(new_run)
+    # status/queue/worker and the decorator owns the outcome, and both know
+    # more than we do; the seed values are create-only, so the dashboard has
+    # something to show for the new run in the meantime without ever
+    # restating `queued` over a run that has already started or finished.
+    new_run = lock_task_run(session, new_id, seed={
+        "task_name": run.task_name,
+        "status": "queued",
+        "args": json.dumps(final_args),
+        "kwargs": json.dumps(final_kwargs),
+    })
     new_run.retried_from_id = task_id
 
     # record_audit commits, which flushes the row above with it — but commit

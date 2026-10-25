@@ -145,17 +145,24 @@ def _upsert_task_run(
     displayed as `succeeded` with a full traceback attached. Named explicitly
     rather than inferred from a None in `fields`, so that "I don't know this
     field" and "I know this field is now empty" stay different statements.
-    """
-    from celery_manager.db.models import TaskRun
 
-    run = session.query(TaskRun).filter_by(task_id=task_id).one_or_none()
-    if run is None:
-        run = TaskRun(task_id=task_id)
-        session.add(run)
-        for key, value in (create_defaults or {}).items():
-            if value is None:
-                continue
-            setattr(run, key, value)
+    Race-safe: the get-or-create goes through `db.runs.lock_task_run`, which
+    tolerates the listener (or `retry_task`) inserting the same uuid between
+    our check and our commit. A plain SELECT-then-add here only *narrowed*
+    that window — the `started` row is written at the same moment the
+    worker emits task-started, so losing it was routine under a real worker.
+    The seed is create_defaults overlaid with our own fields, matching what
+    the old insert path produced.
+
+    Status precedence: the decorator's status is applied unconditionally,
+    unlike the listener's. Its writes happen in-process, in order, around
+    the body (started, then the outcome), so there is no stale decorator
+    write to guard against; events, by contrast, arrive from several
+    producers out of order — see `listener._accepts_status`.
+    """
+    from celery_manager.db.runs import lock_task_run
+
+    run = lock_task_run(session, task_id, seed={**(create_defaults or {}), **fields})
     for key in clear:
         setattr(run, key, None)
     for key, value in fields.items():
