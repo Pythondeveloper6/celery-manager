@@ -92,6 +92,35 @@ upserts each task's status (`queued`, `started`, `succeeded`, `failed`,
 `CeleryManagerConfig` in the app process. The listener takes no secret
 key: it doesn't serve HTTP or sign sessions.
 
+### Required Celery settings
+
+The events listener only records what Celery *emits*, and Celery emits task
+events only when asked. Set both of these on your Celery app (the publishing
+side needs the second one, so put them in the config shared by web, worker and
+beat):
+
+```python
+app.conf.worker_send_task_events = True   # same as running the worker with -E
+app.conf.task_send_sent_event = True      # publisher emits task-sent (carries the queue)
+```
+
+Alternatively start the worker with `celery -A yourapp worker -E`, but
+`task_send_sent_event` has no CLI flag, so it must be in the config.
+
+Without them:
+
+- No `-E` / `worker_send_task_events`: the listener receives nothing from the
+  worker, so `worker` stays `null` and the listener contributes no
+  queued/started/finished transitions or runtimes.
+- No `task_send_sent_event`: `queue` stays `null` (it comes only from the
+  `task-sent` event).
+- Tasks decorated with [`@track`](decorator.md) still record status, timings,
+  exceptions and logs from the worker process, but never `worker` or `queue`,
+  and undecorated tasks are not recorded at all.
+
+The listener (`celery-manager events`) must run as its own long-lived process,
+next to the worker and beat.
+
 ## Create your first dashboard user
 
 ```python

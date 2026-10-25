@@ -123,6 +123,9 @@ from celery_manager.config import CeleryManagerConfig
 celery_manager.setup(CeleryManagerConfig(celery_app=app, db_url=DB_URL))
 ```
 
+The events listener needs Celery task events switched on; see
+[Required Celery settings](quickstart.md#required-celery-settings).
+
 Create a dashboard user with `celery_manager.auth.users.create_user`; both demos
 include a `create_user.py` script.
 

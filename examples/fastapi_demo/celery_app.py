@@ -6,6 +6,10 @@ from celery.schedules import schedule
 
 app = Celery("demo", broker=settings.BROKER_URL, backend=settings.RESULT_BACKEND, include=["tasks"])
 app.conf.task_always_eager = settings.EAGER
+# The events listener only sees what Celery emits: workers must send task events
+# and the publisher must send task-sent (worker/queue are null otherwise).
+app.conf.worker_send_task_events = True
+app.conf.task_send_sent_event = True
 app.conf.beat_schedule = {
     "send-demo-report-every-2-hours": {
         "task": "tasks.send_report",

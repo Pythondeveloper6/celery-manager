@@ -123,6 +123,10 @@ celery-manager events --celery-app your_module:your_celery_app \
                       --db-url sqlite:///celery_manager.db
 ```
 
+The listener sees nothing unless workers emit events: set `worker_send_task_events = True`
+and `task_send_sent_event = True` (or run the worker with `-E`). See
+[Required Celery settings](docs/quickstart.md#required-celery-settings).
+
 **Two things that stop people on a first run**, both covered in the
 [Quickstart](docs/quickstart.md): there is no default account, so you have to
 create one (`celery_manager.auth.users.create_user`); and on plain HTTP you

@@ -287,6 +287,14 @@ because anyone who pinned a git SHA during development *will* hit them.
   already dispatched the ids ahead of it.
 - `task_runs.eta` is served by the detail endpoint but never written by
   anything, so it is always `null`.
+- Live push via SSE only carries events published in the web process. With the
+  separate events listener, the dashboard updates via its 5-second poll.
+- Revoked runs have no `finished_at` (only `task-succeeded`/`task-failed` set it).
+- Dispatching an unregistered task name records `task_name` as `"unknown"` when
+  the listener creates the row.
+- The events listener needs `worker_send_task_events` (or `-E`) and
+  `task_send_sent_event` to be set; without them `worker`/`queue` are null. See
+  [Required Celery settings](docs/quickstart.md#required-celery-settings).
 - Under Flask (a2wsgi) the SSE stream leaks a subscriber per disconnect, so
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
