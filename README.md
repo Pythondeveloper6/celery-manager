@@ -25,6 +25,32 @@ see what your tasks are doing, act on them, and — the feature this project
 exists for — **pause or cancel a single future occurrence of a periodic task**
 without touching your beat schedule or restarting anything.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/task-list-dark.png">
+  <img alt="The celery-manager task list with filters, status badges, runtimes and start times" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/task-list-light.png" width="100%">
+</picture>
+
+<table>
+<tr>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/task-detail-dark.png">
+  <img alt="Task detail for a running import with a live progress bar and cancel and terminate controls" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/task-detail-light.png" width="100%">
+</picture>
+
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/schedules-dark.png">
+  <img alt="Schedules view with one upcoming occurrence of a periodic task skipped" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/schedules-light.png" width="100%">
+</picture>
+
+</td>
+</tr>
+</table>
+
 ## What you get
 
 - **Task visibility** — every task run (decorated or not) with status, args,
