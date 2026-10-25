@@ -26,10 +26,43 @@ previous build. See [`docs/contributing.md`](../docs/contributing.md).
 ## Working on it
 
 ```bash
-npm run dev     # Vite dev server; proxy /api to a running celery-manager
+npm run dev     # Vite dev server (needs the /api proxy below)
 npm run build   # tsc -b && vite build
 npm run lint    # oxlint
 ```
+
+### Dev server against a running backend
+
+`vite.config.ts` has no proxy, and the app calls a relative `api` base
+(`src/api/base.ts`), so under `npm run dev` requests go to
+`http://localhost:5173/api/...`. Add a proxy to your local `vite.config.ts`
+(not committed) that forwards `/api` to the backend, e.g. `run_dashboard.py`
+on port 8001:
+
+```ts
+export default defineConfig({
+  // ...existing config
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8001',
+        changeOrigin: false, // keep Host as localhost:5173
+      },
+    },
+  },
+})
+```
+
+Keep `changeOrigin: false`. With `true`, Vite rewrites `Host` to the backend
+(`localhost:8001`) while the browser still sends `Origin: http://localhost:5173`,
+so the backend's cross-origin check answers login with
+`403 cross-origin request refused`. With `false`, `Host` and `Origin` both
+read `localhost:5173` and match.
+
+The backend's session cookie is `Secure` by default, and browsers won't send it
+back over plain `http://localhost:5173`. Run the backend with
+`cookie_secure=False` for local development (the Django demo sets
+`CELERY_MANAGER_COOKIE_SECURE = False`).
 
 There is no JS test runner in this project — changes are verified by
 type-checking, linting, and driving the built app in a real browser.

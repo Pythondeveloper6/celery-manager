@@ -29,9 +29,12 @@ the request's `Host` (or the first `X-Forwarded-Host`, for proxies that
 rewrite `Host`) gets **`403 {"detail": "cross-origin request refused"}`**
 before reaching the route. Requests with no `Origin` — curl, scripts,
 server-to-server clients — are unaffected. If you put celery-manager behind a
-proxy that rewrites `Host`, make it forward the original as
-`X-Forwarded-Host` (or preserve `Host`), or the dashboard's own writes will
-be refused.
+proxy that rewrites `Host`, make `Host` or `X-Forwarded-Host` carry the public
+`host:port` the browser used (in nginx: `proxy_set_header Host $http_host;`
+and `proxy_set_header X-Forwarded-Host $http_host;` — not `$host`, which drops
+the port), or the dashboard's own writes, login included, will be refused. If
+login returns `403 cross-origin request refused`, this is the cause; see
+[Behind a reverse proxy](integrations.md#behind-a-reverse-proxy).
 
 Every response also carries `X-Frame-Options: DENY` and
 `Content-Security-Policy: frame-ancestors 'none'`, so the dashboard can't be

@@ -17,20 +17,26 @@ as you'd run celery-manager against a production Django app.
 
 1. `python -m venv .venv && source .venv/bin/activate`
 2. `pip install -r requirements.txt`
-   Then export a private random key that signs the dashboard's session
-   cookies. `settings.py` refuses to load without it:
+   Then create a private random key that signs the dashboard's session
+   cookies, saved in a `.env` file you will source in every terminal.
+   `settings.py` exits at import without `CELERY_MANAGER_SECRET_KEY`, so
+   `migrate`, `runserver`, the worker, beat, the events listener and the
+   dashboard all need it:
    ```bash
-   export CELERY_MANAGER_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+   echo "export CELERY_MANAGER_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" > .env
+   source .env
    ```
 3. Start Redis locally (e.g. `redis-server`).
 4. `python manage.py migrate`
-5. In separate terminals:
+5. In separate terminals (**in each one**, first run
+   `source .venv/bin/activate && source .env`; a new shell does not inherit
+   the key, and every process must use the same value):
    - `python manage.py runserver` (the Django app)
    - `celery -A demo worker -l info` (the worker)
    - `celery -A demo beat -l info` (the periodic scheduler)
    - `celery-manager events --celery-app demo.celery:app --db-url sqlite:///celery_manager_demo.db` (the events listener)
    - `python run_dashboard.py` (the celery-manager dashboard, at http://localhost:8001)
-6. Create a dashboard user:
+6. Create a dashboard user (in a terminal where you ran `source .env`):
    ```bash
    python -c "
    import os

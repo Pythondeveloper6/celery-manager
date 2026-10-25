@@ -151,7 +151,8 @@ uvicorn yourmodule:dashboard --port 8001 --root-path /celery-manager
 location = /celery-manager { return 308 /celery-manager/; }
 location /celery-manager/ {
     proxy_pass http://127.0.0.1:8001/;   # trailing slash strips the prefix
-    proxy_set_header Host $host;
+    proxy_set_header Host $http_host;              # $host would drop a non-default port
+    proxy_set_header X-Forwarded-Host $http_host;
     proxy_set_header X-Forwarded-Proto $scheme;
     # SSE: don't buffer the stream, and allow long-lived connections
     proxy_buffering off;
@@ -161,4 +162,12 @@ location /celery-manager/ {
 
 `--root-path` is what scopes the session cookie to `/celery-manager`. State-changing
 requests carry a CSRF `Origin` check against the request's host: make sure the
-proxy passes the original `Host` (as above) or sets `X-Forwarded-Host`.
+proxy passes the original public `host:port` in `Host` and/or `X-Forwarded-Host`
+(as above). Use `$http_host`, not `$host`: nginx's `$host` drops the port, so on
+a public URL such as `https://ops.example.com:8443` the browser's `Origin` would
+no longer match.
+
+!!! warning "Troubleshooting: login returns 403 `cross-origin request refused`"
+    The proxy is rewriting `Host` (to the upstream address, or to a name
+    without the port). Make `Host` or `X-Forwarded-Host` carry the public
+    `host:port` the browser used, as in the config above.
