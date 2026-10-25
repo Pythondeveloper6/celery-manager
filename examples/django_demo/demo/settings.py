@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -146,7 +147,21 @@ CELERY_BEAT_SCHEDULE = {
 # celery-manager
 
 CELERY_MANAGER_DB_URL = "sqlite:///celery_manager_demo.db"
-CELERY_MANAGER_SECRET_KEY = "demo-secret-change-me"
+
+
+def secret_key() -> str:
+    """The dashboard signs session cookies with this. Read from the
+    environment so nothing secret is committed; exit with a hint if unset."""
+    key = os.environ.get("CELERY_MANAGER_SECRET_KEY", "")
+    if not key:
+        raise SystemExit(
+            "Set CELERY_MANAGER_SECRET_KEY to a private random value, e.g.\n"
+            '  export CELERY_MANAGER_SECRET_KEY="$(python -c \'import secrets; print(secrets.token_urlsafe(32))\')"'
+        )
+    return key
+
+
+CELERY_MANAGER_SECRET_KEY = secret_key()
 # This demo is served over plain HTTP (http://localhost:8001), and a browser
 # will not send a `Secure` cookie back over HTTP — so with celery-manager's
 # safe-by-default `cookie_secure=True` you would log in successfully and then

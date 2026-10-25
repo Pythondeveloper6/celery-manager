@@ -17,6 +17,11 @@ as you'd run celery-manager against a production Django app.
 
 1. `python -m venv .venv && source .venv/bin/activate`
 2. `pip install -r requirements.txt`
+   Then export a private random key that signs the dashboard's session
+   cookies. `settings.py` refuses to load without it:
+   ```bash
+   export CELERY_MANAGER_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+   ```
 3. Start Redis locally (e.g. `redis-server`).
 4. `python manage.py migrate`
 5. In separate terminals:
@@ -28,12 +33,13 @@ as you'd run celery-manager against a production Django app.
 6. Create a dashboard user:
    ```bash
    python -c "
+   import os
    from celery_manager.auth.users import create_user
    from celery_manager.db.session import init_db, get_session_factory
    from celery_manager.config import CeleryManagerConfig
    from demo.celery import app
 
-   cfg = CeleryManagerConfig(celery_app=app, db_url='sqlite:///celery_manager_demo.db', secret_key='demo-secret-change-me')
+   cfg = CeleryManagerConfig(celery_app=app, db_url='sqlite:///celery_manager_demo.db', secret_key=os.environ['CELERY_MANAGER_SECRET_KEY'])
    Session = get_session_factory(init_db(cfg))
    create_user(Session(), 'admin', 'admin')
    "
