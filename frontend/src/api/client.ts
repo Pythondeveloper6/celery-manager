@@ -27,3 +27,17 @@ export async function whoami(): Promise<{ username: string } | null> {
   if (!response.ok) return null;
   return response.json();
 }
+
+export async function logout(): Promise<void> {
+  // Success means the server cleared the session cookie. Anything else —
+  // network failure or a non-OK response — leaves the session alive, so it
+  // is thrown rather than swallowed: the caller must not pretend the user is
+  // signed out when a reload would put them straight back in.
+  let response: Response;
+  try {
+    response = await fetch(`${BASE}/auth/logout`, { method: "POST", credentials: "include" });
+  } catch {
+    throw new Error("Could not reach the server. You are still signed in.");
+  }
+  if (!response.ok) throw new Error("Sign out failed. You are still signed in.");
+}
