@@ -1,4 +1,4 @@
-const BASE = "/api";
+import { API_BASE as BASE } from "./base";
 
 /**
  * Deployment-wide branding. Every key is always present — the server overlays

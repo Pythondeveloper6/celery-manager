@@ -28,6 +28,7 @@ nav:
   - Live progress: progress.md
   - REST API: rest-api.md
   - Dashboard: dashboard.md
+  - Integrating with your app: integrations.md
   - Configuration: configuration.md
   - Working on celery-manager: contributing.md
 exclude_docs: |

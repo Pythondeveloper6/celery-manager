@@ -1,0 +1,8 @@
+celery>=5.3,<6.0
+redis>=5.0
+flask>=3.0
+a2wsgi>=1.10
+werkzeug>=3.0
+# For the recommended production server (see README, "Serving it"):
+uvicorn>=0.29
+-e ../..

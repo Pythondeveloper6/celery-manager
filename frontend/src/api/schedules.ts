@@ -1,4 +1,4 @@
-const BASE = "/api";
+import { API_BASE as BASE } from "./base";
 
 // The only actions POST /api/schedules/{name}/occurrences/pause accepts.
 // Kept as one named type so the request body and the response shape can't
