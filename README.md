@@ -2,16 +2,16 @@
 
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-wordmark-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-wordmark-light.svg">
-    <img alt="celery-manager" src="docs/assets/logo-wordmark-light.svg" height="56">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/logo-wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/logo-wordmark-light.svg">
+    <img alt="celery-manager" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/logo-wordmark-light.svg" height="56">
   </picture>
 </h1>
 
 A dashboard and control API for Celery background tasks — for any
 Django, Flask, or FastAPI project that already uses Celery.
 
-[![CI](https://github.com/pythondeveloper6/celery-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pythondeveloper6/celery-manager/actions/workflows/ci.yml)
+[![CI](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml)
 ![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Status: alpha](https://img.shields.io/badge/status-alpha-orange)
@@ -34,7 +34,7 @@ without touching your beat schedule or restarting anything.
   message)` inside a task body and watch the bar move, with elapsed time and
   a projected finish while the task is still running.
 - **Log capture** — `logging` output from inside a task body (and `print()`
-  too, in a real worker — [see why](docs/decorator.md#what-log-capture-actually-captures)),
+  too, in a real worker — [see why](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/decorator.md#what-log-capture-actually-captures)),
   attached to that run and readable in the dashboard.
 - **Control** — start, cancel/terminate, retry, and bulk retry, from the UI
   or the API. Retries keep their lineage, so you can walk the chain.
@@ -51,32 +51,34 @@ without touching your beat schedule or restarting anything.
 
 ## Install
 
-celery-manager 0.1.0a1 is an alpha in a **private** GitHub repository and is
-**not on PyPI yet** (publication is planned), so `pip install --pre
-celery-manager` will not find it. Install the tagged release from git (this
-needs access to the repository):
+celery-manager is an alpha, so pass `--pre` to pip:
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"
+pip install --pre celery-manager
 ```
 
-or from the wheel attached to the GitHub release:
+With extras:
 
 ```bash
-pip install ./celery_manager-0.1.0a1-py3-none-any.whl
+pip install --pre "celery-manager[standalone]"   # adds uvicorn
+pip install --pre "celery-manager[flask]"        # adds Flask and a2wsgi
 ```
 
-Extras go after the name, e.g. `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"`. Once the
-package is published, `pip install --pre celery-manager` will work (`--pre`
-because 0.1.0a1 is a pre-release).
+Alternatively, install a tagged release straight from git:
+
+```bash
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a2"
+```
+
+(Extras with git: `"celery-manager[standalone] @
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a2"`.)
 
 Optional extras:
 
 - `standalone` — pulls in uvicorn, to run the dashboard on its own rather than
   mounting it into an ASGI app you already serve.
 - `flask` — pulls in Flask and `a2wsgi`, to mount the dashboard in a Flask
-  (WSGI) app; see [Integrating with your app](docs/integrations.md#flask-wsgi).
+  (WSGI) app; see [Integrating with your app](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/integrations.md#flask-wsgi).
 
 ## Wire it up
 
@@ -125,34 +127,34 @@ celery-manager events --celery-app your_module:your_celery_app \
 
 The listener sees nothing unless workers emit events: set `worker_send_task_events = True`
 and `task_send_sent_event = True` (or run the worker with `-E`). See
-[Required Celery settings](docs/quickstart.md#required-celery-settings).
+[Required Celery settings](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md#required-celery-settings).
 
 **Two things that stop people on a first run**, both covered in the
-[Quickstart](docs/quickstart.md): there is no default account, so you have to
+[Quickstart](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md): there is no default account, so you have to
 create one (`celery_manager.auth.users.create_user`); and on plain HTTP you
 need `cookie_secure=False`, or you will log in successfully and then
 immediately appear logged out.
 
 ## Documentation
 
-Full documentation lives in [`docs/`](docs/) (an MkDocs Material site — run
+Full documentation lives in [`docs/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/docs/) (an MkDocs Material site — run
 `mkdocs serve` after `pip install -e ".[docs]"`):
 
-- [Quickstart](docs/quickstart.md) — install through first sign-in.
-- [The `@track` decorator](docs/decorator.md) — wiring, skip/cancel, logs.
-- [Live progress](docs/progress.md) — reporting progress from inside a task.
-- [REST API](docs/rest-api.md) — every endpoint and payload.
-- [Dashboard](docs/dashboard.md) — the screens and what they do.
-- [Configuration](docs/configuration.md) — every config field, the schema
+- [Quickstart](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md) — install through first sign-in.
+- [The `@track` decorator](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/decorator.md) — wiring, skip/cancel, logs.
+- [Live progress](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/progress.md) — reporting progress from inside a task.
+- [REST API](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/rest-api.md) — every endpoint and payload.
+- [Dashboard](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/dashboard.md) — the screens and what they do.
+- [Configuration](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/configuration.md) — every config field, the schema
   and upgrade story, and production notes.
-- [Working on celery-manager](docs/contributing.md) — running the tests,
+- [Working on celery-manager](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/contributing.md) — running the tests,
   building the docs, and rebuilding the committed dashboard bundle.
 
 Changes between versions — including what breaks for development builds —
-are in [`CHANGELOG.md`](CHANGELOG.md).
+are in [`CHANGELOG.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/CHANGELOG.md).
 
 A complete runnable Django example is in
-[`examples/django_demo/`](examples/django_demo/).
+[`examples/django_demo/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo/).
 
 ## Requirements
 
@@ -161,10 +163,10 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is the first alpha, **0.1.0a1**. It is feature-complete for the v1 scope,
-but APIs may change before 0.1.0. See [`plan.md`](plan.md) for the implementation history and the
+This is the first alpha, **0.1.0a2**. It is feature-complete for the v1 scope,
+but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
 backlog of known gaps and planned follow-ups.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](https://github.com/Pythondeveloper6/celery-manager/blob/main/LICENSE).

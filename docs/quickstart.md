@@ -2,25 +2,28 @@
 
 ## Install
 
-celery-manager 0.1.0a1 is an alpha in a **private** GitHub repository and is
-**not on PyPI yet** (publication is planned), so `pip install --pre
-celery-manager` will not find it. Install the tagged release from git (this
-needs access to the repository):
+celery-manager is an alpha, so pass `--pre` to pip:
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"
+pip install --pre celery-manager
 ```
 
-or from the wheel attached to the GitHub release:
+With extras:
 
 ```bash
-pip install ./celery_manager-0.1.0a1-py3-none-any.whl
+pip install --pre "celery-manager[standalone]"   # adds uvicorn
+pip install --pre "celery-manager[flask]"        # adds Flask and a2wsgi
 ```
 
-Extras go after the name, e.g. `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a1"`. Once the
-package is published, `pip install --pre celery-manager` will work (`--pre`
-because 0.1.0a1 is a pre-release).
+Alternatively, install a tagged release straight from git (`v0.1.0a1` is a
+GitHub-only pre-release; PyPI starts at `0.1.0a2`):
+
+```bash
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a2"
+```
+
+(Extras with git: `"celery-manager[standalone] @
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a2"`.)
 
 `uvicorn` is **not** a core dependency — celery-manager is an ASGI app, and
 mounting it into a server you already run needs no server of its own. If you

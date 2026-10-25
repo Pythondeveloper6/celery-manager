@@ -8,9 +8,9 @@ dashboard's URLs are all relative, so the same build works at the root and under
 any prefix.
 
 Runnable projects for each framework live in the repository:
-[`examples/fastapi_demo`](https://github.com/pythondeveloper6/celery-manager/tree/main/examples/fastapi_demo),
-[`examples/flask_demo`](https://github.com/pythondeveloper6/celery-manager/tree/main/examples/flask_demo) and
-[`examples/django_demo`](https://github.com/pythondeveloper6/celery-manager/tree/main/examples/django_demo).
+[`examples/fastapi_demo`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/fastapi_demo),
+[`examples/flask_demo`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/flask_demo) and
+[`examples/django_demo`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo).
 
 !!! note "Always use the trailing slash"
     Open the dashboard at `/celery-manager/`. Its asset and API URLs are relative
