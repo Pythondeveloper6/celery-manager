@@ -379,7 +379,7 @@ def test_message_is_sticky_and_an_empty_string_clears_it(env, monkeypatch):
 
 
 def test_storage_failure_does_not_raise_into_the_task_body(env, monkeypatch):
-    app, Session = env
+    app, _Session = env
 
     def exploding_upsert(*args, **kwargs):
         raise RuntimeError("storage is down")
@@ -422,7 +422,7 @@ def test_called_outside_any_task_warns_once_and_returns(env, caplog):
     """Called from a shell, a test, or a helper that runs both in and out of a
     task: there is no run to attribute progress to. Say so once, don't raise,
     and don't write a row keyed by nothing."""
-    app, Session = env
+    _app, Session = env
 
     with caplog.at_level("WARNING"):
         report_progress(1, 2, "nowhere")

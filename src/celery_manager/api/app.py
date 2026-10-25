@@ -6,17 +6,25 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from celery_manager.config import CeleryManagerConfig
-from celery_manager.runtime import setup as setup_runtime
+from celery_manager.api.routes import (
+    audit as audit_routes,
+)
 from celery_manager.api.routes import (
     auth as auth_routes,
-    tasks as task_routes,
+)
+from celery_manager.api.routes import (
     schedules as schedule_routes,
-    audit as audit_routes,
+)
+from celery_manager.api.routes import (
     settings as settings_routes,
 )
-from celery_manager.control.schedules import sync_periodic_schedules
+from celery_manager.api.routes import (
+    tasks as task_routes,
+)
 from celery_manager.api.sse import EventBus, sse_stream
+from celery_manager.config import CeleryManagerConfig
+from celery_manager.control.schedules import sync_periodic_schedules
+from celery_manager.runtime import setup as setup_runtime
 
 
 def create_app(config: CeleryManagerConfig):

@@ -6,11 +6,11 @@ import uvicorn
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "demo.settings")
 django.setup()
 
+from demo.celery import app as celery_app
 from django.conf import settings
 
 from celery_manager.api.app import create_app
 from celery_manager.config import CeleryManagerConfig
-from demo.celery import app as celery_app
 
 config = CeleryManagerConfig(
     celery_app=celery_app,

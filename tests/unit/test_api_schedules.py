@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
 from celery import Celery
 from celery.schedules import schedule as interval_schedule
+from fastapi.testclient import TestClient
 
-from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
+from celery_manager.config import CeleryManagerConfig
 
 
 def _client_and_session():
@@ -119,9 +119,10 @@ def test_list_schedules_endpoint_returns_synced_schedules():
 
 def test_list_schedules_endpoint_requires_auth():
     from celery import Celery
+    from fastapi.testclient import TestClient
+
     from celery_manager.api.app import create_app
     from celery_manager.config import CeleryManagerConfig
-    from fastapi.testclient import TestClient
 
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
     app, _ = create_app(config)

@@ -1,6 +1,6 @@
 from django.conf import settings
-from django.urls import path
 from django.http import HttpResponse
+from django.urls import path
 
 from celery_manager.api.app import create_app
 from celery_manager.config import CeleryManagerConfig

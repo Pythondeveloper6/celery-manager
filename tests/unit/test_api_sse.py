@@ -4,10 +4,10 @@ import json
 import pytest
 from celery import Celery
 
-from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
-from celery_manager.auth.users import create_user
 from celery_manager.api.sse import EventBus
+from celery_manager.auth.users import create_user
+from celery_manager.config import CeleryManagerConfig
 
 
 def test_stream_emits_published_event():

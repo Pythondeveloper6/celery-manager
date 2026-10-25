@@ -2,9 +2,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from celery_manager.db.models import Base
-from celery_manager.auth.users import create_user, verify_password
 from celery_manager.auth.sessions import sign_session, verify_session
+from celery_manager.auth.users import create_user, verify_password
+from celery_manager.db.models import Base
 
 
 def _session():

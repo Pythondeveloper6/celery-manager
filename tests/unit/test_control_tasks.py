@@ -2,21 +2,20 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
-
 from celery import Celery
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from celery_manager.db.models import Base, TaskRun
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
-    list_task_runs,
-    count_task_runs,
-    list_retries_of,
-    get_task_run,
-    start_task,
     cancel_task,
+    count_task_runs,
+    get_task_run,
+    list_retries_of,
+    list_task_runs,
+    start_task,
 )
+from celery_manager.db.models import Base, TaskRun
 
 
 def _session():

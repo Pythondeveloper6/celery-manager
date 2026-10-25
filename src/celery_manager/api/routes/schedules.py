@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from celery_manager.api.deps import get_current_user
-from celery_manager.control.schedules import pause_occurrence, list_upcoming_with_overrides, list_periodic_schedules
+from celery_manager.control.schedules import (
+    list_periodic_schedules,
+    list_upcoming_with_overrides,
+    pause_occurrence,
+)
 
 router = APIRouter(prefix="/api/schedules")
 

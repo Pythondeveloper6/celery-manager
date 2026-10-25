@@ -67,7 +67,8 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 def _require_str(key: str, value: object) -> str:
     if not isinstance(value, str):
-        raise ValueError(f"{key} must be a string, got {type(value).__name__}")
+        # ValueError is the validation contract the API layer maps to a 400.
+        raise ValueError(f"{key} must be a string, got {type(value).__name__}")  # noqa: TRY004
     return value
 
 
@@ -152,7 +153,7 @@ def _validate_brand_logo_url(value: object) -> str:
 
     if len(text) > MAX_URL_LENGTH:
         raise ValueError(f"brand_logo_url must be at most {MAX_URL_LENGTH} characters")
-    if lowered.startswith("http://") or lowered.startswith("https://"):
+    if lowered.startswith(("http://", "https://")):
         return text
     if text.startswith("/") and not text.startswith("//"):
         return text
@@ -209,7 +210,7 @@ def update_settings(session, values: dict, username: str) -> dict[str, str]:
     real changes under no-ops.
     """
     if not isinstance(values, dict):
-        raise ValueError("settings payload must be an object")
+        raise ValueError("settings payload must be an object")  # noqa: TRY004 (ValueError contract)
 
     # Unknown keys are a hard error, not a silent no-op. Ignoring them would
     # let a typo ("brand_colour") return 200 with the change apparently

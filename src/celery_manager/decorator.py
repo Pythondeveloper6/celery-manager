@@ -98,10 +98,10 @@ def _safe_json(value) -> str:
     """
     try:
         return json.dumps(value, default=repr)
-    except Exception:
+    except Exception:  # noqa: BLE001 — serialising must never lose the run
         try:
             return json.dumps(repr(value))
-        except Exception:  # a __repr__ that raises is still not our problem
+        except Exception:  # noqa: BLE001 — a __repr__ that raises is still not our problem
             return '"<unserializable>"'
 
 
@@ -201,11 +201,11 @@ def _describe_exception(exc: BaseException) -> tuple[str, str]:
     """
     try:
         message = str(exc)
-    except Exception:
+    except Exception:  # noqa: BLE001 — a __str__ that raises must not mask the task error
         message = f"<unprintable {type(exc).__name__}>"
     try:
         formatted = tb_module.format_exc()
-    except Exception:
+    except Exception:  # noqa: BLE001 — recording a failure must never raise
         formatted = f"<unformattable traceback for {type(exc).__name__}>"
     return message, formatted
 
@@ -242,7 +242,7 @@ def _identify_run(args: tuple, func) -> tuple[object | None, str | None, str]:
 
         task_id = getattr(getattr(current_task, "request", None), "id", None)
         task_name = getattr(current_task, "name", None) or func.__name__
-    except Exception:  # deliberate: current_task is a proxy; never trust it
+    except Exception:  # noqa: BLE001, S110 — deliberate: current_task is a proxy; never trust it
         pass
     return None, task_id, task_name
 

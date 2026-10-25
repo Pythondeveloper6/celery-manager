@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from fastapi.testclient import TestClient
 from celery import Celery
+from fastapi.testclient import TestClient
 
-from celery_manager.config import CeleryManagerConfig
 from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
+from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.models import AuditLog, TaskRun
 
 
@@ -321,7 +321,7 @@ def test_retry_task_endpoint_stamps_the_retry_chain():
 
 
 def _is_utc_marked(value: str) -> bool:
-    return value.endswith("Z") or value.endswith("+00:00")
+    return value.endswith(("Z", "+00:00"))
 
 
 def test_emitted_datetimes_carry_a_utc_offset_on_the_list_endpoint():

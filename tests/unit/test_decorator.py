@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from celery_manager import decorator as decorator_module
 from celery_manager.db.models import Base, ScheduleOverride, TaskRun
-from celery_manager.decorator import track, configure
+from celery_manager.decorator import configure, track
 from celery_manager.events.listener import upsert_task_run
 
 
@@ -43,13 +43,13 @@ def env():
 
 
 def test_runs_normally_when_no_override(env):
-    app, Session, echo, calls = env
+    _app, _Session, echo, calls = env
     echo.apply(args=["hi"])
     assert calls == ["hi"]
 
 
 def test_skips_when_override_matches_now(env):
-    app, Session, echo, calls = env
+    _app, Session, echo, calls = env
     with Session() as session:
         session.add(ScheduleOverride(
             schedule_name="demo-every-2h",
@@ -73,7 +73,7 @@ def test_skips_when_override_matches_now(env):
 
 
 def test_ignores_override_outside_tolerance_window(env):
-    app, Session, echo, calls = env
+    _app, Session, echo, calls = env
     with Session() as session:
         session.add(ScheduleOverride(
             schedule_name="demo-every-2h",
@@ -103,7 +103,7 @@ def test_listener_row_then_decorated_run_converges_to_one_row(env):
     """(a) A listener-inserted row followed by that same task_id's decorated
     run must converge to ONE row carrying the decorator's final outcome —
     not an IntegrityError, and not a second row."""
-    app, Session, echo, calls = env
+    _app, Session, echo, calls = env
     task_id = "shared-uuid-1"
 
     # The events listener process gets there first.
@@ -135,7 +135,7 @@ def test_listener_row_then_decorated_run_converges_to_one_row(env):
 def test_listener_row_then_failing_decorated_run_records_failure_on_same_row(env):
     """The failure branch upserts too — and the task's real exception still
     propagates rather than being displaced by a storage error."""
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
     task_id = "shared-uuid-2"
 
     @app.task(name="demo.boom", bind=True)
@@ -166,7 +166,7 @@ def test_skip_path_consumes_override_even_if_task_run_write_fails(env, monkeypat
     error. `consumed = True` is committed on its own, before the task_runs
     write — otherwise a failed write would roll it back and the same override
     would silently skip a *later*, unrelated run of this schedule."""
-    app, Session, echo, calls = env
+    _app, Session, echo, calls = env
     with Session() as session:
         session.add(ScheduleOverride(
             schedule_name="demo-every-2h",
@@ -197,7 +197,7 @@ def test_skip_path_consumes_override_even_if_task_run_write_fails(env, monkeypat
 def test_persistence_failure_never_turns_a_successful_task_into_a_failure(env, monkeypatch):
     """Spec §4.1: celery-manager must never be the reason a task's reported
     outcome changes."""
-    app, Session, echo, calls = env
+    _app, _Session, echo, calls = env
 
     def exploding_upsert(*args, **kwargs):
         raise RuntimeError("storage is down")
@@ -214,7 +214,7 @@ def test_persistence_failure_never_turns_a_successful_task_into_a_failure(env, m
 def test_persistence_failure_still_propagates_a_real_task_exception(env, monkeypatch):
     """The mirror of the above: swallowing storage errors must not swallow
     the task's own exception."""
-    app, Session, echo, calls = env
+    app, _Session, _echo, _calls = env
 
     @app.task(name="demo.boom2", bind=True)
     @track()
@@ -236,7 +236,7 @@ def test_persistence_failure_still_propagates_a_real_task_exception(env, monkeyp
 def test_unconfigured_decorator_still_runs_the_task_body(env, monkeypatch):
     """The common single-process/eager-testing case (no listener, never
     configured) must keep working exactly as before: pass-through, no raise."""
-    app, Session, echo, calls = env
+    _app, Session, echo, calls = env
     monkeypatch.setattr(decorator_module, "_session_factory", None)
 
     result = echo.apply(args=["hi"])
@@ -260,7 +260,7 @@ def test_unconfigured_decorator_still_runs_the_task_body(env, monkeypatch):
 def test_started_row_exists_while_the_task_is_mid_flight(env):
     """The assertion that actually proves the feature: the row is readable
     from another session *during* the body, not merely afterwards."""
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
     seen = {}
 
     @app.task(name="demo.slow", bind=True)
@@ -293,7 +293,7 @@ def test_terminal_status_still_wins_over_the_started_row(env):
     """started -> succeeded / failed, on one row, in that order. The two
     writes happen in the same thread around the body, so the terminal one
     always lands last."""
-    app, Session, echo, calls = env
+    app, Session, echo, _calls = env
 
     echo.apply(args=["hi"], task_id="terminal-1")
 
@@ -319,7 +319,7 @@ def test_started_row_upserts_onto_a_listener_row_without_clobbering_it(env):
     write rather than the last: the listener may already have inserted this
     uuid from task-sent/task-started, so the started write must merge (one
     row, listener-owned worker/queue intact), not insert."""
-    app, Session, echo, calls = env
+    _app, Session, echo, _calls = env
     task_id = "started-vs-listener-1"
 
     with Session() as session:
@@ -342,7 +342,7 @@ def test_a_skipped_run_never_reports_itself_as_started(env):
     """The started write sits after the skip-check, so a paused occurrence
     goes straight to `skipped` and never flickers through `started` — which
     matters because the listener guards `skipped` and nothing else."""
-    app, Session, echo, calls = env
+    _app, Session, echo, calls = env
     with Session() as session:
         session.add(ScheduleOverride(
             schedule_name="demo-every-2h",
@@ -365,7 +365,7 @@ def test_a_skipped_run_never_reports_itself_as_started(env):
 def test_a_failed_started_write_does_not_stop_the_run_or_the_final_write(env, monkeypatch):
     """Fail-open, on the new write too: if the up-front row cannot be stored,
     the body still runs and the outcome is still recorded."""
-    app, Session, echo, calls = env
+    _app, Session, echo, calls = env
     real_upsert = decorator_module._upsert_task_run
     attempts = []
 
@@ -401,7 +401,7 @@ def test_unserializable_args_do_not_stop_the_task_body(env):
     from decimal import Decimal
     from uuid import UUID
 
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
     ran = []
 
     @app.task(name="demo.exotic_args", bind=True)
@@ -432,7 +432,7 @@ def test_unserializable_args_do_not_stop_the_task_body(env):
 
 
 def test_a_hostile_object_in_kwargs_still_does_not_stop_the_task(env):
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
 
     class Hostile:
         def __repr__(self):
@@ -458,7 +458,7 @@ def test_a_celery_retry_is_recorded_as_retried_not_failed(env):
     subclass. Caught by the generic failure branch it recorded a run Celery
     considers RETRY as `failed`, with "Retry in 30s: ..." sitting in the
     exception column and a finish time for a run that had not finished."""
-    app, Session, echo, calls = env
+    app, _Session, _echo, _calls = env
     writes = []
 
     @app.task(name="demo.retrier", bind=True, max_retries=2, default_retry_delay=0)
@@ -493,7 +493,7 @@ def test_a_new_attempt_clears_the_previous_attempts_outcome(env):
     without the explicit `clear`, a run that failed once and then succeeded
     kept the failure's exception, traceback and progress counters and
     rendered as `succeeded` with a traceback attached."""
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
     attempts = []
 
     @app.task(name="demo.autoretry", bind=True,
@@ -522,7 +522,7 @@ def test_clearing_on_a_new_attempt_never_touches_listener_owned_fields(env):
     """The `clear` list is deliberately limited to what the decorator itself
     writes. worker/queue belong to the events listener and must survive every
     attempt."""
-    app, Session, echo, calls = env
+    _app, Session, echo, _calls = env
     task_id = "clear-vs-listener-1"
 
     with Session() as session:
@@ -549,7 +549,7 @@ def test_clearing_on_a_new_attempt_never_touches_listener_owned_fields(env):
 
 
 def test_track_on_an_unbound_task_still_runs_the_body(env):
-    app, Session, echo, calls = env
+    app, _Session, _echo, _calls = env
     ran = []
 
     @app.task(name="demo.unbound")  # deliberately not bind=True
@@ -570,7 +570,7 @@ def test_track_on_an_unbound_task_records_the_real_name_and_uuid(env):
     `progress._resolve_run` uses) means an unbound task is recorded properly,
     not merely without crashing: real registered name, real uuid, and all of
     its arguments — none of which is args[0]-is-self."""
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
 
     @app.task(name="demo.unbound_named")
     @track()
@@ -590,7 +590,7 @@ def test_track_on_an_unbound_task_with_a_first_arg_that_looks_bound(env):
     """The old positional assumption was type-dependent: an argument that
     happened to expose `.request` would have been silently mistaken for the
     task instance and dropped from the recorded args."""
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
 
     class LooksLikeATask:
         request = object()
@@ -621,7 +621,7 @@ def test_an_exception_whose_str_raises_does_not_displace_the_real_failure(env):
     replaced the task's own exception — the caller saw a RuntimeError from
     celery-manager instead of their failure, and the row stayed at
     `started`."""
-    app, Session, echo, calls = env
+    app, Session, _echo, _calls = env
 
     @app.task(name="demo.bad_str", bind=True)
     @track()

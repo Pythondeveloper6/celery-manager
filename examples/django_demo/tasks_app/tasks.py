@@ -3,12 +3,12 @@ import random
 import time
 
 from celery import shared_task
+from demo.celery import app as celery_app
 from django.conf import settings
 
 import celery_manager
 from celery_manager import report_progress
 from celery_manager.config import CeleryManagerConfig
-from demo.celery import app as celery_app
 
 # This module is imported by the Celery WORKER process, which is where the
 # @celery_manager.track() tasks below actually execute — so this is the
