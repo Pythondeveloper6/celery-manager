@@ -460,7 +460,7 @@ dispatches through the same `start_task` call underneath.
 
 | Method | Path | Auth | Response |
 |---|---|---|---|
-| `GET` | `/api/stream` | required | `text/event-stream`. Each event is `data: {"task_id": str, "type": str}\n\n` (default `message` event name, no custom `event:` field), one line per Celery task-lifecycle event forwarded from the events listener (`task-sent`, `task-received`, `task-started`, `task-succeeded`, `task-failed`, `task-retried`, `task-revoked`) plus any other event types the listener chooses to publish. Connection stays open indefinitely; the client (dashboard) reconnects with the browser's native `EventSource` retry behavior. |
+| `GET` | `/api/stream` | required | `text/event-stream`. Opens with a `: connected` comment frame, then sends one `data: {"type": "task-updated", "task_id": str, "status": str, "updated_at": str}\n\n` event (default `message` event name, no custom `event:` field) per changed `task_runs` row, and a `: keepalive` comment every 15 seconds while idle. Connection stays open indefinitely; the client (dashboard) reconnects with the browser's native `EventSource` retry behavior. |
 
 Like every other endpoint on this page, it returns `401` without a valid
 session cookie. (Development builds before 0.1.0a1 had no auth on it at all.) The browser's
@@ -468,26 +468,37 @@ session cookie. (Development builds before 0.1.0a1 had no auth on it at all.) Th
 which is what the dashboard does.
 
 The dashboard's task list subscribes to this stream and refetches
-`/api/tasks` on every event rather than applying the event to its local
-state directly — see [Dashboard](dashboard.md).
+`/api/tasks` when events arrive (coalesced to at most one refetch a second)
+rather than applying them to its local state directly; a task's detail page
+refetches that one run when an event names it — see
+[Dashboard](dashboard.md).
 
-### Known limitation: SSE does not currently work across processes
+### How changes reach the stream
 
-`EventBus` (`celery_manager.api.sse`) is an **in-memory** fan-out living
-inside the API process. The only thing that publishes to it is
-`EventListener`, which the documented deployment runs as a **separate OS
-process** (`celery-manager events`). A separate process cannot reach another
-process's in-memory queues, so in a standard deployment `/api/stream`
-connects successfully, stays open — and never delivers an event.
+Most writes worth announcing happen outside the API process: the events
+listener (`celery-manager events`) and the workers (`@track`,
+`report_progress()`) are separate OS processes. They don't publish anything
+themselves. Instead every write to a run bumps its `task_runs.updated_at`
+column, and each API process polls the database for rows whose
+`updated_at` moved on since it last looked, then pushes one event per row
+to its own connected browsers. So the stream works with the listener in its
+own process, with several API processes behind a load balancer, and without
+any broker or extra infrastructure. The database is the only shared piece.
 
-Because of that, the dashboard's task list **also polls `/api/tasks` every 5
-seconds**, which is what actually keeps it current today. Updates are
-therefore near-live (a few seconds) rather than push-instant. Nothing is
-silently broken from a user's point of view, but don't build on `/api/stream`
-as a reliable delivery mechanism yet.
-
-The fix — backing the bus with Redis pub/sub, or running the listener
-in-process as a background task of the API app — is a tracked backlog item
-(see `plan.md`, "Cross-process SSE delivery"). It is also what would make SSE
-work across more than one API worker behind a load balancer, which has the
-same root cause.
+- **Interval.** The poll runs every
+  [`live_poll_interval_seconds`](configuration.md) (default 1.0), so an
+  event reaches the browser up to about a second after the write commits.
+- **Only while someone is watching.** One poller thread per API process
+  starts with the first `/api/stream` connection and stops when the last
+  one closes. No lifespan hooks are involved, so this works the same when
+  the app is mounted inside a host application.
+- **Cost.** Each poll is one or two small queries on the indexed
+  `updated_at` column (a bounded batch, `(updated_at, id)` keyset paging).
+- **Ordering and duplicates.** A row written several times between two
+  polls produces one event carrying its latest status. Each poll also
+  re-reads the last few seconds, which catches transactions that commit
+  later than their timestamp and writers whose clocks are slightly skewed,
+  and drops anything it has already sent.
+- **No replay.** A connection gets changes from the moment it opens, not
+  the ones it missed while disconnected. Clients should refetch on
+  (re)connect, as the dashboard does.
