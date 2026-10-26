@@ -8,6 +8,9 @@ from fastapi.staticfiles import StaticFiles
 
 from celery_manager.api.deps import get_current_user
 from celery_manager.api.routes import (
+    analytics as analytics_routes,
+)
+from celery_manager.api.routes import (
     audit as audit_routes,
 )
 from celery_manager.api.routes import (
@@ -71,6 +74,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(schedule_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(analytics_routes.router)
 
     @app.get("/api/stream")
     def stream(request: Request, username: str = Depends(get_current_user)):
