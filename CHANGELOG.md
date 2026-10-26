@@ -151,10 +151,27 @@ All notable changes to celery-manager are recorded here. The format follows
   command (`--check` reports status and exits 1 if an upgrade is needed).
   The version is kept in `celery_manager_alembic_version`, so it doesn't
   clash with a host app's own Alembic history. New dependency: `alembic`.
-  This release's only schema change adds two nullable columns,
-  `periodic_schedules.paused_at` and `paused_by`. The database user needs DDL
+  This release's schema changes are migrations `0002`–`0005`: schedule pause
+  (`paused_at`, `paused_by`), workflow lineage (`parent_id`, `root_id`,
+  `group_id`), `paused_until`, and `task_runs.updated_at`. The database user needs DDL
   rights when a release includes a migration, or run `migrate` with a user
   that has them. See [Schema and upgrades](docs/configuration.md#schema-and-upgrades).
+- **Live updates now work when the events listener runs as a separate
+  process.** Previously `/api/stream` connected and then sent nothing in the
+  documented deployment, and the dashboard only kept up by polling. Each API
+  process now polls a change feed in the database: a new indexed
+  `task_runs.updated_at` column that every write path bumps (migration
+  `0005`, backfilled from each run's latest timestamp). Changes made by the
+  listener, `@track`, `report_progress()` and retry/start reach the browser
+  within about a second, with several API processes too, and no new
+  infrastructure. Polling happens only while a dashboard is connected; the
+  new `live_poll_interval_seconds` config field (default `1.0`) sets the
+  interval. Stream events are now `{"type": "task-updated", "task_id",
+  "status", "updated_at"}`, one per changed run. The task list and task
+  detail pages poll only while the stream is down, and the header indicator
+  shows **Live** only while it is actually connected (**Reconnecting**
+  otherwise). `EventListener` no longer publishes events itself; its
+  `event_bus` argument is ignored.
 
 ## [0.1.0a3] — 2026-10-25
 
