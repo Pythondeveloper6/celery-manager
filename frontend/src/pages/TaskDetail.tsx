@@ -328,7 +328,11 @@ export function TaskDetail() {
         <>
           <header className="cm-detail-header">
             <div className="cm-detail-titles">
-              <h1 className="cm-page-title">{task.task_name}</h1>
+              <h1 className="cm-page-title">
+                <Link to={`/task-types/${encodeURIComponent(task.task_name)}`} className="cm-title-link" title="Trends and errors for this task">
+                  {task.task_name}
+                </Link>
+              </h1>
               <div className="cm-detail-sub">
                 <StatusBadge status={task.status} />
                 <code className="cm-detail-id">{task.task_id}</code>
