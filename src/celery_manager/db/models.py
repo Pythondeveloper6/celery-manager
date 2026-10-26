@@ -71,9 +71,7 @@ class PeriodicSchedule(Base):
     # recorded as `skipped` and the body does not run (see
     # `celery_manager.decorator`). Deliberately separate from `enabled`,
     # which `sync_periodic_schedules` owns and rewrites on every startup:
-    # an operator's pause must survive a restart. Both columns are nullable
-    # so `init_db()`'s additive upgrade can add them to an existing table
-    # (see `celery_manager.db.session._ADDITIVE_COLUMNS`).
+    # an operator's pause must survive a restart. Added by migration 0002.
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paused_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -110,8 +108,7 @@ class AppSetting(Base):
     never reach this table.
 
     Key/value rather than a one-row typed table so adding a setting later is
-    a write, not a schema migration — which matters while `init_db()` is
-    still `create_all`-only (see the Backlog's Alembic item).
+    a write, not a schema migration.
     """
 
     __tablename__ = "app_settings"

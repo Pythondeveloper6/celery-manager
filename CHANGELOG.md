@@ -79,12 +79,20 @@ All notable changes to celery-manager are recorded here. The format follows
   strip (one bar per run, coloured by status), status tabs and a search and
   filter bar. Task detail puts the failure and logs first with execution
   details alongside. Tables stack on narrow screens.
-- **Schema:** `periodic_schedules` gains two nullable columns, `paused_at`
-  and `paused_by`. `init_db()` now adds a known list of nullable columns to
-  an existing database itself (`ALTER TABLE ... ADD COLUMN`), so upgrading
-  needs no manual DDL — but the database user needs `ALTER` permission on
-  that table the first time the new version starts. Other schema changes
-  still aren't migrated.
+- **Schema migrations with Alembic.** celery-manager's tables are now
+  versioned, and the migrations ship inside the package (no `alembic.ini`
+  needed). By default `init_db()` upgrades the database at startup, under a
+  lock so the API, workers and listener can start together. Databases from
+  0.1.0a1–0.1.0a3 are adopted automatically and keep their data. The new
+  `auto_migrate` config field (default `True`) turns this off for teams that
+  migrate as a deploy step with the new `celery-manager migrate --db-url ...`
+  command (`--check` reports status and exits 1 if an upgrade is needed).
+  The version is kept in `celery_manager_alembic_version`, so it doesn't
+  clash with a host app's own Alembic history. New dependency: `alembic`.
+  This release's only schema change adds two nullable columns,
+  `periodic_schedules.paused_at` and `paused_by`. The database user needs DDL
+  rights when a release includes a migration, or run `migrate` with a user
+  that has them. See [Schema and upgrades](docs/configuration.md#schema-and-upgrades).
 
 ## [0.1.0a3] — 2026-10-25
 
