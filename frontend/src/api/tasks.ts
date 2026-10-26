@@ -37,6 +37,10 @@ export interface TaskDetail extends TaskSummary {
   // operator can retry the same failed run more than once.
   retried_from_id: string | null;
   retried_by: string[];
+  // Workflow lineage (chain/group/chord) from Celery; null for a standalone run.
+  parent_id: string | null;
+  root_id: string | null;
+  group_id: string | null;
 }
 
 export interface TaskPage {
