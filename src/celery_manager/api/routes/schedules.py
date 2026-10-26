@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from celery_manager.api.deps import get_current_user
 from celery_manager.api.serialization import utc
 from celery_manager.control.schedules import (
+    is_paused,
     list_periodic_schedules,
     list_upcoming_with_overrides,
     pause_occurrence,
@@ -72,19 +73,35 @@ def _schedule_summary(s) -> dict:
         "task_name": s.task_name,
         "schedule_spec": s.schedule_spec,
         "enabled": s.enabled,
-        "paused": s.paused_at is not None,
+        "paused": is_paused(s),
         "paused_at": utc(s.paused_at),
         "paused_by": s.paused_by,
+        "paused_until": utc(s.paused_until),
     }
 
 
+class PauseScheduleRequest(BaseModel):
+    # Optional auto-resume time. Naive = UTC. Must be in the future (422 otherwise).
+    until: datetime | None = None
+
+
 @router.post("/{name}/pause")
-def pause_whole_schedule(name: str, request: Request, username: str = Depends(get_current_user)):
-    """Pause every firing of this schedule until resumed. Idempotent: a
-    second pause returns the original pause's `paused_at`/`paused_by`."""
+def pause_whole_schedule(
+    name: str,
+    request: Request,
+    payload: PauseScheduleRequest | None = None,
+    username: str = Depends(get_current_user),
+):
+    """Pause every firing of this schedule until resumed, or until the
+    optional body `{"until": <iso>}`. Idempotent: repeating the pause keeps
+    the original `paused_at`/`paused_by`; a different `until` only moves the
+    end time."""
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
-        row = pause_schedule(session, name, username)
+        try:
+            row = pause_schedule(session, name, username, until=payload.until if payload else None)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="`until` must be a time in the future.") from exc
         if row is None:
             raise HTTPException(status_code=404, detail="Unknown schedule.")
         return _schedule_summary(row)
