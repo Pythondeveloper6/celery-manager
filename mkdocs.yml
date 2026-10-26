@@ -103,6 +103,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Features: features.md
   - Guide:
       - Quickstart: quickstart.md
       - Integrating with your app: integrations.md

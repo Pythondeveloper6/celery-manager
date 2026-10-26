@@ -236,6 +236,7 @@ immediately appear logged out.
 Full documentation is at **<https://pythondeveloper6.github.io/celery-manager/>** (source in [`docs/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/docs/), an MkDocs Material site — run
 `mkdocs serve` after `pip install -e ".[docs]"`):
 
+- [Features](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/features.md) — everything it does, in plain words.
 - [Quickstart](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md) — install through first sign-in.
 - [The `@track` decorator](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/decorator.md) — wiring, skip/cancel, logs.
 - [Live progress](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/progress.md) — reporting progress from inside a task.

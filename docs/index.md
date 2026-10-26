@@ -39,7 +39,8 @@ pip install --pre celery-manager
 ```
 
 Then mount the dashboard into your existing app and start the events listener next
-to your workers. The [Quickstart](quickstart.md) walks through install, the required
+to your workers. For a plain-language tour of everything it does, see
+[Features](features.md). The [Quickstart](quickstart.md) walks through install, the required
 Celery settings, creating the first user and signing in.
 
 ## What you get
@@ -85,19 +86,54 @@ Celery settings, creating the first user and signing in.
 
     ---
 
-    Cancel, terminate and retry tasks (single or bulk) from the UI, and start them through the API, with retry lineage recorded in both
-    directions on the detail view.
+    Start any registered task, cancel or terminate runs, and retry them as they
+    were or with edited arguments, one at a time or in bulk.
 
-    [:octicons-arrow-right-24: REST API](rest-api.md)
+    [:octicons-arrow-right-24: Features](features.md#act-on-tasks)
 
--   :material-calendar-remove-outline:{ .lg .middle } **Per-occurrence schedule pause**
+-   :material-calendar-remove-outline:{ .lg .middle } **Schedule control**
 
     ---
 
-    The feature this project exists for: skip or cancel one future run of a periodic
-    task, leaving the schedule itself untouched.
+    The feature this project exists for: skip one future run of a periodic task,
+    or pause the whole schedule until you resume it or until a set time.
 
-    [:octicons-arrow-right-24: Schedules](dashboard.md)
+    [:octicons-arrow-right-24: Schedules](features.md#control-periodic-tasks-beat-schedules)
+
+-   :material-file-tree-outline:{ .lg .middle } **Workflows**
+
+    ---
+
+    Chains, groups and chords shown as a tree on each run's page, so you can see
+    which step failed.
+
+    [:octicons-arrow-right-24: Workflow card](dashboard.md#workflow-card)
+
+-   :material-chart-line:{ .lg .middle } **Insights**
+
+    ---
+
+    Volume, success rate and runtimes over time, a page per task, and failures
+    grouped by cause with retry-all.
+
+    [:octicons-arrow-right-24: Insights](insights.md)
+
+-   :material-server-outline:{ .lg .middle } **Workers and queues**
+
+    ---
+
+    Live worker state and controls, runtime rate limits, queue depth and purge.
+
+    [:octicons-arrow-right-24: Workers](workers.md) · [Queues](queues.md)
+
+-   :material-share-variant-outline:{ .lg .middle } **Share and export**
+
+    ---
+
+    Filters live in the URL, saved views, and CSV or JSON export of any filtered
+    list.
+
+    [:octicons-arrow-right-24: Dashboard](dashboard.md#filters-live-in-the-url)
 
 -   :material-clipboard-text-clock-outline:{ .lg .middle } **Audit log**
 
