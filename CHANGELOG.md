@@ -32,6 +32,19 @@ All notable changes to celery-manager are recorded here. The format follows
   A paused schedule's page shows who paused it and when, and marks upcoming
   runs as "Will be skipped".
 
+- **Start a task from the dashboard.** A **Start task** button on the Task
+  runs page opens a sheet with a searchable task picker, args/kwargs JSON
+  editors prefilled from the task's signature with live validation, and an
+  optional queue and countdown/ETA; submitting opens the new run. New
+  `GET /api/tasks/registered` lists registered tasks (excluding `celery.*`)
+  with best-effort signature, queue and docstring summary.
+  `POST /api/tasks/start` now accepts optional `queue`, `countdown` and `eta`,
+  and seeds a `queued` run row so the run's page exists straight away.
+- **Retry with changed arguments.** `POST /api/tasks/{id}/retry` takes an
+  optional `{"args", "kwargs"}` body (no body behaves as before); retry
+  lineage is recorded as usual and the audit row notes the edit and the
+  arguments sent. The task detail page gains **Retry with changes**.
+
 ### Changed
 
 - **Dashboard redesign.** shadcn/ui-style look (zinc theme, Geist fonts) in

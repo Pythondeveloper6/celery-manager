@@ -77,12 +77,80 @@ export async function getTask(taskId: string): Promise<TaskDetail> {
   return response.json();
 }
 
-export async function retryTask(taskId: string): Promise<{ new_task_id: string }> {
+// FastAPI reports validation failures as `detail: [{loc, msg}]` and other
+// refusals as `detail: "text"`; either way the operator should see words.
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    const detail = body?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((d: { loc?: unknown[]; msg?: string }) => `${(d.loc ?? []).slice(1).join(".")}: ${d.msg}`)
+        .join("; ");
+    }
+  } catch {
+    // not JSON; fall through
+  }
+  return fallback;
+}
+
+// With no overrides this is a plain retry with the stored arguments. Passing
+// `args` and/or `kwargs` re-dispatches with those instead (and is audited as
+// an edited retry); a field left undefined keeps the stored value.
+export async function retryTask(
+  taskId: string,
+  overrides?: { args?: unknown[]; kwargs?: Record<string, unknown> },
+): Promise<{ new_task_id: string }> {
   const response = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}/retry`, {
     method: "POST",
     credentials: "include",
+    ...(overrides ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) } : {}),
   });
-  if (!response.ok) throw new Error("Retry failed.");
+  if (!response.ok) throw new Error(await errorMessage(response, "Retry failed."));
+  return response.json();
+}
+
+export interface SignatureParam {
+  name: string;
+  kind: "positional" | "keyword_only" | "var_args" | "var_kwargs";
+  required: boolean;
+  has_default?: boolean;
+  default: unknown;
+  annotation: string | null;
+}
+
+export interface RegisteredTask {
+  name: string;
+  // null when the task's signature could not be inspected.
+  signature: SignatureParam[] | null;
+  queue: string | null;
+  doc: string | null;
+}
+
+export async function listRegisteredTasks(): Promise<RegisteredTask[]> {
+  const response = await fetch(`${BASE}/tasks/registered`, { credentials: "include" });
+  if (!response.ok) throw new Error("Couldn't load the registered tasks.");
+  return (await response.json()).items;
+}
+
+export interface StartTaskRequest {
+  task_name: string;
+  args: unknown[];
+  kwargs: Record<string, unknown>;
+  queue?: string;
+  countdown?: number;
+  eta?: string;
+}
+
+export async function startTask(request: StartTaskRequest): Promise<{ task_id: string }> {
+  const response = await fetch(`${BASE}/tasks/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response, "Couldn't start the task."));
   return response.json();
 }
 
