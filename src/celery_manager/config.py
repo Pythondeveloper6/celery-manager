@@ -29,6 +29,11 @@ class CeleryManagerConfig:
         thought about it with a cookie leakable over plain HTTP. Set it to
         False only for local HTTP development, where there is no HTTPS to
         send it over.
+    inspect_timeout_seconds: how long the Workers page (and the worker
+        control endpoints) wait for workers to answer a broadcast
+        (`inspect()`, `pool_grow`, `rate_limit`, ...). Kept short because
+        the request blocks for it: a worker that hasn't answered within a
+        second is, for an operator, effectively offline.
     """
 
     celery_app: Celery
@@ -36,3 +41,4 @@ class CeleryManagerConfig:
     secret_key: str = "change-me"
     eta_tolerance_seconds: int = 60
     cookie_secure: bool = True
+    inspect_timeout_seconds: float = 1.0
