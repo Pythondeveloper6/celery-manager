@@ -9,6 +9,7 @@ import {
   IconLogOut,
   IconPanelLeft,
   IconScrollText,
+  IconServer,
   IconSettings,
   IconX,
 } from "./icons";
@@ -32,6 +33,7 @@ const NAV_ITEMS: { to: string; end?: boolean; label: string; icon: ComponentType
   { to: "/", end: true, label: "Tasks", icon: IconListChecks },
   { to: "/schedules", label: "Schedules", icon: IconCalendarClock },
   { to: "/audit", label: "Audit log", icon: IconScrollText },
+  { to: "/workers", label: "Workers", icon: IconServer },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
 
@@ -66,6 +68,7 @@ function useIsMobile(): boolean {
 function sectionLabel(pathname: string): string {
   if (pathname.startsWith("/schedules")) return "Schedules";
   if (pathname.startsWith("/audit")) return "Audit log";
+  if (pathname.startsWith("/workers")) return "Workers";
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname === "/" || pathname.startsWith("/tasks")) return "Tasks";
   return "";
