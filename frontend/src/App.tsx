@@ -10,6 +10,7 @@ import { ScheduleList } from "./pages/ScheduleList";
 import { ScheduleOccurrences } from "./pages/ScheduleOccurrences";
 import { AuditLog } from "./pages/AuditLog";
 import { Settings } from "./pages/Settings";
+import { Workers } from "./pages/Workers";
 
 // Unmatched hash paths render a real page inside the shell rather than a
 // blank body, which reads as a broken app rather than a bad URL.
@@ -104,6 +105,7 @@ export function App() {
           <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
           <Route path="/audit" element={<AuditLog />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/workers" element={<Workers />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AppShell>
