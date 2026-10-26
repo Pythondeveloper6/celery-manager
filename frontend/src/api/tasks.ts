@@ -176,26 +176,67 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
   return response.json();
 }
 
+/** One changed `task_runs` row, as the API's change feed saw it. The feed
+ *  hears every writer — the events listener and workers included, which run
+ *  in other processes — because it polls the database, not an in-memory bus. */
 export interface TaskEvent {
   task_id: string;
   type: string;
+  status?: string;
+  updated_at?: string;
 }
 
-export function subscribeToUpdates(onEvent: (event: TaskEvent) => void): () => void {
-  const source = new EventSource(`${BASE}/stream`, { withCredentials: true });
-  source.onmessage = (message) => {
-    // A frame that isn't JSON — a proxy injecting a keep-alive comment as
-    // data, a truncated write — used to throw straight out of the event
-    // handler as an uncaught error. One bad frame is not a reason to make
-    // noise in the console of a dashboard left open all day; the next good
-    // frame, or the poll running alongside this, refreshes the list anyway.
-    let event: TaskEvent;
-    try {
-      event = JSON.parse(message.data);
-    } catch {
-      return;
-    }
-    onEvent(event);
+/** "connecting" until the first open, "connected" while the stream is up,
+ *  "reconnecting" from the moment it drops until it is back. Callers use it
+ *  to decide whether to poll instead, and to show an honest "Live" badge. */
+export type StreamState = "connecting" | "connected" | "reconnecting";
+
+// How long to wait before rebuilding a stream the browser gave up on.
+const RECONNECT_DELAY_MS = 5000;
+
+export function subscribeToUpdates(
+  onEvent: (event: TaskEvent) => void,
+  onState?: (state: StreamState) => void
+): () => void {
+  let source: EventSource | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+
+  const connect = () => {
+    source = new EventSource(`${BASE}/stream`, { withCredentials: true });
+    source.onopen = () => onState?.("connected");
+    source.onerror = () => {
+      onState?.("reconnecting");
+      // EventSource retries a dropped connection by itself, but gives up for
+      // good (readyState CLOSED) on a non-200 answer — a restart's 502, an
+      // expired session's 401. Rebuild it ourselves after a pause, so a
+      // dashboard left open recovers instead of polling forever.
+      if (source?.readyState === EventSource.CLOSED && !closed) {
+        source.close();
+        retryTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+      }
+    };
+    source.onmessage = (message) => {
+      // A frame that isn't JSON — a proxy injecting a keep-alive comment as
+      // data, a truncated write — used to throw straight out of the event
+      // handler as an uncaught error. One bad frame is not a reason to make
+      // noise in the console of a dashboard left open all day; the next good
+      // frame refreshes the list anyway.
+      let event: TaskEvent;
+      try {
+        event = JSON.parse(message.data);
+      } catch {
+        return;
+      }
+      onEvent(event);
+    };
   };
-  return () => source.close();
+
+  onState?.("connecting");
+  connect();
+  return () => {
+    closed = true;
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    source?.close();
+  };
 }
