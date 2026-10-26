@@ -9,7 +9,9 @@ from celery_manager.api.deps import get_current_user
 from celery_manager.api.serialization import utc, utc_bound
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
+    BulkCancelTooLarge,
     TaskRunNotFound,
+    bulk_cancel,
     bulk_retry,
     cancel_task,
     count_task_runs,
@@ -202,3 +204,50 @@ def retry_bulk(payload: BulkRetryRequest, request: Request, username: str = Depe
         except TaskRunNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc))
     return {"new_task_ids": new_ids}
+
+
+class BulkCancelFilter(BaseModel):
+    status: str | None = None
+    task_name: str | None = None
+    q: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+
+
+class BulkCancelRequest(BaseModel):
+    task_ids: list[str] | None = None
+    filter: BulkCancelFilter | None = None
+    terminate: bool = False
+    dry_run: bool = False
+
+
+@router.post("/cancel-bulk")
+def cancel_bulk(payload: BulkCancelRequest, request: Request, username: str = Depends(get_current_user)):
+    """Revoke a selection of runs, or every cancellable run matching a filter.
+
+    Exactly one of `task_ids` / `filter` is required — an empty body must not
+    mean "everything". The filter takes the same fields as `GET /api/tasks`,
+    through the same filter chain. More than `MAX_BULK_CANCEL` targets is a
+    400 with nothing revoked; see `bulk_cancel` for why that is refused
+    rather than truncated.
+    """
+    if (payload.task_ids is None) == (payload.filter is None):
+        raise HTTPException(status_code=400, detail="send exactly one of task_ids or filter")
+    filters = None
+    if payload.filter is not None:
+        f = payload.filter
+        filters = {
+            "status": f.status, "task_name": f.task_name, "q": f.q,
+            "date_from": utc_bound(f.date_from), "date_to": utc_bound(f.date_to),
+        }
+    celery_app = request.app.state.cm_config.celery_app
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        try:
+            return bulk_cancel(
+                celery_app, session, username=username,
+                task_ids=payload.task_ids, filters=filters,
+                terminate=payload.terminate, dry_run=payload.dry_run,
+            )
+        except BulkCancelTooLarge as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
