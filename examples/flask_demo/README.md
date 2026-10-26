@@ -33,7 +33,8 @@ celery-manager events --celery-app celery_app:app --db-url sqlite:///celery_mana
 flask --app app run --port 8000
 ```
 
-Open <http://localhost:8000/celery-manager/> and sign in. Trigger work with
+Open <http://localhost:8000/celery-manager/> and sign in. Trigger work from the
+dashboard (**Tasks** -> **Start task**) or with
 `curl -X POST localhost:8000/welcome/me@example.com` or
 `curl -X POST localhost:8000/import/60`.
 
