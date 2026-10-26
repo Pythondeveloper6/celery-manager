@@ -113,19 +113,19 @@ working tree. To add a revision, from the repo root:
 rm -f alembic-scratch.db
 venv/bin/alembic upgrade head          # scratch DB at the current latest revision
 # ...edit src/celery_manager/db/models.py...
-venv/bin/alembic revision --autogenerate --rev-id 0003 -m "schedule paused_until"
+venv/bin/alembic revision --autogenerate --rev-id 0005 -m "add my_column"
 venv/bin/alembic upgrade head && venv/bin/alembic check   # applies cleanly, no diff left
 ```
 
-That writes `versions/0003_schedule_paused_until.py`. Then:
+That writes `versions/0005_add_my_column.py`. Then:
 
 - **Read the generated file.** Autogenerate misses some changes (renames
   become drop + add, and server defaults and some constraint changes
   aren't detected), so fix it by hand where needed. Tidy the
   `# ### commands auto generated` markers.
-- **Revision IDs are sequential, four digits** (`--rev-id 0003`, `0004`, ...),
-  and `down_revision` is the previous one. If two branches both add `0003`,
-  whichever merges second renumbers its revision to `0004` (file name,
+- **Revision IDs are sequential, four digits** (`0001`, `0002`, ...),
+  and `down_revision` is the previous one. If two branches both add the same ID,
+  whichever merges second renumbers its revision to the next free ID (file name,
   `revision`, `down_revision`). `test_revision_history_is_linear` fails while
   there are two heads.
 - **Keep upgrades safe on a live table.** A new column on an existing table

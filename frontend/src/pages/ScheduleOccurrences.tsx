@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { listOccurrences, listSchedules, pauseOccurrence, type Occurrence, type PauseAction, type ScheduleSummary } from "../api/schedules";
 import { IconChevronLeft } from "../components/icons";
 import { ScheduleToggle } from "../components/ScheduleToggle";
-import { formatPausedBy } from "../lib/pausedBy";
+import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 
 // Keyed by PauseAction rather than a bare string, so adding an action to the
 // API without giving it a label here is a compile error instead of a blank
@@ -148,7 +148,10 @@ export function ScheduleOccurrences() {
         <div className="cm-alert" role="status">
           <div className="cm-stack">
             <p>
-              <strong>This schedule is paused.</strong> Every firing is skipped until you resume it.
+              <strong>{formatPauseState(schedule.paused_until)}.</strong>{" "}
+              {schedule.paused_until
+                ? "Firings before then are skipped; after that it resumes by itself."
+                : "Every firing is skipped until you resume it."}
               {formatPausedBy(schedule.paused_by, schedule.paused_at) && (
                 <> Paused {formatPausedBy(schedule.paused_by, schedule.paused_at)}.</>
               )}

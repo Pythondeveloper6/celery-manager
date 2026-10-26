@@ -82,6 +82,11 @@ class PeriodicSchedule(Base):
     # an operator's pause must survive a restart. Added by migration 0002.
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paused_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Optional auto-resume time (migration 0003). With `paused_at` set, the
+    # schedule is paused only while `paused_until` is NULL (indefinite) or
+    # still in the future; no job clears it — readers compute it and lazily
+    # reset the stale pause (`control.schedules.expire_stale_pause`).
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ScheduleOverride(Base):

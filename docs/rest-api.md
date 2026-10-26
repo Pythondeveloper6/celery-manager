@@ -309,7 +309,27 @@ at run time, not by beat — celery-manager does not own your beat process:
   happened and was skipped either way); skips for occurrences after the
   resume stay in place.
 - **Restarts don't undo it.** The pause lives in `periodic_schedules.paused_at`
-  / `paused_by`, which the startup sync from `beat_schedule` leaves alone.
+  / `paused_by` / `paused_until`, which the startup sync from `beat_schedule`
+  leaves alone.
+- **Pause until a time.** `pause` accepts an optional JSON body
+  `{"until": "<ISO 8601>"}` (a naive timestamp is UTC; no body pauses
+  indefinitely, as before). `until` must be in the future, otherwise `422`.
+  A schedule is paused while `paused_at` is set **and** `paused_until` is
+  null or still ahead; once it passes, firings run normally with no
+  background job. The next reader (a run reaching the decorator, or
+  `GET /api/schedules` / `.../occurrences`) clears the stale pause and writes
+  one `resume_schedule` audit row from user `system` with
+  `details.automatic: true` (exactly once, even with concurrent readers).
+  Pausing an already-paused schedule with a different `until` (or none, to
+  make it indefinite) moves only the end time and is audited as
+  `pause_schedule` with `details.updated: true` and `previous_until`; the
+  same `until` is a no-op.
+- **Payloads.** `GET /api/schedules` and the pause/resume responses include
+  `paused_until` (UTC, or `null`); `paused` is the effective state, so a
+  timed pause that has ended reports `false`. In `GET .../occurrences`, each
+  occurrence's `paused` is per occurrence: `true` only if the schedule is
+  paused and the occurrence falls before `paused_until` (or the pause is
+  indefinite).
 - Same protections as every other state-changing endpoint: a session is
   required and a cross-origin `Origin` is refused with a `403`.
 

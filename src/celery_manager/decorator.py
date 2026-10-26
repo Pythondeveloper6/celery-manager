@@ -78,14 +78,27 @@ def _schedule_is_paused(session, schedule_name: str) -> bool:
     """True if the whole schedule is paused (`pause_schedule`). Unknown
     names — a `@track`ed task that is not in `beat_schedule` at all, or one
     whose `schedule_name` doesn't match a beat key — are never paused."""
+    from celery_manager.control.schedules import expire_stale_pause
     from celery_manager.db.models import PeriodicSchedule
 
-    paused_at = (
-        session.query(PeriodicSchedule.paused_at)
+    row = (
+        session.query(PeriodicSchedule.paused_at, PeriodicSchedule.paused_until)
         .filter_by(name=schedule_name)
-        .scalar()
+        .one_or_none()
     )
-    return paused_at is not None
+    if row is None or row.paused_at is None:
+        return False
+    if row.paused_until is None:
+        return True
+    until = row.paused_until
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) < until:
+        return True
+    # `pause_schedule(until=...)` has elapsed: firings run normally again. Clear
+    # the stale pause now (audited once, however many workers get here).
+    expire_stale_pause(session, schedule_name, row.paused_until)
+    return False
 
 
 def _safe_json(value) -> str:
