@@ -47,6 +47,17 @@ All notable changes to celery-manager are recorded here. The format follows
   filename, and an `export_tasks` audit row. The task list gains an Export
   menu.
 
+- **Insights: trends, per-task pages and grouped failures.** New Insights page
+  with 1h/24h/7d/30d ranges, KPIs, SVG charts (runs by status, p50/p95
+  runtime, each with a text summary and table fallback) and a Failures tab
+  that groups failed runs by a normalised exception signature, with open,
+  show-runs and retry-all-in-group actions. A task page at
+  `/task-types/:taskName` (linked from the task detail title and the Insights
+  top-task lists) shows the same trends for one task plus recent runs and top
+  errors. Backed by `GET /api/analytics/overview`, `/api/analytics/failures`
+  and `/api/analytics/tasks/{task_name}`, computed at query time (no schema
+  change; scans are capped, see [Insights](insights.md)).
+
 ### Changed
 
 - **Dashboard redesign.** shadcn/ui-style look (zinc theme, Geist fonts) in
