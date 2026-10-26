@@ -39,6 +39,12 @@ class CeleryManagerConfig:
         separate deploy step with `celery-manager migrate`; `init_db()`
         then leaves the database untouched and only logs a warning if the
         schema isn't current.
+    live_poll_interval_seconds: how often, while at least one dashboard
+        has the live stream (`/api/stream`) open, each API process polls
+        `task_runs` for rows other processes changed (the events listener,
+        workers) and pushes them to the browser. Lower is snappier and
+        costs one small indexed query per interval per API process; nothing
+        is polled while nobody is watching.
     """
 
     celery_app: Celery
@@ -48,3 +54,4 @@ class CeleryManagerConfig:
     cookie_secure: bool = True
     export_max_rows: int = 50_000
     auto_migrate: bool = True
+    live_poll_interval_seconds: float = 1.0

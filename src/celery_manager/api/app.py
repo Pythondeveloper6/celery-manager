@@ -69,7 +69,9 @@ def create_app(config: CeleryManagerConfig):
     app = FastAPI(title="celery-manager")
     app.state.cm_config = config
     app.state.cm_session_factory = session_factory
-    app.state.cm_event_bus = EventBus()
+    # The bus polls the DB change feed for writes made by other processes
+    # (events listener, workers); see api/sse.py.
+    app.state.cm_event_bus = EventBus(session_factory, poll_interval=config.live_poll_interval_seconds)
     app.add_middleware(SecurityMiddleware)
 
     app.include_router(auth_routes.router)
