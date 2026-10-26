@@ -74,6 +74,33 @@ def _find_matching_override(session, schedule_name: str):
     return None
 
 
+def _schedule_is_paused(session, schedule_name: str) -> bool:
+    """True if the whole schedule is paused (`pause_schedule`). Unknown
+    names — a `@track`ed task that is not in `beat_schedule` at all, or one
+    whose `schedule_name` doesn't match a beat key — are never paused."""
+    from celery_manager.control.schedules import expire_stale_pause
+    from celery_manager.db.models import PeriodicSchedule
+
+    row = (
+        session.query(PeriodicSchedule.paused_at, PeriodicSchedule.paused_until)
+        .filter_by(name=schedule_name)
+        .one_or_none()
+    )
+    if row is None or row.paused_at is None:
+        return False
+    if row.paused_until is None:
+        return True
+    until = row.paused_until
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) < until:
+        return True
+    # `pause_schedule(until=...)` has elapsed: firings run normally again. Clear
+    # the stale pause now (audited once, however many workers get here).
+    expire_stale_pause(session, schedule_name, row.paused_until)
+    return False
+
+
 def _safe_json(value) -> str:
     """Serialize a run's args/kwargs for `task_runs`, without ever raising.
 
@@ -254,6 +281,29 @@ def _identify_run(args: tuple, func) -> tuple[object | None, str | None, str]:
     return None, task_id, task_name
 
 
+def _workflow_lineage(task_self) -> dict:
+    """`parent_id` / `root_id` / `group_id` from the running task's request.
+
+    Celery sets these on `request` for chain/group/chord members. Missing or
+    falsy values come back as None, which `_upsert_task_run` skips, so a
+    standalone task writes nothing and a listener-captured value is kept.
+    Never raises: lineage is a nicety, not worth failing a task over.
+    """
+    request = getattr(task_self, "request", None)
+    if request is None:
+        try:
+            from celery import current_task
+
+            request = getattr(current_task, "request", None)
+        except Exception:  # noqa: BLE001 — current_task is a proxy; never trust it
+            request = None
+    lineage = {}
+    for field, attr in (("parent_id", "parent_id"), ("root_id", "root_id"), ("group_id", "group")):
+        value = getattr(request, attr, None)
+        lineage[field] = value if isinstance(value, str) and value else None
+    return lineage
+
+
 def track(schedule_name: str | None = None):
     """Decorator for Celery tasks. Apply above @app.task:
 
@@ -264,7 +314,8 @@ def track(schedule_name: str | None = None):
 
     Checks for a matching schedule_overrides entry before running; if found
     and action is skip/cancel, records the run as 'skipped' and does not
-    call the wrapped function. Otherwise it writes a `started` row, runs the
+    call the wrapped function. Does the same if the whole schedule is
+    paused (`PeriodicSchedule.paused_at` set via `pause_schedule`). Otherwise it writes a `started` row, runs the
     task with log capture on, and rewrites that row with the outcome —
     `succeeded`, `failed`, or `retried` if the body raised Celery's `Retry`
     to schedule another attempt.
@@ -308,6 +359,16 @@ def track(schedule_name: str | None = None):
                         # run of this schedule.
                         override.consumed = True
                         session.commit()
+                        skipped = True
+                    # Whole-schedule pause. Checked *after* the occurrence
+                    # override on purpose: an override aimed at this firing
+                    # is consumed whether or not the schedule is also paused.
+                    # The firing it targeted has happened (and is being
+                    # skipped either way); leaving it unconsumed would keep a
+                    # stale row in the pool that `pause_occurrence`'s
+                    # tolerance matching and the occurrences view would have
+                    # to keep stepping around.
+                    if not skipped and _schedule_is_paused(session, effective_schedule_name):
                         skipped = True
             except Exception:  # deliberate fail-open: see _persist_run's docstring
                 logger.exception(
@@ -380,6 +441,7 @@ def track(schedule_name: str | None = None):
                 kwargs=run_kwargs,
                 schedule_name=effective_schedule_name,
                 started_at=started_at,
+                **_workflow_lineage(task_self),
                 clear=(
                     "exception", "traceback", "finished_at", "runtime_seconds",
                     "progress_current", "progress_total", "progress_message",

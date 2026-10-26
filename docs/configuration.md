@@ -15,6 +15,8 @@ config = CeleryManagerConfig(
     secret_key="<your-generated-secret>",
     eta_tolerance_seconds=60,
     cookie_secure=True,
+    auto_migrate=True,
+    inspect_timeout_seconds=1.0,
 )
 ```
 
@@ -25,8 +27,13 @@ config = CeleryManagerConfig(
 | `secret_key` | `str` | `"change-me"` (a placeholder) | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for 7 days). Anyone who knows the key can forge a valid session cookie for any username, so **`create_app()` raises `ValueError` and refuses to start if it is empty or still `"change-me"`** — set a private random value in every process that serves the dashboard, local development included. Processes that don't serve HTTP (Celery workers calling `celery_manager.setup()`, the events listener) never sign sessions and may leave the default. Rotating it invalidates every existing session (users are signed out). See [`secret_key` in production](#secret_key-in-production). |
 | `eta_tolerance_seconds` | `int` | `60` | How close a stored `ScheduleOverride.target_time` must be to "now" (in the `@track` decorator, at task-run time) or to a freshly recomputed occurrence timestamp (in `GET /api/schedules/{name}/occurrences`, at read time) for them to be treated as the same logical occurrence. See the trade-off below. |
 | `cookie_secure` | `bool` | `True` | Sets the `Secure` flag on the session cookie, so browsers only ever send it back over HTTPS. See below for why the default is `True` and when to change it. |
+| `export_max_rows` | `int` | `50000` | Hard cap on rows in one `GET /api/tasks/export` download. Larger results are cut to the newest rows and flagged with `X-Export-Truncated: true`. |
+| `live_poll_interval_seconds` | `float` | `1.0` | How often each API process polls `task_runs` for changes to push down `/api/stream` while at least one dashboard has it open. Each poll is a small query on an indexed column; nothing is polled while nobody is connected. Lower means quicker live updates and more queries. See [REST API: how changes reach the stream](rest-api.md#how-changes-reach-the-stream). |
+| `auto_migrate` | `bool` | `True` | Whether `init_db()` upgrades the database schema to the latest revision at startup. Set it to `False` to run `celery-manager migrate` as a deploy step instead; `init_db()` then leaves the database untouched and logs a warning if the schema isn't current. See [Schema and upgrades](#schema-and-upgrades). |
 
-Those five fields are the whole dataclass — `CeleryManagerConfig` has no
+| `inspect_timeout_seconds` | `float` | `1.0` | How long the [Workers page](workers.md) and the worker control endpoints wait for workers to reply to a broadcast (`inspect()`, `pool_grow`, `rate_limit`, ...). The HTTP request blocks for it, so keep it short; raise it only if workers on a slow or distant broker show as missing when they are running. |
+
+Those nine fields are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
 the environment.
 
@@ -133,28 +140,70 @@ flag describes the browser-to-edge connection, not the edge-to-app hop.
 
 ## Schema and upgrades
 
-`init_db()` creates every table it needs on first startup via SQLAlchemy's
-`Base.metadata.create_all`. That is the whole story for v1:
+celery-manager's tables are versioned with [Alembic](https://alembic.sqlalchemy.org/).
+The migrations ship inside the package (`celery_manager/db/migrations/`) and
+are configured in code, so you don't need an `alembic.ini` or the `alembic`
+command.
 
-- **There is no migration framework.** No Alembic, no versioned migration
-  history, no `celery-manager migrate` command.
-- `create_all` only ever *creates missing tables*. It never alters an
-  existing table — so if a future version of celery-manager adds or changes a
-  column, starting the new version against an older database will not update
-  the schema, and you will get errors about missing columns rather than an
-  automatic upgrade.
-- **Upgrading across a schema change may require manual work**: either
-  hand-writing the DDL (`ALTER TABLE ...`) to match the new models in
-  `celery_manager.db.models`, or dropping and recreating celery-manager's
-  database. Recreating it is usually acceptable — the tables hold
-  observability history (task runs, the audit log), your schedule overrides,
-  and dashboard user accounts, none of which your application depends on to
-  keep running — but you would lose that history and have to recreate users.
-- Release notes will call out any schema change explicitly. Back up the
-  database before upgrading if the history matters to you.
+### Automatic upgrades (the default)
 
-Adopting a real migration framework is a Phase 2 backlog item (see
-`plan.md`).
+`init_db()`, which the API app, `celery_manager.setup()` in workers and the
+`celery-manager events` listener all call, upgrades the database to the latest
+revision at startup. Upgrading celery-manager is just: install the new
+version, restart. That works from any starting point:
+
+| Database | What happens |
+|---|---|
+| Empty | Every revision runs, creating all tables. |
+| Created by 0.1.0a1–0.1.0a3 (no version table) | Adopted: the baseline revision finds the tables already there and only records the version, then later revisions run. Your data is kept. |
+| Created by a pre-release 0.1.0a4 build that already added `paused_at`/`paused_by` itself | Recorded at the revision that adds those columns, so they aren't added twice. Then any later revisions run. |
+| Already versioned | Pending revisions run. Nothing happens if it's current. |
+
+Several processes often start at once. The upgrade holds a lock while it
+checks and migrates (a PostgreSQL advisory lock, MySQL `GET_LOCK`, or SQLite's
+write lock via `BEGIN IMMEDIATE`), so the first process does the work and the
+others wait for it, then find nothing to do.
+
+The version is stored in a table called `celery_manager_alembic_version`, not
+Alembic's default `alembic_version`. That way celery-manager can share a
+database with an application that runs its own Alembic migrations.
+
+The database user needs DDL permissions (`CREATE TABLE`, `ALTER TABLE`,
+`CREATE INDEX`) whenever a release includes a new revision. Release notes call
+out every schema change. Back up the database before upgrading if its history
+matters to you.
+
+### Migrating as a deploy step
+
+If your deploys run migrations separately, or the app's database user
+shouldn't have DDL rights, turn automatic upgrades off in every process:
+
+```python
+config = CeleryManagerConfig(celery_app=app, ..., auto_migrate=False)
+```
+
+Then migrate with the CLI, using a database URL that has DDL rights:
+
+```bash
+celery-manager migrate --db-url postgresql://admin@db/celery_manager          # upgrade to latest
+celery-manager migrate --db-url postgresql://admin@db/celery_manager --check  # report only
+```
+
+`--check` prints the current and latest revision and exits with status 1 if an
+upgrade is needed, which makes it usable as a deploy gate. With
+`auto_migrate=False`, `init_db()` doesn't touch the database at all. If the
+schema isn't current it logs a warning, and queries against the new columns or
+tables fail until you run `migrate`.
+
+From Python, the same operations are
+`celery_manager.db.migrate.upgrade_database(engine)` and
+`migration_status(engine)`.
+
+### Downgrades
+
+Each revision has a `downgrade()`, but celery-manager doesn't wrap downgrades
+in a command, and running an older celery-manager against a newer schema
+isn't supported. To roll back, restore the backup you took before upgrading.
 
 ## `secret_key` in production
 

@@ -172,6 +172,12 @@ def upsert_task_run(session, event: dict) -> None:
         run.task_name = event["name"]
     if event.get("queue"):
         run.queue = event["queue"]
+    # Workflow lineage: task-sent / task-received carry it, later events don't,
+    # so merge-never-null (a `None` or missing key keeps what is stored).
+    # `group` is not in Celery's event payload; the decorator records it.
+    for key in ("parent_id", "root_id", "group_id"):
+        if event.get(key):
+            setattr(run, key, event[key])
     # `hostname` on task-sent is the *producer's* (the API process or beat
     # that dispatched), not a worker's; recording it as `worker` showed the
     # wrong machine and, if task-sent arrived late, overwrote the real one.
@@ -201,9 +207,12 @@ class EventListener:
     Django demo; see cli.py)."""
 
     def __init__(self, config: CeleryManagerConfig, session_factory, event_bus=None):
+        # `event_bus` is accepted for compatibility and ignored. The listener
+        # used to publish each event straight onto it, but the dashboard's
+        # stream now hears every write through the task_runs change feed
+        # (api/sse.py), which a direct publish would only duplicate.
         self._config = config
         self._session_factory = session_factory
-        self._event_bus = event_bus
 
     def run(self) -> None:
         app = self._config.celery_app
@@ -214,8 +223,6 @@ class EventListener:
             with self._session_factory() as session:
                 upsert_task_run(session, event)
                 session.commit()
-            if self._event_bus is not None:
-                self._event_bus.publish({"task_id": event.get("uuid"), "type": event.get("type")})
 
         with app.connection() as connection:
             receiver = app.events.Receiver(connection, handlers={"*": on_event})

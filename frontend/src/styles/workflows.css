@@ -1,0 +1,151 @@
+/* ==========================================================================
+   Workflow card — chain / group / chord tree on the task detail page
+   Plain nested lists with disclosure buttons and links; --cm-* tokens only.
+   ========================================================================== */
+
+.cm-wf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+}
+
+.cm-wf-actions {
+  display: flex;
+  gap: var(--cm-space-1);
+}
+
+.cm-wf-summary {
+  margin: var(--cm-space-2) 0 var(--cm-space-3);
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-wf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Nested lists are indented and carry a guide line so depth reads at a glance. */
+.cm-wf-list .cm-wf-list {
+  margin-left: 0.6875rem;
+  padding-left: var(--cm-space-3);
+  border-left: 1px solid var(--cm-color-border);
+}
+
+.cm-wf-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+  min-height: 2rem;
+  padding: 0.125rem var(--cm-space-2) 0.125rem 0;
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-wf-row[data-current="true"] {
+  background-color: var(--cm-color-muted);
+  box-shadow: inset 2px 0 0 var(--cm-color-primary-text);
+}
+
+.cm-wf-toggle,
+.cm-wf-toggle-spacer {
+  flex: none;
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.cm-wf-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--cm-color-text-muted);
+  background: none;
+  border: 0;
+  border-radius: var(--cm-radius-sm);
+  cursor: pointer;
+}
+
+.cm-wf-toggle:hover {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-muted);
+}
+
+.cm-wf-chevron {
+  width: 1rem;
+  height: 1rem;
+  transition: transform var(--cm-duration-base) var(--cm-ease);
+}
+
+.cm-wf-toggle[aria-expanded="true"] .cm-wf-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-wf-chevron {
+    transition: none;
+  }
+}
+
+.cm-wf-name {
+  min-width: 0;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  flex: 1 1 9rem;
+  overflow-wrap: break-word;
+}
+
+.cm-wf-link {
+  color: var(--cm-color-primary-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--cm-radius-sm);
+}
+
+.cm-wf-here {
+  margin-left: var(--cm-space-1);
+  font-family: var(--cm-font-body);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-wf-meta {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-wf-group {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.cm-wf-group .cm-wf-meta {
+  margin-left: 0;
+}
+
+.cm-wf-group-badge {
+  flex: none;
+  padding: 0 var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  font-weight: 500;
+  color: var(--cm-color-text-muted);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-full);
+}
+
+@media (max-width: 640px) {
+  .cm-wf-list .cm-wf-list {
+    margin-left: 0.5rem;
+    padding-left: var(--cm-space-2);
+  }
+}

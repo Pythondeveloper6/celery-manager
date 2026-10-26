@@ -1,0 +1,77 @@
+/* Let a long "Paused until …" badge wrap on narrow screens. */
+/* Paused state in the schedules table: a one-line badge with who paused it
+   underneath. The cell is fit-to-content, so neither part may wrap. */
+.cm-pause-state {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cm-space-1);
+}
+
+.cm-pause-state .cm-badge,
+.cm-pause-state-by {
+  white-space: nowrap;
+}
+
+.cm-pause-state-by {
+  color: var(--cm-color-text-muted);
+  font-size: var(--cm-text-xs);
+}
+
+/* Pause menu for a whole schedule (ScheduleToggle). Tokens only. */
+
+.cm-pause-menu-anchor {
+  position: relative;
+  display: inline-block;
+}
+
+.cm-pause-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 14rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.25rem;
+  background: var(--cm-color-surface);
+  color: var(--cm-color-text);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  text-align: left;
+}
+
+.cm-pause-menu-item {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-radius: var(--cm-radius-sm);
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cm-pause-menu-item:hover,
+.cm-pause-menu-item:focus-visible {
+  background: var(--cm-color-border);
+}
+
+.cm-pause-menu-item:focus-visible {
+  outline: 2px solid var(--cm-color-text);
+  outline-offset: -2px;
+}
+
+.cm-pause-menu-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.cm-pause-menu-custom .cm-input {
+  min-width: 0;
+}
