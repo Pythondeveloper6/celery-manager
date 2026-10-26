@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSchedules, type ScheduleSummary } from "../api/schedules";
 import { ScheduleToggle } from "../components/ScheduleToggle";
-import { formatPausedBy } from "../lib/pausedBy";
+import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 
 // The discovery step for ScheduleOccurrences, which is keyed by an exact
 // schedule name. Same shape as the other list screens — fetch on mount,
@@ -120,8 +120,8 @@ export function ScheduleList() {
                     <td>{s.schedule_spec}</td>
                     <td className="cm-col-fit">
                       {s.paused ? (
-                        <span className="cm-badge" title={formatPausedBy(s.paused_by, s.paused_at)}>
-                          Paused
+                        <span className="cm-badge cm-badge-wrap" title={formatPausedBy(s.paused_by, s.paused_at)}>
+                          {formatPauseState(s.paused_until)}
                           {s.paused_by && <span className="cm-schedule-enabled"> {formatPausedBy(s.paused_by, s.paused_at)}</span>}
                         </span>
                       ) : s.enabled ? (

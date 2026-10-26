@@ -271,13 +271,85 @@ def get_periodic_schedule(session, schedule_name: str) -> PeriodicSchedule | Non
     return session.query(PeriodicSchedule).filter_by(name=schedule_name).one_or_none()
 
 
-def pause_schedule(session, schedule_name: str, username: str) -> PeriodicSchedule | None:
-    """Pause every future firing of a schedule until `resume_schedule`.
+def is_paused(row: PeriodicSchedule, now: datetime | None = None) -> bool:
+    """The effective pause state: `paused_at` is set AND the pause has no end
+    (`paused_until` NULL) or the end is still in the future."""
+    if row.paused_at is None:
+        return False
+    if row.paused_until is None:
+        return True
+    return (now or datetime.now(timezone.utc)) < _as_aware_utc(row.paused_until)
 
-    Returns None for an unknown schedule. Idempotent: pausing an already
+
+def expire_stale_pause(session, schedule_name: str, paused_until, now: datetime | None = None) -> bool:
+    """Clear a pause whose `paused_until` has passed and audit it — exactly
+    once, however many readers notice at the same moment.
+
+    `paused_until` is the stored value the caller read. The UPDATE is
+    conditional on it still being there, so of N concurrent callers only the
+    one whose UPDATE matches a row (rowcount 1) writes the automatic
+    `resume_schedule` audit row; the rest see 0 and do nothing. Returns True
+    if this call did the clearing.
+    """
+    before = (
+        session.query(PeriodicSchedule.paused_at, PeriodicSchedule.paused_by)
+        .filter_by(name=schedule_name, paused_until=paused_until)
+        .one_or_none()
+    )
+    if before is None or before.paused_at is None:
+        return False
+    cleared = (
+        session.query(PeriodicSchedule)
+        .filter(PeriodicSchedule.name == schedule_name, PeriodicSchedule.paused_until == paused_until)
+        .update(
+            {PeriodicSchedule.paused_at: None, PeriodicSchedule.paused_by: None, PeriodicSchedule.paused_until: None},
+            synchronize_session=False,
+        )
+    )
+    session.commit()
+    if cleared != 1:
+        return False
+    record_audit(
+        session,
+        "system",
+        "resume_schedule",
+        "schedule",
+        schedule_name,
+        {
+            "automatic": True,
+            "paused_at": _as_aware_utc(before.paused_at).isoformat(),
+            "paused_by": before.paused_by,
+            "paused_until": _as_aware_utc(paused_until).isoformat(),
+        },
+    )
+    return True
+
+
+def _expire_if_stale(session, row: PeriodicSchedule, now: datetime | None = None) -> None:
+    """Lazily apply an elapsed `paused_until` to `row` (see `expire_stale_pause`)."""
+    if row.paused_at is None or row.paused_until is None:
+        return
+    now = now or datetime.now(timezone.utc)
+    if not is_paused(row, now):
+        expire_stale_pause(session, row.name, row.paused_until, now)
+        session.refresh(row)
+
+
+def pause_schedule(
+    session, schedule_name: str, username: str, until: datetime | None = None
+) -> PeriodicSchedule | None:
+    """Pause every future firing of a schedule until `resume_schedule`, or,
+    with `until`, until that moment (then firings run normally again).
+
+    Returns None for an unknown schedule. `until` must be in the future (a
+    naive value is UTC); a past one raises `ValueError`. Pausing an already
     paused schedule keeps the original `paused_at`/`paused_by` (the pause
-    began then, by them) and writes no audit row, so repeated clicks cannot
-    rewrite history or flood the log.
+    began then, by them) and writes no audit row when nothing changes, so
+    repeated clicks cannot rewrite history or flood the log. Repeating the
+    pause with a different `until` (or none, making it indefinite) updates
+    only the end time and audits it as `pause_schedule` with
+    `updated: true`. A pause whose `until` already elapsed is cleared first
+    (audited as an automatic resume) and the new pause starts fresh.
 
     celery-manager does not own beat, so beat keeps firing; what a pause
     changes is what the `@track` decorator does when the firing reaches the
@@ -285,15 +357,38 @@ def pause_schedule(session, schedule_name: str, username: str) -> PeriodicSchedu
     `celery_manager.decorator._schedule_is_paused`). Tasks without `@track`
     are not affected.
     """
+    now = datetime.now(timezone.utc)
+    if until is not None:
+        until = _as_aware_utc(until).astimezone(timezone.utc)
+        if until <= now:
+            raise ValueError("`until` must be in the future.")
     row = get_periodic_schedule(session, schedule_name)
     if row is None:
         return None
+    _expire_if_stale(session, row, now)
     if row.paused_at is not None:
+        previous = _as_aware_utc(row.paused_until) if row.paused_until is not None else None
+        if previous == until:
+            return row
+        row.paused_until = until
+        session.commit()
+        record_audit(
+            session, username, "pause_schedule", "schedule", schedule_name,
+            {
+                "updated": True,
+                "until": until.isoformat() if until else None,
+                "previous_until": previous.isoformat() if previous else None,
+            },
+        )
         return row
-    row.paused_at = datetime.now(timezone.utc)
+    row.paused_at = now
     row.paused_by = username
+    row.paused_until = until
     session.commit()
-    record_audit(session, username, "pause_schedule", "schedule", schedule_name, None)
+    record_audit(
+        session, username, "pause_schedule", "schedule", schedule_name,
+        {"until": until.isoformat()} if until else None,
+    )
     return row
 
 
@@ -304,17 +399,23 @@ def resume_schedule(session, schedule_name: str, username: str) -> PeriodicSched
     interval clock: the next regular beat firing simply runs normally.
     Firings missed while paused are not caught up — they already happened,
     and were recorded as `skipped`. Idempotent: resuming a schedule that is
-    not paused is a no-op with no audit row. The audit row records when the
-    pause began and who started it, since resuming clears both columns.
+    not paused is a no-op with no audit row (a pause that already timed out
+    is cleared and audited as automatic, not attributed to `username`). The
+    audit row records when the pause began and who started it, since
+    resuming clears both columns.
     """
     row = get_periodic_schedule(session, schedule_name)
     if row is None:
         return None
+    _expire_if_stale(session, row)
     if row.paused_at is None:
         return row
     details = {"paused_at": _as_aware_utc(row.paused_at).isoformat(), "paused_by": row.paused_by}
+    if row.paused_until is not None:
+        details["paused_until"] = _as_aware_utc(row.paused_until).isoformat()
     row.paused_at = None
     row.paused_by = None
+    row.paused_until = None
     session.commit()
     record_audit(session, username, "resume_schedule", "schedule", schedule_name, details)
     return row
@@ -397,7 +498,9 @@ def list_upcoming_with_overrides(
     occurrences = upcoming_occurrences(periodic, celery_schedule, count=count, from_time=from_time, anchor=anchor)
     pool = [o for o in list_overrides(session, schedule_name) if not o.consumed]
     window = timedelta(seconds=eta_tolerance_seconds)
-    paused = periodic.paused_at is not None
+    _expire_if_stale(session, periodic)
+    paused_at = periodic.paused_at
+    paused_until = _as_aware_utc(periodic.paused_until) if periodic.paused_until is not None else None
 
     result = []
     for t in occurrences:
@@ -408,15 +511,21 @@ def list_upcoming_with_overrides(
             "target_time": t,
             "action": match.action if match is not None else None,
             "consumed": match.consumed if match is not None else False,
-            # True when the whole schedule is paused (`pause_schedule`): this
-            # firing will be recorded as skipped however `action` reads.
-            "paused": paused,
+            # True when the whole schedule is paused (`pause_schedule`) and
+            # this firing falls before `paused_until` (or the pause is
+            # indefinite): it will be recorded as skipped however `action`
+            # reads. Occurrences at/after `paused_until` run normally.
+            "paused": paused_at is not None and (paused_until is None or t < paused_until),
         })
     return result
 
 
 def list_periodic_schedules(session) -> list[PeriodicSchedule]:
     """Every configured periodic schedule, for the dashboard's schedule-list
-    screen — populated by sync_periodic_schedules() at create_app startup,
-    this is a pure read."""
-    return session.query(PeriodicSchedule).order_by(PeriodicSchedule.name).all()
+    screen — populated by sync_periodic_schedules() at create_app startup.
+    Reads, apart from lazily clearing pauses whose `paused_until` passed."""
+    rows = session.query(PeriodicSchedule).order_by(PeriodicSchedule.name).all()
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        _expire_if_stale(session, row, now)
+    return rows

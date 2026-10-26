@@ -334,12 +334,16 @@ schedules configured yet."
 ### Pausing a whole schedule
 
 The **Schedules** list has a **Pause schedule** button on every row, and the
-occurrences page has one in its header. Pausing asks for a second click
-(**Confirm pause** / **Keep running**, which disarms itself after five
-seconds); **Resume schedule** acts immediately. The list shows a **Paused**
-badge with who paused it and when, and the occurrences page shows a banner
-with a Resume button and marks each upcoming run **Will be skipped**
-(per-occurrence skips and cancels keep their own badges and still work).
+occurrences page has one in its header. It opens a small menu: **Pause
+indefinitely**, **For 1 hour**, **Until tomorrow 9:00** (your local time), or
+**Until…** with a date and time picker that must be in the future (Escape or a
+click outside closes it). **Resume schedule** acts immediately. The list shows
+a **Paused indefinitely** or **Paused until \<local time\>** badge with who
+paused it and when, and the occurrences page shows a banner with a Resume
+button and marks each upcoming run **Will be skipped**, but only the runs
+before the end time of a timed pause; later ones run normally. When the time
+passes the schedule resumes by itself, and the audit log records an automatic
+resume. Per-occurrence skips and cancels keep their own badges and still work.
 
 While paused, every firing is recorded as `skipped`. Limits: resuming does
 not run anything immediately and does not catch up on missed firings, since
