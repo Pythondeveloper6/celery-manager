@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { bulkRetryTasks, listTasks, subscribeToUpdates, type TaskSummary } from "../api/tasks";
+import { bulkRetryTasks, listTasks, subscribeToUpdates, type BulkCancelResult, type TaskSummary } from "../api/tasks";
 import { TaskCallDialog } from "../components/TaskCallDialog";
+import { CancelMatching, CancelSelected } from "../components/BulkCancel";
+import { describeCancel } from "../lib/bulkCancel";
 import { RunStrip } from "../components/RunStrip";
 import { IconCalendar, IconCheck, IconSearch, IconX } from "../components/icons";
 import { StatusBadge } from "../components/Status";
@@ -695,6 +697,18 @@ export function TaskList() {
     }
   }
 
+  function handleCancelled(result: BulkCancelResult) {
+    setSelected(new Set());
+    setBulkError(null);
+    setBulkNotice(describeCancel(result));
+    refresh();
+  }
+
+  function handleBulkError(message: string) {
+    setBulkNotice(null);
+    setBulkError(message);
+  }
+
   // The clock ticks only while something on screen is actually running, so an
   // idle dashboard settles completely instead of re-rendering once a second
   // forever.
@@ -708,7 +722,10 @@ export function TaskList() {
   const historyMode = mode === "history";
   const loadedCount = tasks.length;
   const remainingCount = Math.max(0, total - loadedCount);
-  const showSelectColumn = status === "failed";
+  // Selection serves two bulk actions: retry on the Failed tab, cancel on
+  // the tabs whose runs can still be stopped.
+  const cancellableTab = status === "queued" || status === "started" || status === "retried";
+  const showSelectColumn = status === "failed" || cancellableTab;
   const columnCount = showSelectColumn ? 5 : 4;
   // Two different reasons the live view stops: more rows exist and can still
   // be fetched, or more rows exist and the API's single-page ceiling is in
@@ -979,14 +996,32 @@ export function TaskList() {
             <span className="cm-bulk-bar-label">
               {selected.size} task{selected.size === 1 ? "" : "s"} selected
             </span>
-            <button
-              type="button"
-              className="cm-btn cm-btn-primary cm-btn-sm"
-              onClick={handleBulkRetry}
-              disabled={bulkRetrying}
-            >
-              {bulkRetrying ? "Retrying…" : `Retry ${selected.size} selected`}
-            </button>
+            {status === "failed" ? (
+              <button
+                type="button"
+                className="cm-btn cm-btn-primary cm-btn-sm"
+                onClick={handleBulkRetry}
+                disabled={bulkRetrying}
+              >
+                {bulkRetrying ? "Retrying…" : `Retry ${selected.size} selected`}
+              </button>
+            ) : (
+              <CancelSelected taskIds={[...selected]} onDone={handleCancelled} onError={handleBulkError} />
+            )}
+          </div>
+        )}
+        {(status === "all" || cancellableTab) && tasks.length > 0 && (
+          <div className="cm-bulk-matching-row">
+            <CancelMatching
+              filter={{
+                status: status === "all" ? undefined : status,
+                q: search || undefined,
+                date_from: startOfDayIso(dateFrom),
+                date_to: endOfDayIso(dateTo),
+              }}
+              onDone={handleCancelled}
+              onError={handleBulkError}
+            />
           </div>
         )}
         {bulkNotice && (
@@ -1124,7 +1159,7 @@ export function TaskList() {
                                   type="checkbox"
                                   checked={selected.has(t.task_id)}
                                   onChange={() => toggle(t.task_id)}
-                                  aria-label={`Select ${t.task_name} (${t.task_id}) for bulk retry`}
+                                  aria-label={`Select ${t.task_name} (${t.task_id}) for bulk actions`}
                                 />
                                 <IconCheck />
                               </span>

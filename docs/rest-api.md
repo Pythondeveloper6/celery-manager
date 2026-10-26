@@ -59,6 +59,8 @@ framed by another site.
 | `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. **Not partial-failure aware**: it stops at the first unknown id and returns `404 {"detail": "no task run found for <id>"}` for the whole batch — ids earlier in the list have already been dispatched and audited by then, and the response does not tell you which. Check the ids before sending them, or retry one at a time if that matters. |
 | `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | Changes a task's rate limit on running workers (not persisted). Documented with the other worker controls under [Workers](#workers). |
 
+| `POST` | `/api/tasks/cancel-bulk` | required | `{"task_ids": [str, ...]}` **or** `{"filter": {"status", "task_name", "q", "date_from", "date_to"}}` (exactly one; the filter fields mean what they mean on `GET /api/tasks`), plus `"terminate": bool = false`, `"dry_run": bool = false` | `200 {"revoked": int, "matched": int, "skipped_finished": int, "unknown": int, "limit": 1000, "dry_run": bool}`. Revokes only runs in `queued`/`started`/`retried`; finished runs are counted in `skipped_finished`, ids with no stored run in `unknown` (and not revoked). `dry_run` counts without revoking or auditing. `400` if both or neither selector is sent, or if more than 1,000 runs would be cancelled (nothing is revoked then). One `cancel_bulk` audit row per call. See [Bulk cancel](queues.md#bulk-cancel). |
+
 !!! warning "Changed: `GET /api/tasks` no longer returns a bare array"
     This endpoint used to return a JSON **array** of runs, hard-capped at 50
     rows, with no `offset` — so older history was simply unreachable, and a
@@ -456,6 +458,16 @@ The same operations are available from Python in
 `resize_pool`, `set_consumer`, `set_rate_limit`, `list_task_rate_limits`);
 broker failures raise `WorkerControlError`.
 
+## Queues
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| `GET` | `/api/queues` | required | Query param `workers` (bool, default `true`): set `false` to skip the worker `active_queues` inspect (1s timeout, cached 30s). | `200 {"broker": {"transport": str\|null, "error": str\|null, "unsupported": bool, "workers_replied": bool\|null}, "queues": [...], "recorded_queued_unassigned": int}`. Each queue is `{"name", "sources", "depth", "consumers", "exists", "reason", "recorded_queued"}`, default queue first, then by name. `depth` is the broker's message count (`null` if the broker couldn't be asked; `reason` says why), `consumers` is `null` on Redis and other kombu virtual transports, which can't report it. `recorded_queued` counts `task_runs` still `queued` in that queue. **Always `200`**: an unreachable, slow (3s deadline) or `memory://` broker is reported in `broker.error`, not as an HTTP error. |
+| `POST` | `/api/queues/{name}/purge` | required | — | `200 {"queue": str, "messages_removed": int, "runs_marked_revoked": int}`. Purges ready messages from that one queue, then — only if at least one message was removed — marks this queue's `queued` runs without an ETA as `revoked`. Writes a `purge` audit row. `404` if the broker reports no such queue (RabbitMQ), `503` if the broker is unreachable, timed out, or `memory://`; nothing is marked or audited on failure. |
+
+Why the two counts differ, what exactly gets marked on purge, and the
+timeouts are in [Queues, purge and bulk cancel](queues.md).
+
 ## Audit log
 
 | Method | Path | Auth | Request | Response |
@@ -485,6 +497,8 @@ of another action. Every control action is covered:
 | `pause_occurrence` | `schedule` | the schedule name | `POST /api/schedules/{name}/occurrences/pause` |
 | `pause_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/pause` — only when it actually pauses (not on an idempotent repeat); `details` is `null` |
 | `resume_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/resume` — only when it actually resumes; `details={"paused_at", "paused_by"}` of the pause it ended |
+| `cancel_bulk` | `task` | `selection` (by ids) or `filter` | `POST /api/tasks/cancel-bulk` (not on `dry_run`, nor when nothing matched) — `details={"terminate", "revoked", "skipped_finished", "unknown", "filter", "task_ids"}` |
+| `purge` | `queue` | the queue name | `POST /api/queues/{name}/purge` — `details={"messages_removed", "runs_marked_revoked", "task_ids"}` (the runs marked `revoked`) |
 | `update` | `setting` | the setting key (`brand_name`, `brand_accent`, `brand_logo_url`) | `PUT /api/settings` — one row per *changed* key, `details={"old", "new"}` (each truncated to 200 characters, so a data-URI logo doesn't turn the audit log into an image store) |
 
 A retry records only `retry`, never an additional `start`, even though it

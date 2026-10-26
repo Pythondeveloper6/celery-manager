@@ -6,6 +6,7 @@ import { BrandMark, ThemeSwitch, useBranding } from "../branding";
 import {
   IconCalendarClock,
   IconChartLine,
+  IconLayers,
   IconListChecks,
   IconLogOut,
   IconPanelLeft,
@@ -36,6 +37,7 @@ const NAV_ITEMS: { to: string; end?: boolean; label: string; icon: ComponentType
   { to: "/audit", label: "Audit log", icon: IconScrollText },
   { to: "/insights", label: "Insights", icon: IconChartLine },
   { to: "/workers", label: "Workers", icon: IconServer },
+  { to: "/queues", label: "Queues", icon: IconLayers },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
 
@@ -72,6 +74,7 @@ function sectionLabel(pathname: string): string {
   if (pathname.startsWith("/audit")) return "Audit log";
   if (pathname.startsWith("/workers")) return "Workers";
   if (pathname.startsWith("/settings")) return "Settings";
+  if (pathname.startsWith("/queues")) return "Queues";
   if (pathname === "/" || pathname.startsWith("/tasks")) return "Tasks";
   return "";
 }
