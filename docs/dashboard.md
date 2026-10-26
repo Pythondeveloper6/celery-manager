@@ -277,6 +277,21 @@ schedules configured yet."
   doesn't block or hide the others; a page-level success notice
   auto-dismisses after 6 seconds.
 
+### Pausing a whole schedule
+
+The **Schedules** list has a **Pause schedule** button on every row, and the
+occurrences page has one in its header. Pausing asks for a second click
+(**Confirm pause** / **Keep running**, which disarms itself after five
+seconds); **Resume schedule** acts immediately. The list shows a **Paused**
+badge with who paused it and when, and the occurrences page shows a banner
+with a Resume button and marks each upcoming run **Will be skipped**
+(per-occurrence skips and cancels keep their own badges and still work).
+
+While paused, every firing is recorded as `skipped`. Limits: resuming does
+not run anything immediately and does not catch up on missed firings, since
+the next regular beat firing simply runs; and only `@track`-decorated tasks
+are enforced. See [REST API: pausing a whole schedule](rest-api.md#pausing-a-whole-schedule).
+
 ### Interval schedules
 
 **Interval schedules (`schedule(run_every=…)` / bare seconds / `timedelta`).** Celery beat fires these at "previous fire + interval", and beat's own record of the previous fire isn't visible to the dashboard. celery-manager therefore anchors upcoming occurrences to the schedule's most recent observed run: the newest `task_runs` row with that `schedule_name`, including skipped runs and excluding dashboard retries. It then projects forward by the interval. Once the schedule has run at least once while celery-manager was recording, the times shown are stable and match beat's real fire times to within queue latency, and a skip or cancel matches the real run.

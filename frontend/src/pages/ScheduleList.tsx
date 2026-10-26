@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSchedules, type ScheduleSummary } from "../api/schedules";
+import { ScheduleToggle } from "../components/ScheduleToggle";
+import { formatPausedBy } from "../lib/pausedBy";
 
 // The discovery step for ScheduleOccurrences, which is keyed by an exact
 // schedule name. Same shape as the other list screens — fetch on mount,
@@ -9,6 +11,33 @@ import { listSchedules, type ScheduleSummary } from "../api/schedules";
 export function ScheduleList() {
   const [schedules, setSchedules] = useState<ScheduleSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
+
+  function handleChange(updated: ScheduleSummary) {
+    setSchedules((prev) => prev && prev.map((s) => (s.name === updated.name ? updated : s)));
+    setNotice(updated.paused ? "Schedule paused" : "Schedule resumed");
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+  }
+
+  function handleRowError(name: string, message: string | null) {
+    setRowErrors((prev) => {
+      const next = { ...prev };
+      if (message) next[name] = message;
+      else delete next[name];
+      return next;
+    });
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -32,6 +61,12 @@ export function ScheduleList() {
           <p className="cm-page-lede">Periodic tasks. Open one to skip or cancel an upcoming run.</p>
         </div>
       </header>
+
+      {notice && (
+        <p className="cm-notice" role="status">
+          {notice}
+        </p>
+      )}
 
       <div className="cm-card cm-card-flush">
         {error ? (
@@ -68,6 +103,9 @@ export function ScheduleList() {
                   <th scope="col" className="cm-col-fit">
                     State
                   </th>
+                  <th scope="col" className="cm-col-fit">
+                    <span className="cm-visually-hidden">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -81,11 +119,31 @@ export function ScheduleList() {
                     <td>{s.task_name}</td>
                     <td>{s.schedule_spec}</td>
                     <td className="cm-col-fit">
-                      {s.enabled ? (
+                      {s.paused ? (
+                        <span className="cm-badge" title={formatPausedBy(s.paused_by, s.paused_at)}>
+                          Paused
+                          {s.paused_by && <span className="cm-schedule-enabled"> {formatPausedBy(s.paused_by, s.paused_at)}</span>}
+                        </span>
+                      ) : s.enabled ? (
                         <span className="cm-schedule-enabled">Enabled</span>
                       ) : (
                         <span className="cm-badge">Disabled</span>
                       )}
+                    </td>
+                    <td className="cm-col-fit">
+                      <div className="cm-stack">
+                        <ScheduleToggle
+                          name={s.name}
+                          paused={s.paused}
+                          onChange={handleChange}
+                          onError={(m) => handleRowError(s.name, m)}
+                        />
+                        {rowErrors[s.name] && (
+                          <p className="cm-error" role="alert">
+                            {rowErrors[s.name]}
+                          </p>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

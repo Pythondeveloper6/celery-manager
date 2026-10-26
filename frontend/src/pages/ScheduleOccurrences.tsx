@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { listOccurrences, pauseOccurrence, type Occurrence, type PauseAction } from "../api/schedules";
+import { listOccurrences, listSchedules, pauseOccurrence, type Occurrence, type PauseAction, type ScheduleSummary } from "../api/schedules";
 import { IconChevronLeft } from "../components/icons";
+import { ScheduleToggle } from "../components/ScheduleToggle";
+import { formatPausedBy } from "../lib/pausedBy";
 
 // Keyed by PauseAction rather than a bare string, so adding an action to the
 // API without giving it a label here is a compile error instead of a blank
@@ -49,11 +51,15 @@ export function ScheduleOccurrences() {
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [schedule, setSchedule] = useState<ScheduleSummary | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
     if (!name) return;
     try {
-      const results = await listOccurrences(name);
+      const [results, all] = await Promise.all([listOccurrences(name), listSchedules()]);
       setOccurrences(results);
+      setSchedule(all.find((s) => s.name === name) ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load upcoming occurrences.");
@@ -63,6 +69,8 @@ export function ScheduleOccurrences() {
   useEffect(() => {
     setOccurrences(null);
     setNotice(null);
+    setSchedule(null);
+    setToggleError(null);
     setRowErrors({});
     refresh();
   }, [refresh]);
@@ -73,6 +81,18 @@ export function ScheduleOccurrences() {
     },
     [],
   );
+
+  function flashNotice(message: string) {
+    setNotice(message);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 6000);
+  }
+
+  async function handleToggled(updated: ScheduleSummary) {
+    setSchedule(updated);
+    await refresh();
+    flashNotice(updated.paused ? "Schedule paused" : "Schedule resumed");
+  }
 
   async function handlePause(o: Occurrence, action: "skip" | "cancel") {
     if (!name) return;
@@ -119,7 +139,32 @@ export function ScheduleOccurrences() {
             Upcoming runs. Skipping or cancelling one leaves the schedule itself unchanged.
           </p>
         </div>
+        {schedule && !schedule.paused && (
+          <ScheduleToggle name={schedule.name} paused={false} size="md" onChange={handleToggled} onError={setToggleError} />
+        )}
       </header>
+
+      {schedule?.paused && (
+        <div className="cm-alert" role="status">
+          <div className="cm-stack">
+            <p>
+              <strong>This schedule is paused.</strong> Every firing is skipped until you resume it.
+              {formatPausedBy(schedule.paused_by, schedule.paused_at) && (
+                <> Paused {formatPausedBy(schedule.paused_by, schedule.paused_at)}.</>
+              )}
+            </p>
+            <div>
+              <ScheduleToggle name={schedule.name} paused size="md" onChange={handleToggled} onError={setToggleError} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toggleError && (
+        <p className="cm-error" role="alert">
+          {toggleError}
+        </p>
+      )}
 
       {notice && (
         <p className="cm-notice" role="status">
@@ -159,6 +204,11 @@ export function ScheduleOccurrences() {
               <li key={key} className="cm-occurrence-row" data-state={state} data-action={o.action ?? undefined}>
                 <div className="cm-occurrence-main">
                   <span className="cm-occurrence-time">{formatTargetTime(o.target_time)}</span>
+                  {o.paused && state !== "resolved" && !o.action && (
+                    <span className="cm-occurrence-badge" data-action="skip">
+                      Will be skipped
+                    </span>
+                  )}
                   {state === "paused" && o.action && (
                     <span className="cm-occurrence-badge" data-action={o.action}>
                       {PAUSED_LABEL[o.action] ?? o.action}
