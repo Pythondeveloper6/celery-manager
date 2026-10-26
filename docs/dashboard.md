@@ -208,6 +208,9 @@ with **Try again**.
 
 ### Start task
 
+![The Start task sheet with a picked task and prefilled arguments](assets/screenshots/start-task-light.png){ .cm-shot .cm-only-light }
+![The Start task sheet with a picked task and prefilled arguments](assets/screenshots/start-task-dark.png){ .cm-shot .cm-only-dark }
+
 The **Start task** button in the page header opens a side sheet (Escape or
 **Cancel** closes it and returns focus to the button):
 
@@ -291,6 +294,9 @@ rather than blanking.
 
 ### Workflow card
 
+![A chord's workflow tree, with the failed group member highlighted](assets/screenshots/workflow-light.png){ .cm-shot .cm-only-light }
+![A chord's workflow tree, with the failed group member highlighted](assets/screenshots/workflow-dark.png){ .cm-shot .cm-only-dark }
+
 When a run belongs to a chain, group or chord, the detail page shows a
 **Workflow** card between the run summary and the log. It lays out every run
 that shares the same root as an indented tree, exactly as Celery's
@@ -309,8 +315,8 @@ lineage is captured from Celery events (`task-sent`/`task-received`) and by
 
 ## Schedules list
 
-![The schedules view, with one upcoming occurrence skipped](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
-![The schedules view, with one upcoming occurrence skipped](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
+![The schedules list, with one schedule paused until a set time](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
+![The schedules list, with one schedule paused until a set time](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
 
 `/schedules`, and where the **Schedules** nav link lands. A card per
 configured periodic schedule, backed by `GET /api/schedules`: the schedule's
@@ -326,6 +332,9 @@ is running will not appear until it restarts. Empty state: "No periodic
 schedules configured yet."
 
 ## Schedule occurrences (future-schedule view)
+
+![Upcoming runs of a schedule, with one marked Will be skipped](assets/screenshots/schedule-occurrences-light.png){ .cm-shot .cm-only-light }
+![Upcoming runs of a schedule, with one marked Will be skipped](assets/screenshots/schedule-occurrences-dark.png){ .cm-shot .cm-only-dark }
 
 `/schedules/:name`. Lists the schedule's next 10 computed occurrences
 (`GET /api/schedules/{name}/occurrences`) and lets a user pause one:
@@ -386,6 +395,9 @@ Limitations:
 - The `@track(schedule_name=…)` value must equal the `beat_schedule` key. This was already required for skips to work.
 
 ## Workers
+
+![Worker cards with live counts and controls, above the rate limits table](assets/screenshots/workers-light.png){ .cm-shot .cm-only-light }
+![Worker cards with live counts and controls, above the rate limits table](assets/screenshots/workers-dark.png){ .cm-shot .cm-only-dark }
 
 Every worker that answers the broker, refreshed every 10 seconds while the
 tab is visible, with controls to shut a worker down, resize its pool and

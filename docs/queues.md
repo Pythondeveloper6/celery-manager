@@ -7,6 +7,9 @@ page is about what they actually do, and where they can't see.
 
 ## Which queues are listed
 
+![Queue depth per queue, with purge buttons](assets/screenshots/queues-light.png){ .cm-shot .cm-only-light }
+![Queue depth per queue, with purge buttons](assets/screenshots/queues-dark.png){ .cm-shot .cm-only-dark }
+
 A queue appears if celery-manager knows its name from any of:
 
 | Source (shown under the name) | Where it comes from |

@@ -22,6 +22,9 @@ task list, which is fed by the events listener.
 
 ## The worker list
 
+![Worker cards with live counts and controls, above the rate limits table](assets/screenshots/workers-light.png){ .cm-shot .cm-only-light }
+![Worker cards with live counts and controls, above the rate limits table](assets/screenshots/workers-dark.png){ .cm-shot .cm-only-dark }
+
 The page refreshes every 10 seconds while its tab is visible and stops while
 the tab is hidden. "Updated 5s ago" shows how old the current answer is.
 

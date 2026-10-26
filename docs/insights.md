@@ -6,6 +6,9 @@ history; nothing extra is stored.
 
 ## Trends
 
+![Insights trends: KPIs, runs by status and runtime charts](assets/screenshots/insights-light.png){ .cm-shot .cm-only-light }
+![Insights trends: KPIs, runs by status and runtime charts](assets/screenshots/insights-dark.png){ .cm-shot .cm-only-dark }
+
 Pick a range (1h, 24h, 7d, 30d). The page shows:
 
 - **KPIs**: runs, success rate, p95 runtime and failures.
@@ -38,12 +41,18 @@ Definitions:
 
 ## Task page
 
+![The page for one task: KPIs, charts and recent runs](assets/screenshots/task-overview-light.png){ .cm-shot .cm-only-light }
+![The page for one task: KPIs, charts and recent runs](assets/screenshots/task-overview-dark.png){ .cm-shot .cm-only-dark }
+
 Open `/task-types/<task name>` from the task name on a run's detail page or
 from the Insights lists. It shows totals, success rate, median/p95/slowest
 runtime, the last success and failure, the same charts filtered to the task,
 the 10 most recent runs, and its top errors.
 
 ## Failures
+
+![Failures grouped by exception signature, with retry all in group](assets/screenshots/failures-light.png){ .cm-shot .cm-only-light }
+![Failures grouped by exception signature, with retry all in group](assets/screenshots/failures-dark.png){ .cm-shot .cm-only-dark }
 
 The **Failures** tab groups failed runs by signature: exception type, message
 with volatile parts masked (numbers, UUIDs, hex ids, memory addresses, quoted
