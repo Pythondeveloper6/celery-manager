@@ -124,7 +124,7 @@ def test_list_upcoming_with_overrides_merges_computed_occurrences_and_overrides(
     result = list_upcoming_with_overrides(read_session, app, "demo-every-2h", count=3, from_time=start)
 
     assert len(result) == 3
-    assert result[0] == {"target_time": first_occurrence, "action": "skip", "consumed": False}
+    assert result[0] == {"target_time": first_occurrence, "action": "skip", "consumed": False, "paused": False}
     assert result[1]["action"] is None
     assert result[1]["consumed"] is False
 

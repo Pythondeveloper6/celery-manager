@@ -100,5 +100,8 @@ There is no migration framework — `init_db()` is `create_all` only, so it
 creates missing tables and never alters existing ones. If you change
 `celery_manager.db.models`, say so in `CHANGELOG.md`: an existing deployment
 will need hand-written DDL or a dropped database, and it will find out by
-getting errors about missing columns. See
+getting errors about missing columns. The one exception is a *nullable*
+column added to an existing table: append it to `_ADDITIVE_COLUMNS` in
+`celery_manager/db/session.py` and `init_db()` adds it to older databases
+itself (still mention it in the changelog). See
 [Configuration: schema and upgrades](configuration.md#schema-and-upgrades).

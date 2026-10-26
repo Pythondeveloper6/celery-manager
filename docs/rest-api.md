@@ -229,9 +229,33 @@ object on retry.
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool}`, ordered by `name`. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. |
-| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
+| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool, "paused": bool, "paused_at": datetime\|null, "paused_by": str\|null}`, ordered by `name`. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. It is *not* the pause state: `paused` is, with `paused_at`/`paused_by` saying when the current pause began and who started it (both `null` when not paused; `paused_at` carries an explicit `+00:00` offset). |
+| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool, "paused": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. `paused` is `true` on every entry while the whole schedule is paused (see below): that occurrence will be recorded as skipped whatever `action` says. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
 | `POST` | `/api/schedules/{name}/occurrences/pause` | required | `{"target_time": datetime, "action": "skip"\|"cancel"}` (any other `action` value is a `422`) | `200 {"id": int, "action": str, "target_time": datetime}`. Records (or updates) an override for the occurrence closest to `target_time`. |
+| `POST` | `/api/schedules/{name}/pause` | required | — | `200` — the schedule's summary, same shape as a `GET /api/schedules` item, now with `paused: true`. Pauses every firing of the schedule until resumed. Idempotent: pausing an already-paused schedule returns `200` with the *original* `paused_at`/`paused_by` and writes no audit row. `404` if `name` isn't a known schedule. |
+| `POST` | `/api/schedules/{name}/resume` | required | — | `200` — the schedule's summary with `paused: false`, `paused_at`/`paused_by` `null`. Idempotent: resuming a schedule that isn't paused is a `200` no-op with no audit row. `404` if `name` isn't a known schedule. |
+
+### Pausing a whole schedule
+
+`POST /api/schedules/{name}/pause` stops a schedule's task body from running
+until `POST /api/schedules/{name}/resume`. Like an occurrence skip, it is
+enforced by the [`@track` decorator](decorator.md#how-the-skipcancel-check-works)
+at run time, not by beat — celery-manager does not own your beat process:
+
+- **Beat keeps firing.** Each firing that reaches a `@track`ed task while the
+  schedule is paused is recorded as a `skipped` run and the body does not
+  run. Tasks without `@track` are **not** affected by a pause.
+- **Resume waits for the next regular beat firing.** It does not run the
+  task immediately, does not reset beat's interval clock, and does not
+  catch up firings missed while paused — those were recorded as `skipped`.
+- **Occurrence skips still apply.** A per-occurrence skip/cancel that falls
+  due while the schedule is paused is consumed by that firing (the firing
+  happened and was skipped either way); skips for occurrences after the
+  resume stay in place.
+- **Restarts don't undo it.** The pause lives in `periodic_schedules.paused_at`
+  / `paused_by`, which the startup sync from `beat_schedule` leaves alone.
+- Same protections as every other state-changing endpoint: a session is
+  required and a cross-origin `Origin` is refused with a `403`.
 
 ### Occurrence-matching nuances worth knowing
 
@@ -386,6 +410,8 @@ of another action. Every control action is covered:
 | `cancel` | `task` | the task id being revoked | `POST /api/tasks/{task_id}/cancel` |
 | `retry` | `task` | the *original* task id | `POST /api/tasks/{task_id}/retry` and `/api/tasks/retry-bulk` (one row per task) |
 | `pause_occurrence` | `schedule` | the schedule name | `POST /api/schedules/{name}/occurrences/pause` |
+| `pause_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/pause` — only when it actually pauses (not on an idempotent repeat); `details` is `null` |
+| `resume_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/resume` — only when it actually resumes; `details={"paused_at", "paused_by"}` of the pause it ended |
 | `update` | `setting` | the setting key (`brand_name`, `brand_accent`, `brand_logo_url`) | `PUT /api/settings` — one row per *changed* key, `details={"old", "new"}` (each truncated to 200 characters, so a data-URI logo doesn't turn the audit log into an image store) |
 
 A retry records only `retry`, never an additional `start`, even though it
