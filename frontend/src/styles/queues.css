@@ -1,0 +1,133 @@
+/* Queues page (pages/Queues.tsx). */
+
+.cm-queues-table .cm-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-queue-name {
+  display: block;
+  font-family: var(--cm-font-mono);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.cm-queue-sources {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-queue-depth {
+  font-weight: 500;
+}
+
+.cm-queue-depth[data-busy] {
+  color: var(--cm-color-status-started);
+}
+
+.cm-queue-unknown {
+  color: var(--cm-color-text-muted);
+}
+
+.cm-queue-spark-cell {
+  color: var(--cm-color-status-started);
+}
+
+/* max-width: none — the base reset caps svg at 100% of a 1%-wide fit cell. */
+.cm-queue-spark {
+  display: block;
+  width: 72px;
+  max-width: none;
+  height: 20px;
+}
+
+.cm-queue-spark-empty {
+  border-bottom: 1px dashed var(--cm-color-border);
+  height: 10px;
+}
+
+.cm-queue-actions {
+  text-align: right;
+}
+
+/* Labels for the numeric cells, shown only once the table stacks. */
+.cm-queue-cell-label {
+  display: none;
+}
+
+.cm-queue-purge-tr:hover {
+  background-color: transparent;
+}
+
+.cm-queue-purge-tr td {
+  height: auto;
+  padding-top: var(--cm-space-3);
+  padding-bottom: var(--cm-space-4);
+  background-color: var(--cm-color-danger-bg);
+}
+
+.cm-queue-purge {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+}
+
+.cm-queue-purge-warn {
+  margin: 0;
+  max-width: var(--cm-measure);
+  font-size: var(--cm-text-md);
+}
+
+.cm-queue-purge-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+}
+
+.cm-queue-purge-label {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-queue-purge-input {
+  flex: 0 1 14rem;
+  width: 14rem;
+  min-width: 0;
+  height: var(--cm-control-h-sm);
+}
+
+.cm-queues-notes {
+  margin: 0;
+  padding-left: var(--cm-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  max-width: var(--cm-measure);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+@media (max-width: 640px) {
+  .cm-queues-table .cm-num {
+    text-align: left;
+  }
+
+  .cm-queue-cell-label {
+    display: inline;
+    margin-right: var(--cm-space-1);
+    color: var(--cm-color-text-muted);
+    font-size: var(--cm-text-xs);
+  }
+
+  .cm-queue-actions {
+    margin-left: auto;
+  }
+
+  .cm-queue-purge-tr td {
+    flex: 1 0 100%;
+    padding: var(--cm-space-3);
+  }
+}
