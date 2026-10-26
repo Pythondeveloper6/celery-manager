@@ -383,6 +383,18 @@ legitimate name like `Ops & Data`.
     [audit log](#audit-log), which is how you find out who turned the nav
     pink.
 
+## Analytics
+
+Computed on read from `task_runs`; all require a session. `range` is one of
+`1h`, `24h`, `7d`, `30d` (anything else is `422`). Timestamps are UTC ISO strings.
+See [Insights](insights.md) for definitions.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| `GET` | `/api/analytics/overview` | required | Query `range` (default `24h`), optional `task_name`. Returns `bucket_seconds`, `truncated`, `totals` (`runs`, `by_status`, `succeeded`, `failed`, `success_rate`, `runtime_p50`, `runtime_p95`, `throughput_per_hour`), `buckets[]` (`start`, `counts`, `total`, `success_rate`, `runtime_p50`, `runtime_p95`), `top_by_volume[]` and `top_by_failure_rate[]` (`task_name`, `runs`, `failed`, `failure_rate`; both empty when `task_name` is given). |
+| `GET` | `/api/analytics/failures` | required | Query `range`, optional `task_name`. Returns `groups[]` sorted by `count`: `signature`, `exception_type`, `message` (masked), `frame`, `example`, `count`, `task_names`, `first_seen`, `last_seen`, `example_task_ids`, `task_ids` (at most 100, newest first; feed to `retry-bulk`) and `task_ids_truncated`. |
+| `GET` | `/api/analytics/tasks/{task_name}` | required | Query `range` (default `30d`). Returns `totals`, `runtime` (`p50`, `p95`, `max`), `last_success_at`, `last_failure_at`, `recent_runs` (10, list shape) and `top_errors` (5 failure groups). `404` if the task has no runs. |
+
 ## Audit log
 
 | Method | Path | Auth | Request | Response |

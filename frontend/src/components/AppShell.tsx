@@ -5,6 +5,7 @@ import { logout } from "../api/client";
 import { BrandMark, ThemeSwitch, useBranding } from "../branding";
 import {
   IconCalendarClock,
+  IconChartLine,
   IconListChecks,
   IconLogOut,
   IconPanelLeft,
@@ -32,6 +33,7 @@ const NAV_ITEMS: { to: string; end?: boolean; label: string; icon: ComponentType
   { to: "/", end: true, label: "Tasks", icon: IconListChecks },
   { to: "/schedules", label: "Schedules", icon: IconCalendarClock },
   { to: "/audit", label: "Audit log", icon: IconScrollText },
+  { to: "/insights", label: "Insights", icon: IconChartLine },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
 
