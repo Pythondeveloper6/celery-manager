@@ -78,9 +78,10 @@ as you'd run celery-manager against a production Django app.
 
 ## Triggering a task
 
-There is **no "start task" button in the dashboard UI** — starting a task is
-a REST endpoint (`POST /api/tasks/start`), and building a UI for it is a
-tracked backlog item, not a v1 feature. Use either of these instead.
+The easiest way is the dashboard itself: on **Tasks**, click **Start task**,
+pick `tasks_app.tasks.send_welcome_email`, give it `["demo@example.com"]` as
+Args and start it. The new run's page opens and the start is recorded in the
+Audit Log. The same thing is available from code, below.
 
 **From a Django shell** (simplest, and the same path your own code would
 take):
@@ -92,7 +93,7 @@ send_welcome_email.delay('demo@example.com')
 "
 ```
 
-**Or through the REST API**, which is what a UI control would call. The
+**Or through the REST API**, which is what the dashboard's Start task button calls. The
 endpoint requires authentication, so log in first and keep the session cookie
 in a jar:
 

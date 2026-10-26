@@ -1,9 +1,10 @@
 import "../styles/task-detail.css";
 
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { cancelTask, getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
 import { IconCheck, IconChevronLeft, IconCopy } from "../components/icons";
+import { TaskCallDialog } from "../components/TaskCallDialog";
 import { StatusBadge } from "../components/Status";
 import {
   elapsedSeconds,
@@ -141,6 +142,8 @@ export function TaskDetail() {
   // known state stays on screen and the failure is reported next to it.
   const [liveError, setLiveError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const navigate = useNavigate();
   const [retryError, setRetryError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<{ newTaskId: string } | null>(null);
   // "cancel" | "terminate" while a request is in flight; confirmTerminate is
@@ -391,6 +394,11 @@ export function TaskDetail() {
                   </>
                 )}
                 {task.status === "failed" && (
+                  <button type="button" className="cm-btn cm-btn-outline" onClick={() => setEditOpen(true)}>
+                    Retry with changes
+                  </button>
+                )}
+                {task.status === "failed" && (
                   <button
                     type="button"
                     className="cm-btn cm-btn-primary"
@@ -404,6 +412,18 @@ export function TaskDetail() {
               </div>
             )}
           </header>
+
+          {editOpen && (
+            <TaskCallDialog
+              mode="retry"
+              retryOf={{ taskId: task.task_id, taskName: task.task_name, args: task.args, kwargs: task.kwargs }}
+              onClose={() => setEditOpen(false)}
+              onDone={(id) => {
+                setEditOpen(false);
+                navigate(`/tasks/${id}`);
+              }}
+            />
+          )}
 
           {cancelNotice && (
             <p className="cm-notice" role="status">

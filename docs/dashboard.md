@@ -201,6 +201,25 @@ quietly updates. A failed *background* refresh shows a banner above the
 still-visible rows; a failure with no rows behind it shows an error state
 with **Try again**.
 
+### Start task
+
+The **Start task** button in the page header opens a side sheet (Escape or
+**Cancel** closes it and returns focus to the button):
+
+- A searchable picker of the tasks registered on the Celery app
+  (`GET /api/tasks/registered`), each with its docstring's first line. If the
+  web process hasn't imported your task modules the list may be empty or
+  short; type any task name and choose **Use "name"** to dispatch it anyway.
+- **Args** (JSON array) and **Kwargs** (JSON object) editors, with the task's
+  signature shown and kwargs prefilled from its defaults. Invalid JSON, or the
+  wrong shape (an object in Args, an array in Kwargs), shows an error under
+  the field and disables the button.
+- An optional **Queue**, and **Run** now, after a delay (countdown seconds) or
+  at a specific time (ETA, your local time).
+
+Submitting calls `POST /api/tasks/start` (audited) and opens the new run's
+page. You can also start tasks over the [REST API](rest-api.md).
+
 ## Task detail
 
 ![Task detail for a running import, with live progress and cancel and terminate buttons](assets/screenshots/task-detail-light.png){ .cm-shot .cm-only-light }
@@ -213,6 +232,13 @@ with **Try again**.
   shows a link to the newly created run (`new_task_id`) rather than
   navigating away, so the user can compare old and new runs side by side
   if they want.
+- **Retry with changes**, next to Retry on a failed run: opens the same
+  editor as Start task, fixed to this run's task and prefilled with its args
+  and kwargs. Submitting sends them in the body of `POST
+  /api/tasks/{task_id}/retry`, records the usual retry lineage, notes the
+  edit in the audit log (with the new arguments), and opens the new run. If a
+  stored value can't be parsed as JSON (older listener-recorded runs keep a
+  Python repr) the editor shows it as-is so you can rewrite it.
 - Args and kwargs, pretty-printed as JSON (the API returns them as raw
   JSON strings; the page re-parses and re-serializes with indentation for
   display, falling back to the raw string if parsing fails).

@@ -4967,7 +4967,7 @@ Append new mid-implementation requests here too, tagged with the task they'd ext
   process, which removes the IPC need entirely but couples listener uptime to
   the API's and doesn't scale past one API process. (a) is the more general
   answer; (b) is the cheaper one for single-process deployments.
-- **A "start task" control in the dashboard UI** — *added by the final-review
+- **A "start task" control in the dashboard UI** — **done** (Start task sheet + `GET /api/tasks/registered`; see CHANGELOG). *Originally: added by the final-review
   fix wave, finding I8.* `POST /api/tasks/start` exists and is now audited,
   but nothing in the SPA can invoke it; the demo README was pointing users at
   a UI control that does not exist. The README now documents the real
