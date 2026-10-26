@@ -3,14 +3,11 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { BrandingProvider } from "./branding";
 
-// Self-hosted font files, latin subset only (no external CDN calls — this
-// dashboard is expected to run on internal/offline networks).
-import "@fontsource/schibsted-grotesk/latin-400.css";
-import "@fontsource/schibsted-grotesk/latin-500.css";
-import "@fontsource/schibsted-grotesk/latin-600.css";
-import "@fontsource/schibsted-grotesk/latin-700.css";
-import "@fontsource/jetbrains-mono/latin-400.css";
-import "@fontsource/jetbrains-mono/latin-500.css";
+// Self-hosted variable fonts (no external CDN calls — this dashboard is
+// expected to run on internal/offline networks). Each subset is a separate
+// file behind a unicode-range, so browsers fetch only latin in practice.
+import "@fontsource-variable/geist/wght.css";
+import "@fontsource-variable/geist-mono/wght.css";
 
 import "./styles/tokens.css";
 

@@ -2,29 +2,31 @@
    celery-manager design system
    ==========================================================================
 
-   Direction: "ink on paper, colour means state". An operations console
-   people open mid-incident, so the chrome — rail, panels, text, buttons — is
-   monochrome ink on a cool, faintly green paper, and colour is spent almost
-   entirely on task status. Success is quiet (a sage dot, muted text), trouble
-   is loud (vermilion, with a rule down the failed row), in-flight is blue.
-   The brand accent ("celery leaf" out of the box) appears in exactly three
-   places: the primary button, the focus ring and the active nav item.
+   Direction: shadcn/ui's default zinc theme, rebuilt as plain CSS on --cm-*
+   tokens. Neutral zinc surfaces, 1px borders, `shadow-sm` on cards, 0.5rem
+   radius, h-9 controls and text-sm UI. The component classes below mirror
+   shadcn's: Button (primary/secondary/outline/ghost/destructive, sm/icon),
+   Input, Select, Checkbox, Badge, Card, Table, Tabs, Popover, Separator,
+   Tooltip and the collapsible Sidebar.
 
-   Schibsted Grotesk carries all UI text, with tabular figures wherever a
-   number ticks in place (live clocks, progress). JetBrains Mono is reserved for things that are code:
-   task ids, args/kwargs, tracebacks and log output. No tracked all-caps
-   labels; sentence case, weight 500, muted.
+   Colour beyond zinc is spent on two things. Task status, which keeps its
+   meaning in both themes (failed red, started blue, retried amber, succeeded
+   green). And the primary: zinc-900 / zinc-50 out of the box, or the
+   deployment's brand colour, which branding.tsx derives into the primary
+   fill, hover, foreground, text and soft tint and writes over these tokens.
+   The focus ring is drawn in --cm-color-primary-text so it follows the brand
+   without ever becoming unreadable.
 
-   Surfaces are separated by 1px rules rather than drop shadows. Radius is
-   6px on controls, 8px on panels; only status dots are round.
+   Geist carries all UI text; Geist Mono is reserved for things that are
+   code: task ids, args/kwargs, tracebacks and log output. Sentence case, no
+   tracked all-caps labels.
 
    Tokens are defined for light mode on bare :root and overridden for dark
    mode twice: once behind `prefers-color-scheme: dark` (guarded so an
    explicit light choice wins) and once behind `:root[data-theme="dark"]`
-   (so an explicit dark choice wins on a light-set OS). No token's only
-   definition lives inside a media query. Every colour, spacing, radius and
-   type value used by components comes from a custom property here — no ad
-   hoc hex values in component files.
+   (so an explicit dark choice wins on a light-set OS). Every colour,
+   spacing, radius and type value used by components comes from a custom
+   property here — no ad hoc hex values in component files.
    ========================================================================== */
 
 @tailwind base;
@@ -32,84 +34,97 @@
 @tailwind utilities;
 
 :root {
-  /* ---- colour: light mode (default) -------------------------------- */
-  --cm-color-bg: #f4f5f2;
-  --cm-color-bg-elevated: #f9faf8;
+  /* ---- colour: light mode (default), shadcn zinc ------------------- */
+  --cm-color-bg: #ffffff;
   --cm-color-surface: #ffffff;
-  --cm-color-surface-sunken: #eceeea;
+  --cm-color-sidebar: #fafafa;
+  /* muted = shadcn muted/secondary/accent (all zinc-100); muted-subtle is
+     muted/50 composited on the background — table headers and row hover. */
+  --cm-color-muted: #f4f4f5;
+  --cm-color-muted-subtle: #fafafa;
 
-  --cm-color-border: #dce0da;
-  --cm-color-border-strong: #9aa49e;
+  --cm-color-border: #e4e4e7;
+  --cm-color-input: #e4e4e7;
 
-  --cm-color-text: #17201b;
-  --cm-color-text-muted: #5a655f;
-  /* Faint *text*: the lightest grey that still clears 4.5:1 on the darkest
-     light surface (sunken, 4.53:1). The paler #8a938d is kept as
-     --cm-color-mark for non-text marks (dots, hollow outlines), where 3:1 is
-     the bar — as text it measured 2.71:1 on a hovered row. */
-  --cm-color-text-faint: #646e68;
-  --cm-color-mark: #8a938d;
+  --cm-color-text: #09090b;
+  /* A shade darker than zinc-500 so it clears 4.5:1 on muted too (4.80:1;
+     zinc-500 is 4.40:1 there, e.g. inactive tabs). */
+  --cm-color-text-muted: #6b6b74;
+  /* Non-text marks only (hollow dots, a queued bar), where a word always
+     sits beside the mark. */
+  --cm-color-mark: #a1a1aa;
 
-  --cm-color-accent: #2f6b4f;
-  --cm-color-accent-hover: #27593f;
-  --cm-color-accent-active: #1f4733;
-  --cm-color-accent-contrast: #ffffff;
-  --cm-color-accent-soft: rgba(47, 107, 79, 0.12);
-
-  /* Accent *as foreground text* — a separate token from --cm-color-accent
-     even though the two are identical out of the box. --cm-color-accent is
-     a fill (button backgrounds, the brand dot) where the paired
-     --cm-color-accent-contrast guarantees legibility; --cm-color-accent-text
-     is the same signal painted straight onto a surface. The split is
-     load-bearing once a deployment sets its own brand accent (see
-     branding.tsx): a pale brand still works as a button fill, but would be
-     unreadable as text, so branding derives a darkened/lightened variant
-     for these two and leaves the fill alone. The focus ring reads this
-     token for the same reason.
-     Built-in values, measured on the darkest light backdrop (sunken
-     #eceeea): #2f6b4f = 5.39:1, hover #27593f = 6.95:1. */
-  --cm-color-accent-text: #2f6b4f;
-  --cm-color-accent-text-hover: #27593f;
+  /* Primary: a fill (buttons, the brand mark) with its paired foreground,
+     and a separate *text* token for the same signal painted straight onto a
+     surface (links, the focus ring). The split matters once a deployment
+     sets a brand colour (see branding.tsx): a pale brand still works as a
+     fill but would be unreadable as text. */
+  --cm-color-primary: #18181b;
+  --cm-color-primary-hover: #27272a;
+  --cm-color-primary-active: #3f3f46;
+  --cm-color-primary-foreground: #fafafa;
+  --cm-color-primary-soft: rgba(24, 24, 27, 0.06);
+  --cm-color-primary-text: #18181b;
+  --cm-color-primary-text-hover: #3f3f46;
 
   /* ---- task status --------------------------------------------------
-     One colour per TaskRun state, used for the status dot, the run strip
-     bar and — for the two states that need to be loud — the status word.
-     queued/skipped/revoked are administrative and stay neutral. As text:
-     started 4.97:1 and failed 4.62:1 on a hovered (sunken) row. The quiet
-     states print their word in --cm-color-text-muted instead. */
-  --cm-color-status-queued: var(--cm-color-text-muted);
-  --cm-color-status-started: #1f5fd1;
-  --cm-color-status-started-soft: rgba(31, 95, 209, 0.14);
-  --cm-color-status-succeeded: #4f7a5c;
-  --cm-color-status-failed: #c4361f;
-  --cm-color-status-retried: #9a6100;
+     One colour per TaskRun state, for the badge dot, the run strip bar and
+     the tab dot. Started and failed also colour their word: blue-600 5.17:1
+     and red-600 4.83:1 on white (4.95 / 4.63 on a hovered row). The quiet
+     states print their word in --cm-color-text-muted. */
+  --cm-color-status-queued: var(--cm-color-mark);
+  --cm-color-status-started: #2563eb;
+  --cm-color-status-started-soft: rgba(37, 99, 235, 0.14);
+  --cm-color-status-succeeded: #059669;
+  --cm-color-status-failed: #dc2626;
+  --cm-color-status-retried: #d97706;
   --cm-color-status-skipped: var(--cm-color-mark);
-  --cm-color-status-revoked: var(--cm-color-border-strong);
+  --cm-color-status-revoked: #52525b;
 
+  /* Destructive: red-600 as fill (white text 4.83:1) and, in light mode,
+     as text. */
   --cm-color-danger: var(--cm-color-status-failed);
-  --cm-color-danger-bg: rgba(196, 54, 31, 0.07);
-  --cm-color-danger-border: rgba(196, 54, 31, 0.4);
+  --cm-color-danger-fill: #dc2626;
+  --cm-color-danger-fill-hover: #b91c1c;
+  --cm-color-danger-foreground: #ffffff;
+  --cm-color-danger-bg: rgba(220, 38, 38, 0.05);
+  --cm-color-danger-border: rgba(220, 38, 38, 0.45);
 
   --cm-color-warn: var(--cm-color-status-retried);
-  --cm-color-warn-bg: rgba(154, 97, 0, 0.08);
+  --cm-color-success: var(--cm-color-status-succeeded);
 
   /* A future occurrence a human has paused. A different concept from task
      status, so its own token, even though it borrows the retried amber. */
   --cm-color-occurrence-skip: var(--cm-color-status-retried);
 
-  --cm-shadow-pop: 0 6px 20px -6px rgba(23, 32, 27, 0.25);
-  --cm-focus-ring-color: var(--cm-color-accent-text);
+  --cm-color-overlay: rgba(0, 0, 0, 0.5);
+
+  --cm-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --cm-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --cm-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --cm-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --cm-focus-ring-color: var(--cm-color-primary-text);
+
+  /* lucide chevron-down in zinc-500, which clears 3:1 on both themes'
+     inputs, so one image serves both (a data URI can't read a variable). */
+  --cm-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+
+  /* Alert icons (lucide circle-alert, circle-check, triangle-alert), used as
+     masks so they paint in the alert's own currentColor. */
+  --cm-icon-alert: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E");
+  --cm-icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
+  --cm-icon-warn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E");
 
   /* ---- type ----------------------------------------------------------- */
-  --cm-font-body: "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --cm-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --cm-font-body: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cm-font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --cm-text-xs: 0.75rem;
   --cm-text-sm: 0.8125rem;
   --cm-text-md: 0.875rem;
   --cm-text-base: 1rem;
-  --cm-text-lg: 1.25rem;
-  --cm-text-xl: 1.625rem;
+  --cm-text-lg: 1.125rem;
+  --cm-text-xl: 1.5rem;
 
   --cm-leading-tight: 1.2;
   --cm-leading-normal: 1.5;
@@ -125,30 +140,37 @@
   --cm-space-7: 3rem;
   --cm-space-8: 4rem;
 
-  /* ---- radius ------------------------------------------------------------ */
-  --cm-radius-sm: 4px;
-  --cm-radius-md: 6px;
-  --cm-radius-lg: 8px;
+  /* ---- radius: shadcn's --radius and the steps it derives ------------- */
+  --cm-radius: 0.5rem;
+  --cm-radius-sm: calc(var(--cm-radius) - 4px);
+  --cm-radius-md: calc(var(--cm-radius) - 2px);
+  --cm-radius-lg: var(--cm-radius);
+  --cm-radius-xl: calc(var(--cm-radius) + 4px);
   --cm-radius-full: 999px;
 
-  /* ---- page geometry ----------------------------------------------------
-     Content is left-aligned beside the rail and stops at 1400px, so a table
-     row on a wide monitor stays trackable from name to timestamp.
-     --cm-measure caps the parts of a page that are a form or a sentence. */
-  --cm-rail-width: 232px;
+  /* ---- control and page geometry --------------------------------------
+     Content stops at 1400px so a table row on a wide monitor stays
+     trackable from name to timestamp; --cm-measure caps forms and prose. */
+  --cm-control-h: 2.25rem;
+  --cm-control-h-sm: 2rem;
+  --cm-sidebar-width: 16rem;
+  --cm-sidebar-width-icon: 3rem;
+  --cm-sidebar-width-mobile: 18rem;
+  --cm-topbar-h: 3rem;
   --cm-page-max: 1400px;
-  --cm-page-pad-x: var(--cm-space-6);
+  --cm-page-pad-x: var(--cm-space-5);
   --cm-measure: 48rem;
 
   /* ---- motion ----------------------------------------------------------- */
   --cm-ease: cubic-bezier(0.2, 0, 0, 1);
   --cm-duration-fast: 120ms;
   --cm-duration-base: 200ms;
+  --cm-duration-sheet: 300ms;
   --cm-duration-pulse: 2000ms;
 }
 
 /* ==========================================================================
-   Dark mode
+   Dark mode — shadcn zinc dark
    ==========================================================================
 
    Resolved from an explicit `data-theme` attribute on <html> first, and only
@@ -165,41 +187,45 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --cm-color-bg: #111513;
-    --cm-color-bg-elevated: #141916;
-    --cm-color-surface: #171c19;
-    --cm-color-surface-sunken: #0d110f;
+    --cm-color-bg: #09090b;
+    --cm-color-surface: #09090b;
+    --cm-color-sidebar: #18181b;
+    --cm-color-muted: #27272a;
+    --cm-color-muted-subtle: #18181b;
 
-    --cm-color-border: #262d29;
-    --cm-color-border-strong: #4a544e;
+    --cm-color-border: #27272a;
+    --cm-color-input: #27272a;
 
-    --cm-color-text: #e4e9e5;
-    --cm-color-text-muted: #9aa59f;
-    /* 4.64:1 on surface; the spec's #66716b stays as the mark colour. */
-    --cm-color-text-faint: #7c8781;
-    --cm-color-mark: #66716b;
+    --cm-color-text: #fafafa;
+    /* zinc-400: 5.81:1 on muted, 7.76:1 on the background. */
+    --cm-color-text-muted: #a1a1aa;
+    --cm-color-mark: #71717a;
 
-    --cm-color-accent: #86c79c;
-    --cm-color-accent-hover: #9dd3af;
-    --cm-color-accent-active: #6fb587;
-    --cm-color-accent-contrast: #0d1f14;
-    --cm-color-accent-soft: rgba(134, 199, 156, 0.12);
+    --cm-color-primary: #fafafa;
+    --cm-color-primary-hover: #e4e4e7;
+    --cm-color-primary-active: #d4d4d8;
+    --cm-color-primary-foreground: #18181b;
+    --cm-color-primary-soft: rgba(250, 250, 250, 0.08);
+    --cm-color-primary-text: #fafafa;
+    --cm-color-primary-text-hover: #d4d4d8;
 
-    /* 8.76:1 on surface #171c19. */
-    --cm-color-accent-text: #86c79c;
-    --cm-color-accent-text-hover: #9dd3af;
+    /* -400 steps: all above 5.3:1 on muted. */
+    --cm-color-status-started: #60a5fa;
+    --cm-color-status-started-soft: rgba(96, 165, 250, 0.18);
+    --cm-color-status-succeeded: #34d399;
+    --cm-color-status-failed: #f87171;
+    --cm-color-status-retried: #fbbf24;
+    --cm-color-status-revoked: #a1a1aa;
 
-    --cm-color-status-started: #7fa6ff;
-    --cm-color-status-started-soft: rgba(127, 166, 255, 0.18);
-    --cm-color-status-succeeded: #7fb08e;
-    --cm-color-status-failed: #ff7a63;
-    --cm-color-status-retried: #e9b04a;
+    --cm-color-danger-bg: rgba(248, 113, 113, 0.06);
+    --cm-color-danger-border: rgba(248, 113, 113, 0.45);
 
-    --cm-color-danger-bg: rgba(255, 122, 99, 0.08);
-    --cm-color-danger-border: rgba(255, 122, 99, 0.4);
-    --cm-color-warn-bg: rgba(233, 176, 74, 0.08);
+    --cm-color-overlay: rgba(0, 0, 0, 0.7);
 
-    --cm-shadow-pop: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
+    --cm-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --cm-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
+    --cm-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+    --cm-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.6);
 
     /* Native widgets (scrollbars, date pickers, the colour swatch). */
     color-scheme: dark;
@@ -207,41 +233,45 @@
 }
 
 :root[data-theme="dark"] {
-  --cm-color-bg: #111513;
-  --cm-color-bg-elevated: #141916;
-  --cm-color-surface: #171c19;
-  --cm-color-surface-sunken: #0d110f;
+  --cm-color-bg: #09090b;
+  --cm-color-surface: #09090b;
+  --cm-color-sidebar: #18181b;
+  --cm-color-muted: #27272a;
+  --cm-color-muted-subtle: #18181b;
 
-  --cm-color-border: #262d29;
-  --cm-color-border-strong: #4a544e;
+  --cm-color-border: #27272a;
+  --cm-color-input: #27272a;
 
-  --cm-color-text: #e4e9e5;
-  --cm-color-text-muted: #9aa59f;
-  /* 4.64:1 on surface; the spec's #66716b stays as the mark colour. */
-  --cm-color-text-faint: #7c8781;
-  --cm-color-mark: #66716b;
+  --cm-color-text: #fafafa;
+  /* zinc-400: 5.81:1 on muted, 7.76:1 on the background. */
+  --cm-color-text-muted: #a1a1aa;
+  --cm-color-mark: #71717a;
 
-  --cm-color-accent: #86c79c;
-  --cm-color-accent-hover: #9dd3af;
-  --cm-color-accent-active: #6fb587;
-  --cm-color-accent-contrast: #0d1f14;
-  --cm-color-accent-soft: rgba(134, 199, 156, 0.12);
+  --cm-color-primary: #fafafa;
+  --cm-color-primary-hover: #e4e4e7;
+  --cm-color-primary-active: #d4d4d8;
+  --cm-color-primary-foreground: #18181b;
+  --cm-color-primary-soft: rgba(250, 250, 250, 0.08);
+  --cm-color-primary-text: #fafafa;
+  --cm-color-primary-text-hover: #d4d4d8;
 
-  /* 8.76:1 on surface #171c19. */
-  --cm-color-accent-text: #86c79c;
-  --cm-color-accent-text-hover: #9dd3af;
+  /* -400 steps: all above 5.3:1 on muted. */
+  --cm-color-status-started: #60a5fa;
+  --cm-color-status-started-soft: rgba(96, 165, 250, 0.18);
+  --cm-color-status-succeeded: #34d399;
+  --cm-color-status-failed: #f87171;
+  --cm-color-status-retried: #fbbf24;
+  --cm-color-status-revoked: #a1a1aa;
 
-  --cm-color-status-started: #7fa6ff;
-  --cm-color-status-started-soft: rgba(127, 166, 255, 0.18);
-  --cm-color-status-succeeded: #7fb08e;
-  --cm-color-status-failed: #ff7a63;
-  --cm-color-status-retried: #e9b04a;
+  --cm-color-danger-bg: rgba(248, 113, 113, 0.06);
+  --cm-color-danger-border: rgba(248, 113, 113, 0.45);
 
-  --cm-color-danger-bg: rgba(255, 122, 99, 0.08);
-  --cm-color-danger-border: rgba(255, 122, 99, 0.4);
-  --cm-color-warn-bg: rgba(233, 176, 74, 0.08);
+  --cm-color-overlay: rgba(0, 0, 0, 0.7);
 
-  --cm-shadow-pop: 0 8px 24px -6px rgba(0, 0, 0, 0.6);
+  --cm-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --cm-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
+  --cm-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+  --cm-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.6);
 
   /* Native widgets (scrollbars, date pickers, the colour swatch). */
   color-scheme: dark;
@@ -311,12 +341,10 @@ kbd {
   font-family: var(--cm-font-mono);
 }
 
-/* One focus treatment for everything: a solid 2px ring in the accent *text*
-   colour (so a pale brand accent can't make it invisible), offset from the
-   control so it never merges with a border. `outline` rather than a
-   box-shadow so it follows each control's own radius and never fights a
-   component's own shadow. `summary` is listed because it is natively
-   focusable but none of the other element types. */
+/* One focus treatment for everything: shadcn's `ring-2 ring-offset-2`,
+   drawn as an outline so it follows each control's own radius. Painted in
+   the primary *text* colour so a pale brand can't make it invisible.
+   `summary` is listed because it is natively focusable. */
 :where(a, button, input, select, summary, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--cm-focus-ring-color);
   outline-offset: 2px;
@@ -336,6 +364,15 @@ kbd {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Lucide-style inline icons (components/icons.tsx) are 16px, shadcn's
+   `[&_svg]:size-4`, unless a component sizes them. Zero specificity so any
+   class wins. */
+:where(svg[viewBox="0 0 24 24"]) {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -365,202 +402,354 @@ kbd {
 }
 
 /* ==========================================================================
-   App shell — a left rail beside the page. Below 900px the rail becomes a
-   top bar whose links wrap, so nothing ever scrolls the page sideways.
+   Separator
+   ========================================================================== */
+
+.cm-separator {
+  flex: none;
+  width: 100%;
+  height: 1px;
+  margin: 0;
+  background-color: var(--cm-color-border);
+  border: 0;
+}
+
+.cm-separator-vertical {
+  width: 1px;
+  height: 1rem;
+}
+
+/* ==========================================================================
+   Tooltip — shadcn's inverted chip. Sidebar items position theirs beside
+   the icon rail; the run strip places its own.
+   ========================================================================== */
+
+.cm-tooltip {
+  z-index: 50;
+  padding: 0.375rem var(--cm-space-3);
+  font-size: var(--cm-text-xs);
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--cm-color-bg);
+  background-color: var(--cm-color-text);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-md);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   App shell — sidebar, slim header bar, page
    ========================================================================== */
 
 .cm-shell {
-  display: grid;
-  grid-template-columns: var(--cm-rail-width) minmax(0, 1fr);
+  display: flex;
   min-height: 100dvh;
+}
+
+.cm-inset {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .cm-main {
   min-width: 0;
 }
 
-.cm-rail {
+.cm-topbar {
   position: sticky;
   top: 0;
-  height: 100dvh;
+  z-index: 20;
   display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-5);
-  padding: var(--cm-space-5) var(--cm-space-3) var(--cm-space-4);
-  background-color: var(--cm-color-bg-elevated);
-  border-right: 1px solid var(--cm-color-border);
-  overflow-y: auto;
+  align-items: center;
+  gap: var(--cm-space-2);
+  height: var(--cm-topbar-h);
+  padding: 0 var(--cm-space-4) 0 var(--cm-space-3);
+  background-color: var(--cm-color-bg);
+  border-bottom: 1px solid var(--cm-color-border);
 }
 
-/* min-width: 0 lets .cm-brand-name's ellipsis engage on a 64-character
-   configured name instead of widening the rail. */
-.cm-rail-brand {
+.cm-topbar-title {
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  color: var(--cm-color-text);
+}
+
+.cm-sidebar-trigger.cm-btn-icon {
+  width: 1.75rem;
+  min-height: 1.75rem;
+}
+
+/* ---- sidebar ------------------------------------------------------------
+   One element, three presentations: expanded (16rem, labels), collapsed
+   (3rem icon rail, labels clipped and offered as tooltips) and, below
+   768px, an off-canvas sheet. Labels are clipped by each item's own
+   overflow rather than the sidebar's, so collapsed tooltips can escape. */
+
+.cm-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  width: var(--cm-sidebar-width);
+  height: 100dvh;
+  padding: var(--cm-space-2);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-sidebar);
+  border-right: 1px solid var(--cm-color-border);
+  transition: width var(--cm-duration-base) var(--cm-ease);
+}
+
+.cm-sidebar-header {
   display: flex;
   align-items: center;
   gap: var(--cm-space-2);
   min-width: 0;
-  padding: 0 var(--cm-space-2);
-  font-size: var(--cm-text-base);
+}
+
+/* min-width: 0 lets .cm-brand-name's ellipsis engage on a 64-character
+   configured name instead of widening the sidebar. */
+.cm-sidebar-brand {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--cm-space-2);
+  min-width: 0;
+  height: 3rem;
+  overflow: hidden;
+  font-size: var(--cm-text-md);
   font-weight: 600;
-  letter-spacing: -0.01em;
   color: var(--cm-color-text);
 }
 
-.cm-rail-links {
+.cm-sidebar-header .cm-sidebar-close {
+  display: none;
+}
+
+.cm-sidebar-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cm-sidebar-menu {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--cm-space-1);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.cm-rail-link {
+.cm-sidebar-item {
   position: relative;
+}
+
+/* shadcn's SidebarMenuButton: h-8, p-2, gap-2, rounded-md, text-sm. */
+.cm-sidebar-button {
   display: flex;
   align-items: center;
-  min-height: 2.25rem;
-  padding: 0 var(--cm-space-3);
+  gap: var(--cm-space-2);
+  width: 100%;
+  height: 2rem;
+  padding: var(--cm-space-2);
+  overflow: hidden;
   font-size: var(--cm-text-md);
-  font-weight: 500;
-  color: var(--cm-color-text-muted);
+  color: var(--cm-color-text);
+  text-align: left;
   text-decoration: none;
+  white-space: nowrap;
   border-radius: var(--cm-radius-md);
-  transition: color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
+  transition: background-color var(--cm-duration-fast) var(--cm-ease);
 }
 
-.cm-rail-link:hover {
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-surface-sunken);
+.cm-sidebar-button:hover:not(:disabled) {
+  background-color: var(--cm-color-muted);
 }
 
-.cm-rail-link[aria-current="page"] {
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-accent-soft);
+/* Active: the primary's soft tint, which is shadcn's neutral sidebar-accent
+   out of the box and picks up the brand when one is set. */
+.cm-sidebar-button[aria-current="page"] {
+  font-weight: 500;
+  background-color: var(--cm-color-primary-soft);
 }
 
-.cm-rail-link[aria-current="page"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.5rem;
-  bottom: 0.5rem;
-  width: 2px;
-  border-radius: 2px;
-  background-color: var(--cm-color-accent);
+.cm-sidebar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
-.cm-rail-foot {
+.cm-sidebar-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity var(--cm-duration-base) var(--cm-ease);
+}
+
+.cm-sidebar-footer {
   display: flex;
   flex-direction: column;
-  gap: var(--cm-space-3);
-  margin-top: auto;
-  padding: var(--cm-space-4) var(--cm-space-2) 0;
-  border-top: 1px solid var(--cm-color-border);
+  gap: var(--cm-space-2);
 }
 
-.cm-rail-user {
+.cm-sidebar-footer .cm-theme-switch {
+  display: flex;
+  width: 100%;
+}
+
+.cm-sidebar-footer .cm-theme-switch .cm-tabs-trigger {
+  flex: 1 1 0;
+}
+
+.cm-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  height: 3rem;
   overflow: hidden;
-  font-size: var(--cm-text-sm);
+}
+
+.cm-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  font-size: var(--cm-text-md);
   font-weight: 500;
   color: var(--cm-color-text);
+  background-color: var(--cm-color-muted);
+  border-radius: var(--cm-radius-lg);
+}
+
+.cm-sidebar-user-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.cm-sidebar-user-name {
+  overflow: hidden;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cm-rail-foot-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--cm-space-2);
-}
-
-.cm-rail-signout {
-  padding: var(--cm-space-1) 0;
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
+.cm-sidebar-user-note {
+  font-size: var(--cm-text-xs);
   color: var(--cm-color-text-muted);
-  border-radius: var(--cm-radius-sm);
-  transition: color var(--cm-duration-fast) var(--cm-ease);
 }
 
-.cm-rail-signout:hover:not(:disabled) {
-  color: var(--cm-color-text);
-  text-decoration: underline;
+.cm-sidebar-error {
+  font-size: var(--cm-text-sm);
 }
 
-.cm-rail-signout:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+.cm-sidebar-item > .cm-tooltip {
+  display: none;
 }
 
-@media (max-width: 899px) {
-  /* auto/1fr rows: without them min-height's spare space is shared out and
-     the top bar balloons on a short page. */
-  .cm-shell {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 1fr;
+.cm-sidebar-overlay {
+  display: none;
+}
+
+/* Collapsed icon rail. Desktop only: below 768px the sheet always shows
+   labels. Width does the hiding — each item clips its own label — so the
+   transition is one property. */
+@media (min-width: 768px) {
+  .cm-sidebar[data-state="collapsed"] {
+    width: var(--cm-sidebar-width-icon);
   }
 
-  /* Brand and the account cluster share the first line; links get their own
-     line below and wrap if they must. */
-  .cm-rail {
-    position: static;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    align-content: flex-start;
-    justify-content: space-between;
-    gap: var(--cm-space-3) var(--cm-space-4);
-    padding: var(--cm-space-3) var(--cm-space-4);
-    border-right: none;
-    border-bottom: 1px solid var(--cm-color-border);
-    overflow: visible;
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-label,
+  .cm-sidebar[data-state="collapsed"] .cm-brand-name {
+    opacity: 0;
   }
 
-  .cm-rail-brand {
+  .cm-sidebar[data-state="collapsed"] .cm-theme-switch {
+    flex-direction: column;
+  }
+
+  .cm-sidebar[data-state="collapsed"] .cm-theme-switch .cm-tabs-trigger {
+    flex: none;
+    width: 100%;
     padding: 0;
   }
 
-  .cm-rail-links {
-    order: 3;
-    flex: 1 0 100%;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: var(--cm-space-1);
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-item > .cm-tooltip {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + var(--cm-space-3));
+    display: block;
+    opacity: 0;
+    transform: translateY(-50%);
+    transition: opacity var(--cm-duration-fast) var(--cm-ease);
   }
 
-  .cm-rail-link {
-    min-height: 2rem;
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-item:hover > .cm-tooltip,
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-item:focus-within > .cm-tooltip {
+    opacity: 1;
   }
 
-  .cm-rail-link[aria-current="page"]::before {
-    top: auto;
+  /* A sign-out failure can't fit a 3rem rail; it floats beside it. */
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-error {
+    position: absolute;
+    bottom: var(--cm-space-4);
+    left: calc(100% + var(--cm-space-3));
+    width: 16rem;
+    background-color: var(--cm-color-surface);
+    box-shadow: var(--cm-shadow-md);
+  }
+}
+
+/* Mobile: an off-canvas sheet with an overlay. `visibility` waits for the
+   slide-out to finish, then takes the sheet out of the tab order. */
+@media (max-width: 767px) {
+  .cm-sidebar {
+    position: fixed;
+    top: 0;
     bottom: 0;
-    left: var(--cm-space-3);
-    right: var(--cm-space-3);
-    width: auto;
-    height: 2px;
+    left: 0;
+    z-index: 50;
+    width: var(--cm-sidebar-width-mobile);
+    max-width: calc(100vw - 3rem);
+    height: auto;
+    visibility: hidden;
+    transform: translateX(-100%);
+    box-shadow: var(--cm-shadow-lg);
+    transition:
+      transform var(--cm-duration-sheet) var(--cm-ease),
+      visibility 0s linear var(--cm-duration-sheet);
   }
 
-  .cm-rail-foot {
-    flex-direction: row;
-    align-items: center;
-    margin: 0;
-    padding: 0;
-    border-top: none;
-    min-width: 0;
+  .cm-sidebar[data-mobile-open] {
+    visibility: visible;
+    transform: none;
+    transition: transform var(--cm-duration-sheet) var(--cm-ease);
   }
 
-  .cm-rail-user {
-    max-width: 10ch;
+  .cm-sidebar-header .cm-sidebar-close {
+    display: inline-flex;
   }
 
-  .cm-rail-foot-row {
-    flex-wrap: nowrap;
-    gap: var(--cm-space-3);
+  .cm-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: block;
+    background-color: var(--cm-color-overlay);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--cm-duration-sheet) var(--cm-ease);
+  }
+
+  .cm-sidebar-overlay[data-open] {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 
@@ -570,15 +759,15 @@ kbd {
 
 .cm-page {
   max-width: var(--cm-page-max);
-  padding: var(--cm-space-6) var(--cm-page-pad-x) var(--cm-space-7);
+  padding: var(--cm-space-5) var(--cm-page-pad-x) var(--cm-space-7);
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-4);
 }
 
-@media (max-width: 899px) {
+@media (max-width: 767px) {
   .cm-page {
-    padding: var(--cm-space-5) var(--cm-space-4) var(--cm-space-6);
+    padding: var(--cm-space-4) var(--cm-space-4) var(--cm-space-6);
   }
 }
 
@@ -599,13 +788,11 @@ kbd {
 
 /* `overflow-wrap: anywhere`: TaskDetail and ScheduleOccurrences put an
    identifier here ("billing.reconcile_invoices"), a single unbreakable
-   token that would otherwise run past a 360px viewport. `anywhere` shrinks
-   the min-content floor while still only breaking a word that genuinely
-   cannot fit. */
+   token that would otherwise run past a 360px viewport. */
 .cm-page-title {
   font-size: var(--cm-text-xl);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
   line-height: var(--cm-leading-tight);
   color: var(--cm-color-text);
   overflow-wrap: anywhere;
@@ -617,13 +804,17 @@ kbd {
   color: var(--cm-color-text-muted);
 }
 
+/* "Live" / "Paused": an outline badge with the dot inside. */
 .cm-live-indicator {
   display: inline-flex;
   align-items: center;
-  gap: var(--cm-space-2);
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-text-muted);
+  gap: 0.375rem;
+  padding: 0.125rem var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  color: var(--cm-color-text);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
 }
 
 .cm-live-dot {
@@ -646,50 +837,40 @@ kbd {
   border-radius: var(--cm-radius-full);
 }
 
-.cm-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cm-space-1);
+/* A ghost button pulled flush with the page edge. */
+.cm-back-link.cm-btn {
   align-self: flex-start;
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
+  margin-left: calc(-1 * var(--cm-space-3));
   color: var(--cm-color-text-muted);
-  text-decoration: none;
-  border-radius: var(--cm-radius-sm);
 }
 
-.cm-back-link:hover {
+.cm-back-link.cm-btn:hover {
   color: var(--cm-color-text);
-  text-decoration: underline;
 }
 
-.cm-back-link svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* Accent painted onto a surface — the text pair, not the fill pair, so a
-   custom brand accent can't turn a link into low-contrast text. */
+/* Primary painted onto a surface — the text token, not the fill, so a
+   custom brand can't turn a link into low-contrast text. */
 .cm-link {
-  color: var(--cm-color-accent-text);
+  color: var(--cm-color-primary-text);
   font-weight: 500;
   text-decoration: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
+  text-underline-offset: 4px;
   border-radius: var(--cm-radius-sm);
 }
 
 .cm-link:hover {
-  color: var(--cm-color-accent-text-hover);
+  color: var(--cm-color-primary-text-hover);
 }
 
+/* shadcn's link button variant, in muted ink. */
 .cm-link-btn {
   font-size: var(--cm-text-sm);
   font-weight: 500;
   color: var(--cm-color-text-muted);
   text-decoration: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
+  text-underline-offset: 4px;
   border-radius: var(--cm-radius-sm);
   transition: color var(--cm-duration-fast) var(--cm-ease);
 }
@@ -699,37 +880,51 @@ kbd {
 }
 
 /* ==========================================================================
-   Panels and their states
+   Card and the states that live in one
    ========================================================================== */
 
-.cm-panel {
+.cm-card {
   padding: var(--cm-space-5);
+  color: var(--cm-color-text);
   background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-lg);
+  border-radius: var(--cm-radius-xl);
+  box-shadow: var(--cm-shadow-sm);
   transition: opacity var(--cm-duration-base) var(--cm-ease);
 }
 
-/* A panel whose content is a table or a row list runs edge to edge; the
+/* A card whose content is a table or a row list runs edge to edge; the
    rows carry their own padding. */
-.cm-panel-flush {
+.cm-card-flush {
   padding: 0;
   overflow: hidden;
 }
 
-.cm-panel-flush > .cm-panel-pad {
+.cm-card-flush > .cm-card-pad {
   padding: var(--cm-space-5);
 }
 
-.cm-panel-refreshing {
+.cm-card-refreshing {
   opacity: 0.6;
 }
 
-.cm-section-title {
+.cm-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.cm-card-title {
   font-size: var(--cm-text-base);
   font-weight: 600;
   line-height: var(--cm-leading-tight);
+  letter-spacing: -0.01em;
   color: var(--cm-color-text);
+}
+
+.cm-card-description {
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text-muted);
 }
 
 .cm-loading {
@@ -749,90 +944,104 @@ kbd {
 
 /* An error state that leaves the user somewhere to go: the message, then
    the button that retries it. */
-.cm-panel-stack {
+.cm-stack {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--cm-space-4);
 }
 
-.cm-error {
+/* ---- alerts: shadcn's Alert, with a lucide icon painted through a mask in
+   the alert's own colour. Error is destructive; notice confirms an action
+   went through; alert is degraded-but-working. */
+.cm-error,
+.cm-notice,
+.cm-alert {
   display: flex;
   align-items: flex-start;
-  gap: var(--cm-space-2);
-  padding: var(--cm-space-3) var(--cm-space-4);
-  font-size: var(--cm-text-md);
-  font-weight: 500;
-  color: var(--cm-color-danger);
-  background-color: var(--cm-color-danger-bg);
-  border: 1px solid var(--cm-color-danger-border);
-  border-radius: var(--cm-radius-md);
-}
-
-.cm-error::before {
-  content: "";
-  flex: none;
-  width: 6px;
-  height: 6px;
-  margin-top: 0.45em;
-  border-radius: var(--cm-radius-full);
-  background-color: currentColor;
-}
-
-/* Confirms that something the user just did went through. Neutral, not
-   accent: colour is reserved for state. */
-.cm-notice {
+  gap: var(--cm-space-3);
   padding: var(--cm-space-3) var(--cm-space-4);
   font-size: var(--cm-text-md);
   color: var(--cm-color-text);
   background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
-  border-left: 2px solid var(--cm-color-status-succeeded);
-  border-radius: var(--cm-radius-md);
+  border-radius: var(--cm-radius-lg);
 }
 
-/* Degraded but not broken: progress gone quiet, or a poll that can't reach
-   the server. Amber, quieter than an error. */
-.cm-alert {
-  padding: var(--cm-space-3) var(--cm-space-4);
-  font-size: var(--cm-text-md);
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-warn-bg);
-  border: 1px solid var(--cm-color-border);
-  border-left: 2px solid var(--cm-color-warn);
-  border-radius: var(--cm-radius-md);
+.cm-error::before,
+.cm-notice::before,
+.cm-alert::before {
+  content: "";
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+  background-color: currentColor;
+  -webkit-mask: var(--cm-icon-alert) center / contain no-repeat;
+  mask: var(--cm-icon-alert) center / contain no-repeat;
+}
+
+.cm-error {
+  font-weight: 500;
+  color: var(--cm-color-danger);
+  background-color: var(--cm-color-danger-bg);
+  border-color: var(--cm-color-danger-border);
+}
+
+.cm-notice::before {
+  background-color: var(--cm-color-success);
+  -webkit-mask-image: var(--cm-icon-check);
+  mask-image: var(--cm-icon-check);
+}
+
+.cm-alert::before {
+  background-color: var(--cm-color-warn);
+  -webkit-mask-image: var(--cm-icon-warn);
+  mask-image: var(--cm-icon-warn);
 }
 
 /* ==========================================================================
-   Status — dot + word. Keyed by `data-status` rather than per-status
-   classes, so an unrecognised status degrades to the neutral default.
-   Only started and failed colour their word; the rest stay muted, so a
-   screen of successes reads calm.
+   Badge — shadcn's outline badge. Task status adds a coloured dot, keyed by
+   `data-status` so an unrecognised status degrades to neutral. Started and
+   failed colour their word too; the rest stay muted so a screen of
+   successes reads calm. Neutral badges (Disabled, Preview) and paused
+   occurrences share the box.
    ========================================================================== */
 
-.cm-status {
+.cm-status,
+.cm-badge,
+.cm-occurrence-badge {
   --cm-status-color: var(--cm-color-status-queued);
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: var(--cm-space-2);
-  font-size: var(--cm-text-md);
-  font-weight: 500;
+  gap: 0.375rem;
+  padding: 0.125rem var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  line-height: 1rem;
   color: var(--cm-color-text-muted);
   white-space: nowrap;
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
 }
 
-.cm-status::before {
+.cm-status::before,
+.cm-badge::before,
+.cm-occurrence-badge::before {
   content: "";
   flex: none;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: var(--cm-radius-full);
   background-color: var(--cm-status-color);
 }
 
-.cm-status[data-status="queued"]::before {
+.cm-status[data-status="queued"]::before,
+.cm-badge::before {
   background-color: transparent;
-  border: 1.5px solid var(--cm-status-color);
+  box-shadow: inset 0 0 0 1.5px var(--cm-color-mark);
 }
 
 .cm-status[data-status="started"] {
@@ -851,6 +1060,7 @@ kbd {
 .cm-status[data-status="failed"] {
   --cm-status-color: var(--cm-color-status-failed);
   color: var(--cm-color-status-failed);
+  border-color: var(--cm-color-danger-border);
 }
 
 .cm-status[data-status="retried"] {
@@ -865,29 +1075,8 @@ kbd {
   --cm-status-color: var(--cm-color-status-revoked);
 }
 
-/* A notable, non-default state that isn't a task outcome (a disabled
-   schedule, the preview label): a hollow neutral dot and the word. */
-.cm-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cm-space-2);
-  flex: none;
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-text-muted);
-  white-space: nowrap;
-}
-
-.cm-badge::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--cm-color-mark);
-  border-radius: var(--cm-radius-full);
-}
-
 /* ==========================================================================
-   Buttons
+   Button — shadcn's variants and sizes
    ========================================================================== */
 
 .cm-btn {
@@ -895,85 +1084,109 @@ kbd {
   align-items: center;
   justify-content: center;
   gap: var(--cm-space-2);
-  min-height: 2.25rem;
+  min-height: var(--cm-control-h);
   padding: 0 var(--cm-space-4);
   font-size: var(--cm-text-md);
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  border-radius: var(--cm-radius-md);
+  text-decoration: none;
   border: 1px solid transparent;
-  transition: background-color var(--cm-duration-fast) var(--cm-ease), border-color var(--cm-duration-fast) var(--cm-ease),
+  border-radius: var(--cm-radius-md);
+  transition:
+    background-color var(--cm-duration-fast) var(--cm-ease),
+    border-color var(--cm-duration-fast) var(--cm-ease),
     color var(--cm-duration-fast) var(--cm-ease);
 }
 
 .cm-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
-.cm-btn-solid {
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent);
+.cm-btn-primary {
+  color: var(--cm-color-primary-foreground);
+  background-color: var(--cm-color-primary);
+  box-shadow: var(--cm-shadow-sm);
 }
 
-.cm-btn-solid:hover:not(:disabled) {
-  background-color: var(--cm-color-accent-hover);
+.cm-btn-primary:hover:not(:disabled) {
+  background-color: var(--cm-color-primary-hover);
 }
 
-.cm-btn-solid:active:not(:disabled) {
-  background-color: var(--cm-color-accent-active);
+.cm-btn-primary:active:not(:disabled) {
+  background-color: var(--cm-color-primary-active);
+}
+
+.cm-btn-secondary {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-muted);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-btn-secondary:hover:not(:disabled) {
+  background-color: var(--cm-color-input);
 }
 
 .cm-btn-outline {
   color: var(--cm-color-text);
-  background-color: var(--cm-color-surface);
-  border-color: var(--cm-color-border-strong);
+  background-color: var(--cm-color-bg);
+  border-color: var(--cm-color-input);
+  box-shadow: var(--cm-shadow-sm);
 }
 
 .cm-btn-outline:hover:not(:disabled) {
-  background-color: var(--cm-color-surface-sunken);
+  background-color: var(--cm-color-muted);
 }
 
-/* The occurrence action matching its current override. Ink, not accent:
-   "selected" is chrome, and chrome is monochrome. */
+/* The occurrence action matching its current override: a shadcn Toggle
+   that is on — the muted fill, with a firmer edge. */
 .cm-btn-outline[aria-pressed="true"] {
-  color: var(--cm-color-surface);
-  background-color: var(--cm-color-text);
-  border-color: var(--cm-color-text);
+  background-color: var(--cm-color-muted);
+  border-color: var(--cm-color-mark);
 }
 
-.cm-btn-outline[aria-pressed="true"]:hover:not(:disabled) {
-  color: var(--cm-color-surface);
-  background-color: var(--cm-color-text-muted);
-  border-color: var(--cm-color-text-muted);
+.cm-btn-ghost {
+  color: var(--cm-color-text);
 }
 
-.cm-btn-danger-outline {
+.cm-btn-ghost:hover:not(:disabled) {
+  background-color: var(--cm-color-muted);
+}
+
+.cm-btn-destructive {
+  color: var(--cm-color-danger-foreground);
+  background-color: var(--cm-color-danger-fill);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-btn-destructive:hover:not(:disabled) {
+  background-color: var(--cm-color-danger-fill-hover);
+}
+
+/* Outline in destructive ink: the first, reversible step (Terminate asks
+   to confirm before the solid destructive button appears). */
+.cm-btn-destructive-outline {
   color: var(--cm-color-danger);
-  background-color: var(--cm-color-surface);
+  background-color: var(--cm-color-bg);
   border-color: var(--cm-color-danger-border);
+  box-shadow: var(--cm-shadow-sm);
 }
 
-.cm-btn-danger-outline:hover:not(:disabled) {
-  border-color: var(--cm-color-danger);
+.cm-btn-destructive-outline:hover:not(:disabled) {
   background-color: var(--cm-color-danger-bg);
-}
-
-.cm-btn-danger {
-  color: var(--cm-color-surface);
-  background-color: var(--cm-color-danger);
   border-color: var(--cm-color-danger);
-}
-
-.cm-btn-danger:hover:not(:disabled) {
-  filter: brightness(0.92);
 }
 
 .cm-btn-sm {
-  min-height: 1.75rem;
+  min-height: var(--cm-control-h-sm);
   padding: 0 var(--cm-space-3);
-  font-size: var(--cm-text-sm);
+  font-size: var(--cm-text-xs);
+}
+
+.cm-btn-icon {
+  width: var(--cm-control-h);
+  padding: 0;
 }
 
 .cm-btn[data-loading]::before {
@@ -987,7 +1200,7 @@ kbd {
 }
 
 /* ==========================================================================
-   Form controls
+   Form controls — Label, Input, Select, Checkbox
    ========================================================================== */
 
 .cm-field {
@@ -1000,6 +1213,7 @@ kbd {
 .cm-field > label {
   font-size: var(--cm-text-md);
   font-weight: 500;
+  line-height: 1;
   color: var(--cm-color-text);
 }
 
@@ -1007,35 +1221,47 @@ kbd {
 .cm-select {
   width: 100%;
   min-width: 0;
-  min-height: 2.25rem;
+  height: var(--cm-control-h);
   padding: 0 var(--cm-space-3);
   font-size: var(--cm-text-md);
   color: var(--cm-color-text);
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border-strong);
+  background-color: transparent;
+  border: 1px solid var(--cm-color-input);
   border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-sm);
   transition: border-color var(--cm-duration-fast) var(--cm-ease);
 }
 
-.cm-input::placeholder {
-  color: var(--cm-color-text-faint);
+.cm-select {
+  padding-right: 2rem;
+  appearance: none;
+  background-image: var(--cm-select-chevron);
+  background-position: right 0.625rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem;
+  cursor: pointer;
 }
 
-.cm-input:hover:not(:disabled),
-.cm-select:hover:not(:disabled) {
-  border-color: var(--cm-color-text-muted);
+/* The native option list paints its own surface. */
+.cm-select option {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-bg);
+}
+
+.cm-input::placeholder {
+  color: var(--cm-color-text-muted);
 }
 
 .cm-input:focus-visible,
 .cm-select:focus-visible {
-  border-color: var(--cm-color-text);
+  border-color: var(--cm-focus-ring-color);
   outline-offset: 1px;
 }
 
-.cm-input:disabled {
-  background-color: var(--cm-color-surface-sunken);
-  color: var(--cm-color-text-faint);
+.cm-input:disabled,
+.cm-select:disabled {
   cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .cm-input[aria-invalid="true"] {
@@ -1050,7 +1276,7 @@ kbd {
 
 .cm-field-hint {
   font-size: var(--cm-text-sm);
-  color: var(--cm-color-text-faint);
+  color: var(--cm-color-text-muted);
 }
 
 .cm-field-error {
@@ -1059,11 +1285,109 @@ kbd {
   color: var(--cm-color-danger);
 }
 
+/* Checkbox: the native input, redrawn as shadcn's 16px rounded box, with a
+   lucide check laid over it in the primary foreground. */
+.cm-checkbox {
+  position: relative;
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  vertical-align: middle;
+}
+
+.cm-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+  appearance: none;
+  background-color: transparent;
+  border: 1px solid var(--cm-color-primary);
+  border-radius: var(--cm-radius-sm);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-checkbox input:checked {
+  background-color: var(--cm-color-primary);
+}
+
+.cm-checkbox svg {
+  position: absolute;
+  inset: 2px;
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--cm-color-primary-foreground);
+  stroke-width: 3;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cm-checkbox input:checked + svg {
+  opacity: 1;
+}
+
 /* ==========================================================================
-   Tables — one table language for tasks, schedules and the audit log.
-   Sentence-case muted headers, ~48px rows separated by rules, a sunken
-   hover. Column gutters are padding on both sides of every cell so the
-   first and last columns sit a gutter in from the panel edge.
+   Tabs — shadcn's TabsList: a muted pill holding triggers, the active one
+   lifted onto the background. Also the theme switch.
+   ========================================================================== */
+
+.cm-tabs-list {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: var(--cm-control-h);
+  padding: 3px;
+  color: var(--cm-color-text-muted);
+  background-color: var(--cm-color-muted);
+  border-radius: var(--cm-radius-lg);
+}
+
+.cm-tabs-trigger {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  padding: 0 var(--cm-space-3);
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--cm-color-text-muted);
+  border-radius: var(--cm-radius-md);
+  transition:
+    color var(--cm-duration-fast) var(--cm-ease),
+    background-color var(--cm-duration-fast) var(--cm-ease),
+    box-shadow var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tabs-trigger:hover {
+  color: var(--cm-color-text);
+}
+
+.cm-tabs-trigger:focus-visible {
+  outline-offset: 0;
+}
+
+.cm-tabs-trigger[aria-pressed="true"] {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-bg);
+  box-shadow: var(--cm-shadow);
+}
+
+/* Theme switch: icon-only (sidebar) or icon + word (settings). */
+.cm-theme-switch .cm-tabs-trigger {
+  padding: 0 var(--cm-space-2);
+}
+
+.cm-theme-switch-labelled .cm-tabs-trigger {
+  padding: 0 var(--cm-space-3);
+}
+
+/* ==========================================================================
+   Table — shadcn's Table: a muted header row, rows separated by borders,
+   hover at muted/50. Cells carry gutters on both sides so the first and
+   last columns sit a gutter in from the card edge.
    ========================================================================== */
 
 .cm-table-scroll {
@@ -1074,24 +1398,23 @@ kbd {
 .cm-table {
   width: 100%;
   border-collapse: collapse;
+  font-size: var(--cm-text-md);
 }
 
 .cm-table th {
   height: 2.5rem;
   padding: 0 var(--cm-space-4);
-  font-size: var(--cm-text-sm);
   font-weight: 500;
   color: var(--cm-color-text-muted);
   text-align: left;
   white-space: nowrap;
-  background-color: var(--cm-color-surface);
+  background-color: var(--cm-color-muted-subtle);
   border-bottom: 1px solid var(--cm-color-border);
 }
 
 .cm-table td {
   height: 3rem;
   padding: var(--cm-space-2) var(--cm-space-4);
-  font-size: var(--cm-text-md);
   border-bottom: 1px solid var(--cm-color-border);
   vertical-align: middle;
 }
@@ -1100,8 +1423,12 @@ kbd {
   border-bottom: none;
 }
 
-.cm-table tbody tr:hover td {
-  background-color: var(--cm-color-surface-sunken);
+.cm-table tbody tr {
+  transition: background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-table tbody tr:hover {
+  background-color: var(--cm-color-muted-subtle);
 }
 
 /* Narrow screens: rows stack instead of scrolling sideways. Still a real
@@ -1130,8 +1457,8 @@ kbd {
     position: relative;
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--cm-space-1) var(--cm-space-4);
+    align-items: center;
+    gap: var(--cm-space-2) var(--cm-space-3);
     padding: var(--cm-space-3) var(--cm-space-4);
     border-bottom: 1px solid var(--cm-color-border);
   }
@@ -1153,28 +1480,16 @@ kbd {
     flex: 1 0 100%;
     order: -1;
   }
-
-  .cm-table-stack tbody tr:hover {
-    background-color: var(--cm-color-surface-sunken);
-  }
-
-  .cm-table-stack tbody tr:hover td {
-    background-color: transparent;
-  }
 }
 
 /* `width: 1%` on every column but the last: the auto table algorithm then
    rounds each down to its content and gives the slack to the one column
-   with variable-length content, instead of spreading 400px of gulf between
-   a value and the next. */
+   with variable-length content. */
 .cm-col-fit {
   width: 1%;
   white-space: nowrap;
 }
 
-/* Proportional figures, deliberately: Schibsted's tabular set also widens
-   "," and ".", which spaced "Oct 25 , 10:53" apart. Tabular figures are kept
-   for numbers that tick in place (live clocks, counters). */
 .cm-timestamp {
   color: var(--cm-color-text-muted);
   white-space: nowrap;
@@ -1188,14 +1503,6 @@ kbd {
   width: 2.75rem;
 }
 
-.cm-table input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  vertical-align: middle;
-  accent-color: var(--cm-color-text);
-}
-
 .cm-bulk-bar {
   display: flex;
   align-items: center;
@@ -1204,8 +1511,9 @@ kbd {
   gap: var(--cm-space-3);
   padding: var(--cm-space-2) var(--cm-space-2) var(--cm-space-2) var(--cm-space-4);
   background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border-strong);
-  border-radius: var(--cm-radius-md);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-lg);
+  box-shadow: var(--cm-shadow-sm);
 }
 
 .cm-bulk-bar-label {
@@ -1214,7 +1522,7 @@ kbd {
 }
 
 /* ==========================================================================
-   Login
+   Login — shadcn's login-01: brand above a centred card
    ========================================================================== */
 
 .cm-login-shell {
@@ -1223,91 +1531,62 @@ kbd {
   align-items: center;
   justify-content: center;
   padding: var(--cm-space-5) var(--cm-space-4);
-  background-color: var(--cm-color-bg);
+  background-color: var(--cm-color-muted-subtle);
 }
 
-.cm-login-card {
-  width: 100%;
-  max-width: 22rem;
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-4);
-}
-
-.cm-login-header {
+.cm-login-stack {
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-5);
-  margin-bottom: var(--cm-space-2);
+  width: 100%;
+  max-width: 24rem;
 }
 
-.cm-login-header h1 {
+.cm-login-brand {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  overflow-wrap: anywhere;
+  justify-content: center;
   gap: var(--cm-space-2);
-  font-size: var(--cm-text-lg);
+  min-width: 0;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: var(--cm-leading-tight);
   color: var(--cm-color-text);
 }
 
-.cm-login-sub {
-  font-size: var(--cm-text-md);
-  color: var(--cm-color-text-muted);
-}
-
-/* The run strip, as a still motif: twelve bars in mixed status colours.
-   Purely decorative (aria-hidden in the markup). */
-.cm-login-motif {
+.cm-login-card {
   display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 32px;
+  flex-direction: column;
+  gap: var(--cm-space-5);
 }
 
-.cm-login-motif span {
-  width: 5px;
-  border-radius: 1.5px;
-  background-color: var(--cm-color-status-succeeded);
+.cm-login-title {
+  font-size: var(--cm-text-xl);
 }
 
-.cm-login-motif span[data-status="failed"] {
-  background-color: var(--cm-color-status-failed);
+.cm-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-5);
 }
 
-.cm-login-motif span[data-status="started"] {
-  background-color: var(--cm-color-status-started);
-}
-
-.cm-login-motif span[data-status="retried"] {
-  background-color: var(--cm-color-status-retried);
-}
-
-.cm-login-motif span[data-status="queued"] {
-  background-color: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--cm-color-mark);
-}
-
-.cm-login-card .cm-btn {
+.cm-login-form .cm-btn {
   width: 100%;
-  min-height: 2.5rem;
-  margin-top: var(--cm-space-2);
 }
 
 /* ==========================================================================
-   Brand mark, logo, theme switch
+   Brand mark and logo
    ========================================================================== */
 
+/* shadcn's sidebar-header logo slot: a primary square holding a glyph. */
 .cm-brand-mark {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--cm-radius-full);
-  background-color: var(--cm-color-accent);
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--cm-color-primary-foreground);
+  background-color: var(--cm-color-primary);
+  border-radius: var(--cm-radius-lg);
 }
 
 .cm-brand-name {
@@ -1315,70 +1594,23 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: opacity var(--cm-duration-base) var(--cm-ease);
 }
 
 /* Height-constrained, width-free: the operator's logo is whatever aspect
-   ratio it is; max-width stops a wide banner from eating the rail. */
+   ratio it is; max-width stops a wide banner from eating the sidebar. */
 .cm-brand-logo {
   display: block;
   flex: none;
-  height: 20px;
+  height: 2rem;
   width: auto;
   max-width: 140px;
   object-fit: contain;
 }
 
 .cm-brand-logo-lg {
-  height: 28px;
+  height: 2.5rem;
   max-width: 220px;
-}
-
-/* Theme switch: a three-position segmented control. Icons in the rail,
-   icon + word on the settings screen; the accessible name is always the
-   sentence-case word. */
-.cm-segmented {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
-}
-
-.cm-segmented-option {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--cm-space-2);
-  min-width: 1.75rem;
-  height: 1.625rem;
-  padding: 0 var(--cm-space-2);
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-text-muted);
-  border-radius: var(--cm-radius-sm);
-  transition: color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-segmented-option svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-
-.cm-segmented-option:hover {
-  color: var(--cm-color-text);
-}
-
-.cm-segmented-option[aria-pressed="true"] {
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-surface);
-  box-shadow: 0 0 0 1px var(--cm-color-border);
-}
-
-.cm-segmented-labelled .cm-segmented-option {
-  padding: 0 var(--cm-space-3);
 }
 
 /* ==========================================================================
@@ -1395,6 +1627,7 @@ kbd {
 
 .cm-schedule-link:hover {
   text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .cm-schedules-table td {
@@ -1405,7 +1638,7 @@ kbd {
   color: var(--cm-color-text);
 }
 
-/* Enabled is the normal state, so it gets no dot — only the exception
+/* Enabled is the normal state, so it gets no badge — only the exception
    (Disabled, a .cm-badge) is marked. */
 .cm-schedule-enabled {
   color: var(--cm-color-text-muted);
@@ -1460,31 +1693,19 @@ kbd {
   text-decoration-color: var(--cm-color-mark);
 }
 
-/* A paused occurrence: amber dot for skip, strong-rule dot for cancel. */
+/* A paused occurrence: amber dot for skip, revoked grey for cancel, hollow
+   once resolved. The box comes from the shared badge rules. */
 .cm-occurrence-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cm-space-2);
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-text-muted);
+  --cm-status-color: var(--cm-color-occurrence-skip);
 }
 
-.cm-occurrence-badge::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: var(--cm-radius-full);
-  background-color: var(--cm-color-occurrence-skip);
-}
-
-.cm-occurrence-badge[data-action="cancel"]::before {
-  background-color: var(--cm-color-status-revoked);
+.cm-occurrence-badge[data-action="cancel"] {
+  --cm-status-color: var(--cm-color-status-revoked);
 }
 
 .cm-occurrence-badge-resolved::before {
   background-color: transparent;
-  border: 1.5px solid var(--cm-color-mark);
+  box-shadow: inset 0 0 0 1.5px var(--cm-color-mark);
 }
 
 /* `flex: 0 1 auto` and a wrap: the pair prefers one line but can never
@@ -1519,12 +1740,12 @@ kbd {
 .cm-audit-target {
   font-family: var(--cm-font-mono);
   font-size: var(--cm-text-sm);
-  color: var(--cm-color-text-faint);
+  color: var(--cm-color-text-muted);
   overflow-wrap: anywhere;
 }
 
 /* ==========================================================================
-   Settings — plain groups separated by rules, labels above inputs.
+   Settings — one card per scope, labels above inputs
    ========================================================================== */
 
 .cm-settings-section {
@@ -1532,23 +1753,10 @@ kbd {
   flex-direction: column;
   gap: var(--cm-space-5);
   max-width: var(--cm-measure);
-  padding-top: var(--cm-space-5);
-  border-top: 1px solid var(--cm-color-border);
-}
-
-.cm-settings-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-2);
 }
 
 /* Who a change affects, stated where the change is made: branding is one
    row in the deployment's database, the theme one key in this browser. */
-.cm-scope-note {
-  font-size: var(--cm-text-md);
-  color: var(--cm-color-text-muted);
-}
-
 .cm-scope-tag {
   font-weight: 600;
   color: var(--cm-color-text);
@@ -1592,11 +1800,12 @@ kbd {
 .cm-colour-swatch {
   flex: none;
   width: 2.75rem;
-  height: 2.25rem;
+  height: var(--cm-control-h);
   padding: 3px;
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border-strong);
+  background-color: transparent;
+  border: 1px solid var(--cm-color-input);
   border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-sm);
   cursor: pointer;
 }
 
@@ -1610,7 +1819,7 @@ kbd {
 
 .cm-colour-swatch::-webkit-color-swatch {
   border: none;
-  border-radius: 3px;
+  border-radius: var(--cm-radius-sm);
 }
 
 .cm-settings-actions {
@@ -1620,16 +1829,16 @@ kbd {
   gap: var(--cm-space-3);
 }
 
-/* Branding preview, built from the real components with the derived accent
-   tokens set inline on the container, so it runs the same CSS the rail and
-   the buttons will. */
+/* Branding preview, built from the real components with the derived tokens
+   set inline on the container, so it runs the same CSS the sidebar and the
+   buttons will. */
 .cm-preview {
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-4);
   padding: var(--cm-space-4);
-  background-color: var(--cm-color-bg);
-  border: 1px solid var(--cm-color-border);
+  background-color: var(--cm-color-sidebar);
+  border: 1px dashed var(--cm-color-input);
   border-radius: var(--cm-radius-lg);
 }
 
@@ -1640,8 +1849,8 @@ kbd {
   gap: var(--cm-space-3);
 }
 
-.cm-preview-chrome .cm-rail-brand {
-  padding: 0;
+.cm-preview-chrome .cm-sidebar-brand {
+  height: auto;
 }
 
 .cm-preview-body {
@@ -1651,16 +1860,17 @@ kbd {
   gap: var(--cm-space-3);
 }
 
+/* The active sidebar item, as a still. */
 .cm-preview-nav {
   display: inline-flex;
   align-items: center;
-  min-height: 2.25rem;
-  padding: 0 var(--cm-space-3);
+  gap: var(--cm-space-2);
+  height: 2rem;
+  padding: 0 var(--cm-space-3) 0 var(--cm-space-2);
   font-weight: 500;
   color: var(--cm-color-text);
-  background-color: var(--cm-color-accent-soft);
+  background-color: var(--cm-color-primary-soft);
   border-radius: var(--cm-radius-md);
-  box-shadow: inset 2px 0 0 var(--cm-color-accent);
 }
 
 /* The measured numbers behind the preview, not a promise about them. */

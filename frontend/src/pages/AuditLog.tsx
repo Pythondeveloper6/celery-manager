@@ -41,9 +41,9 @@ export function AuditLog() {
         </div>
       </header>
 
-      <div className="cm-panel cm-panel-flush">
+      <div className="cm-card cm-card-flush">
         {error ? (
-          <div className="cm-panel-pad cm-panel-stack">
+          <div className="cm-card-pad cm-stack">
             <p className="cm-error" role="alert">
               {error}
             </p>
@@ -52,7 +52,7 @@ export function AuditLog() {
             </button>
           </div>
         ) : entries === null ? (
-          <div className="cm-panel-pad">
+          <div className="cm-card-pad">
             <p className="cm-loading">
               <span className="cm-live-dot" aria-hidden="true" />
               Loading audit log&hellip;

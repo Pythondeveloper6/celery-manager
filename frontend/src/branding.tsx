@@ -10,6 +10,7 @@ import {
   useThemePreference,
 } from "./theme";
 import type { ResolvedTheme, ThemePreference } from "./theme";
+import { IconBars, IconMonitor, IconMoon, IconSun } from "./components/icons";
 
 /* ==========================================================================
    Appearance: deployment branding, and the control for the per-browser theme.
@@ -52,15 +53,15 @@ const WHITE: Rgb = { r: 255, g: 255, b: 255 };
 const AA_TEXT = 4.5;
 
 /**
- * The worst backdrop accent-coloured *text* can land on in each theme, taken
- * from tokens.css: in light mode the darkest of the three light surfaces
- * (--cm-color-surface-sunken), in dark mode the lightest of the four dark ones
- * (--cm-color-surface). Deriving against the worst case means the derived
- * colour clears AA on every surface in that theme, not just the common one.
+ * The worst backdrop brand-coloured *text* can land on in each theme, taken
+ * from tokens.css: --cm-color-muted in both (zinc-100 in light mode, the
+ * darkest backdrop; zinc-800 in dark mode, the lightest). Deriving against
+ * the worst case means the derived colour clears AA on every surface in that
+ * theme, not just the common one.
  */
 const TEXT_BACKDROP: Record<ResolvedTheme, Rgb> = {
-  light: { r: 0xec, g: 0xee, b: 0xea },
-  dark: { r: 0x17, g: 0x1c, b: 0x19 },
+  light: { r: 0xf4, g: 0xf4, b: 0xf5 },
+  dark: { r: 0x27, g: 0x27, b: 0x2a },
 };
 
 /** `#rgb` or `#rrggbb`, matching what the server accepts, or null. */
@@ -115,8 +116,8 @@ function mix(colour: Rgb, target: Rgb, amount: number): Rgb {
  * `backdrop`, and return the first step that does.
  *
  * Terminates by construction: the last step *is* `target`, and both endpoints
- * clear AA against both backdrops (black on #eceeea is 18.0:1, white on
- * #171c19 is 17.3:1), so the loop always has an answer. Small steps keep as
+ * clear AA against both backdrops (black on #f4f4f5 is 19.1:1, white on
+ * #27272a is 15.0:1), so the loop always has an answer. Small steps keep as
  * much of the operator's colour as the contrast requirement allows — a brand
  * that already passes is returned untouched at step 0.
  */
@@ -148,13 +149,13 @@ export interface DerivedAccent {
  *
  * Returns null when there is nothing to derive (empty value, or a string the
  * server would have rejected anyway) — callers then leave the built-in
- * celery-leaf tokens alone rather than applying a broken palette.
+ * zinc tokens alone rather than applying a broken palette.
  *
  * The five decisions, and why:
  *
- *  1. `--cm-color-accent` is the brand colour, untouched. It is a fill; the
+ *  1. `--cm-color-primary` is the brand colour, untouched. It is a fill; the
  *     operator picked it and should get it.
- *  2. `--cm-color-accent-contrast` is black or white, whichever measures
+ *  2. `--cm-color-primary-foreground` is black or white, whichever measures
  *     higher against the fill. The two curves cross at luminance 0.179, where
  *     both give 4.58:1 — so this choice guarantees at least 4.58:1 for *any*
  *     brand colour, AA for normal text with no exceptions.
@@ -163,20 +164,20 @@ export interface DerivedAccent {
  *     with black text gets lighter. That direction is not cosmetic — it means
  *     both interaction states can only ever measure *better* than the resting
  *     state, so hover can never be the thing that fails contrast.
- *  4. `--cm-color-accent-text` is the brand colour walked towards black (light
+ *  4. `--cm-color-primary-text` is the brand colour walked towards black (light
  *     theme) or white (dark theme) in 4% steps until it clears 4.5:1 against
  *     the worst surface in that theme. A pale brand is perfectly usable as a
  *     button fill and unreadable as link text; splitting the two tokens is
  *     what lets both be true at once. `-text-hover` is one further step in the
  *     same direction, so hovering a link always increases contrast.
- *  5. `--cm-color-accent-soft` is the brand at 14% alpha rather than a
+ *  5. `--cm-color-primary-soft` is the brand at 14% alpha rather than a
  *     pre-mixed pale tint, because the same token has to work over white in
  *     light mode and over near-black in dark mode. An alpha wash composites
  *     against whatever is behind it and barely moves the luminance of the
  *     surface, so text sitting on it keeps the contrast it had.
  *
  * The focus ring needs nothing here: tokens.css draws it in
- * --cm-color-accent-text, i.e. (4), not the raw brand colour — a ring is a
+ * --cm-color-primary-text, i.e. (4), not the raw brand colour — a ring is a
  * visibility affordance, and a pale ring on a pale surface is not one.
  */
 export function deriveAccent(accent: string, theme: ResolvedTheme): DerivedAccent | null {
@@ -196,13 +197,13 @@ export function deriveAccent(accent: string, theme: ResolvedTheme): DerivedAccen
 
   return {
     variables: {
-      "--cm-color-accent": toHex(brand),
-      "--cm-color-accent-hover": toHex(mix(brand, fillStep, 0.14)),
-      "--cm-color-accent-active": toHex(mix(brand, fillStep, 0.28)),
-      "--cm-color-accent-contrast": toHex(fillText),
-      "--cm-color-accent-soft": toRgba(brand, 0.14),
-      "--cm-color-accent-text": toHex(linkText),
-      "--cm-color-accent-text-hover": toHex(linkTextHover),
+      "--cm-color-primary": toHex(brand),
+      "--cm-color-primary-hover": toHex(mix(brand, fillStep, 0.14)),
+      "--cm-color-primary-active": toHex(mix(brand, fillStep, 0.28)),
+      "--cm-color-primary-foreground": toHex(fillText),
+      "--cm-color-primary-soft": toRgba(brand, 0.14),
+      "--cm-color-primary-text": toHex(linkText),
+      "--cm-color-primary-text-hover": toHex(linkTextHover),
     },
     fill: toHex(brand),
     fillText: toHex(fillText),
@@ -294,8 +295,8 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   // Custom accent, applied as inline custom properties on <html> so it
   // overrides the tokens from either theme without the stylesheet knowing
   // anything about branding. Re-derived when the resolved theme changes,
-  // because "readable as text" means something different on #eceeea and
-  // #171c19. The cleanup removes exactly the properties it set, so clearing
+  // because "readable as text" means something different on #f4f4f5 and
+  // #27272a. The cleanup removes exactly the properties it set, so clearing
   // the accent restores the built-in palette with no reload.
   useEffect(() => {
     const derived = deriveAccent(settings.brand_accent, resolvedTheme);
@@ -326,12 +327,22 @@ export function useBranding(): BrandingContextValue {
   return value;
 }
 
+/** The built-in mark: a primary-filled square holding the run-strip glyph,
+ *  shadcn's sidebar-header logo slot. Exported for the settings preview. */
+export function BrandGlyph() {
+  return (
+    <span className="cm-brand-mark" aria-hidden="true">
+      <IconBars />
+    </span>
+  );
+}
+
 /**
- * The brand dot, or the deployment's logo where one is configured.
+ * The brand mark, or the deployment's logo where one is configured.
  *
  * `alt=""`: every place this renders, the brand name is right next to it as
  * real text, so an alt would make a screen reader say the name twice.
- * A logo URL that 404s falls back to the dot rather than leaving a broken
+ * A logo URL that 404s falls back to the mark rather than leaving a broken
  * image icon in the nav — an operator's typo shouldn't look like a broken app.
  */
 export function BrandMark({ large = false }: { large?: boolean }) {
@@ -341,7 +352,7 @@ export function BrandMark({ large = false }: { large?: boolean }) {
 
   useEffect(() => setFailed(false), [url]);
 
-  if (!url || failed) return <span className="cm-brand-mark" aria-hidden="true" />;
+  if (!url || failed) return <BrandGlyph />;
   return (
     <img
       className={large ? "cm-brand-logo cm-brand-logo-lg" : "cm-brand-logo"}
@@ -353,34 +364,9 @@ export function BrandMark({ large = false }: { large?: boolean }) {
 }
 
 const THEME_ICONS: Record<ThemePreference, ReactNode> = {
-  system: (
-    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8 2.25a5.75 5.75 0 0 1 0 11.5z" fill="currentColor" />
-    </svg>
-  ),
-  light: (
-    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M8 1v1.75M8 13.25V15M1 8h1.75M13.25 8H15M3.05 3.05l1.24 1.24M11.71 11.71l1.24 1.24M3.05 12.95l1.24-1.24M11.71 4.29l1.24-1.24"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  ),
-  dark: (
-    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path
-        d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
+  system: <IconMonitor />,
+  light: <IconSun />,
+  dark: <IconMoon />,
 };
 
 /**
@@ -389,19 +375,23 @@ const THEME_ICONS: Record<ThemePreference, ReactNode> = {
  * A single icon button would hide two of the three states and give no way to
  * get back to "follow the OS" once you'd left it. Buttons with `aria-pressed`
  * rather than a radio group, so every option is reachable with Tab and
- * activated with Enter or Space. Icon-only in the rail, where `aria-label`
+ * activated with Enter or Space. Icon-only in the sidebar, where `aria-label`
  * and `title` carry the word; icon plus word where there is room
  * (`labelled`, on the settings screen).
  */
 export function ThemeSwitch({ labelled = false }: { labelled?: boolean }) {
   const preference = useThemePreference();
   return (
-    <div className={labelled ? "cm-segmented cm-segmented-labelled" : "cm-segmented"} role="group" aria-label="Theme">
+    <div
+      className={labelled ? "cm-tabs-list cm-theme-switch cm-theme-switch-labelled" : "cm-tabs-list cm-theme-switch"}
+      role="group"
+      aria-label="Theme"
+    >
       {THEME_PREFERENCES.map((option) => (
         <button
           key={option}
           type="button"
-          className="cm-segmented-option"
+          className="cm-tabs-trigger"
           aria-pressed={preference === option}
           aria-label={`${THEME_LABELS[option]} theme`}
           title={labelled ? undefined : `${THEME_LABELS[option]} theme`}

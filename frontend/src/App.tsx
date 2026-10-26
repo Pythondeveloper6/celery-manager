@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { HashRouter, Link, NavLink, Route, Routes } from "react-router-dom";
-import { logout, whoami } from "./api/client";
-import { BrandMark, ThemeSwitch, useBranding } from "./branding";
+import { HashRouter, Link, Route, Routes } from "react-router-dom";
+import { whoami } from "./api/client";
+import { BrandMark, useBranding } from "./branding";
+import { AppShell } from "./components/AppShell";
 import { Login } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
@@ -9,80 +10,6 @@ import { ScheduleList } from "./pages/ScheduleList";
 import { ScheduleOccurrences } from "./pages/ScheduleOccurrences";
 import { AuditLog } from "./pages/AuditLog";
 import { Settings } from "./pages/Settings";
-
-// The one persistent chrome element across every authenticated screen: a
-// left rail with the brand (the only place it appears — pages carry no
-// eyebrow), the screens a user can always jump to directly, and the account
-// cluster at the foot. Below 900px CSS turns it into a top bar. Schedule
-// occurrences are keyed by schedule name (`/schedules/:name`), so
-// "Schedules" links to the list that leads there.
-function AppRail({ username, onSignedOut }: { username: string; onSignedOut: () => void }) {
-  const { settings } = useBranding();
-  const [signingOut, setSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-
-  const signOut = () => {
-    setSigningOut(true);
-    setSignOutError(null);
-    logout().then(
-      // Unmounts the rail, so there is no need to clear signingOut.
-      onSignedOut,
-      (err) => {
-        setSignOutError(err instanceof Error ? err.message : "Sign out failed.");
-        setSigningOut(false);
-      },
-    );
-  };
-  return (
-    <nav className="cm-rail" aria-label="Primary">
-      <span className="cm-rail-brand">
-        <BrandMark />
-        <span className="cm-brand-name">{settings.brand_name}</span>
-      </span>
-      <ul className="cm-rail-links">
-        <li>
-          <NavLink to="/" end className="cm-rail-link">
-            Tasks
-          </NavLink>
-        </li>
-        <li>
-          <NavLink to="/schedules" className="cm-rail-link">
-            Schedules
-          </NavLink>
-        </li>
-        <li>
-          <NavLink to="/audit" className="cm-rail-link">
-            Audit log
-          </NavLink>
-        </li>
-        <li>
-          <NavLink to="/settings" className="cm-rail-link">
-            Settings
-          </NavLink>
-        </li>
-      </ul>
-      <div className="cm-rail-foot">
-        <span className="cm-rail-user" title={`Signed in as ${username}`}>
-          {username}
-        </span>
-        <div className="cm-rail-foot-row">
-          {/* The theme switch lives in the persistent chrome as well as on the
-              settings screen: it is the one preference someone changes
-              because of the room they're in. */}
-          <ThemeSwitch />
-          <button type="button" className="cm-rail-signout" onClick={signOut} disabled={signingOut}>
-            {signingOut ? "Signing out…" : "Sign out"}
-          </button>
-        </div>
-        {signOutError && (
-          <p role="alert" className="cm-error">
-            {signOutError}
-          </p>
-        )}
-      </div>
-    </nav>
-  );
-}
 
 // Unmatched hash paths render a real page inside the shell rather than a
 // blank body, which reads as a broken app rather than a bad URL.
@@ -93,7 +20,7 @@ function NotFound() {
         <h1 className="cm-page-title">Page not found</h1>
       </header>
 
-      <div className="cm-panel">
+      <div className="cm-card cm-card-flush">
         <p className="cm-empty-state">
           There&rsquo;s nothing at this address.{" "}
           <Link to="/" className="cm-link">
@@ -134,22 +61,25 @@ export function App() {
   if (checkError) {
     return (
       <div className="cm-login-shell">
-        <div className="cm-login-card">
-          <div className="cm-login-header">
-            <h1>
-              <BrandMark large />
-              {settings.brand_name}
-            </h1>
-            <p className="cm-login-sub">Couldn&rsquo;t reach the server.</p>
-          </div>
-
-          <p role="alert" className="cm-error">
-            {checkError}
+        <div className="cm-login-stack">
+          <p className="cm-login-brand">
+            <BrandMark large />
+            <span className="cm-brand-name">{settings.brand_name}</span>
           </p>
-
-          <button type="button" className="cm-btn cm-btn-solid" onClick={runCheck}>
-            Try again
-          </button>
+          <div className="cm-card cm-login-card">
+            <div className="cm-card-header">
+              <h1 className="cm-card-title cm-login-title">Couldn&rsquo;t reach the server</h1>
+              <p className="cm-card-description">The dashboard loaded, but its API didn&rsquo;t answer.</p>
+            </div>
+            <div className="cm-login-form">
+              <p role="alert" className="cm-error">
+                {checkError}
+              </p>
+              <button type="button" className="cm-btn cm-btn-primary" onClick={runCheck}>
+                Try again
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -166,20 +96,17 @@ export function App() {
   // the "#".
   return (
     <HashRouter>
-      <div className="cm-shell">
-        <AppRail username={username} onSignedOut={() => setUsername(null)} />
-        <main className="cm-main">
-          <Routes>
-            <Route path="/" element={<TaskList />} />
-            <Route path="/tasks/:taskId" element={<TaskDetail />} />
-            <Route path="/schedules" element={<ScheduleList />} />
-            <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
-            <Route path="/audit" element={<AuditLog />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </main>
-      </div>
+      <AppShell username={username} onSignedOut={() => setUsername(null)}>
+        <Routes>
+          <Route path="/" element={<TaskList />} />
+          <Route path="/tasks/:taskId" element={<TaskDetail />} />
+          <Route path="/schedules" element={<ScheduleList />} />
+          <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
+          <Route path="/audit" element={<AuditLog />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </AppShell>
     </HashRouter>
   );
 }

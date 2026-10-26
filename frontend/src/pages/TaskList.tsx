@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { bulkRetryTasks, listTasks, subscribeToUpdates, type TaskSummary } from "../api/tasks";
 import { RunStrip } from "../components/RunStrip";
+import { IconCalendar, IconCheck, IconSearch, IconX } from "../components/icons";
 import { StatusBadge } from "../components/Status";
 import { statusLabel } from "../lib/status";
 import {
@@ -801,12 +802,12 @@ export function TaskList() {
       {/* Status first: "show me the failures" is the question people arrive
           with mid-incident. The API gives one filtered total, not a count per
           status, so the tabs carry no numbers rather than invented ones. */}
-      <div className="cm-status-tabs" role="group" aria-label="Filter by status">
+      <div className="cm-tabs-list cm-status-tabs" role="group" aria-label="Filter by status">
         {STATUS_FILTERS.map((s) => (
           <button
             key={s}
             type="button"
-            className="cm-status-tab"
+            className="cm-tabs-trigger cm-status-tab"
             data-status={s}
             aria-pressed={s === status}
             onClick={() => setStatus(s)}
@@ -821,10 +822,7 @@ export function TaskList() {
           <label className="cm-visually-hidden" htmlFor="cm-tasks-search">
             Search runs
           </label>
-          <svg className="cm-tasks-search-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-            <circle cx="7" cy="7" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+          <IconSearch className="cm-tasks-search-icon" />
           <input
             id="cm-tasks-search"
             className="cm-input cm-tasks-search-input"
@@ -841,9 +839,7 @@ export function TaskList() {
               aria-label="Clear search"
               onClick={() => setSearchInput("")}
             >
-              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                <path d="m4.5 4.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+              <IconX />
             </button>
           )}
           <p className="cm-visually-hidden" id="cm-tasks-search-hint">
@@ -876,10 +872,7 @@ export function TaskList() {
           onToggle={(e) => setDateOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary className="cm-tasks-dates-summary" data-active={dateFilterActive ? "true" : undefined}>
-            <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-              <rect x="2.25" y="3.25" width="11.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M2.5 6.75h11M5.5 1.75v3M10.5 1.75v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <IconCalendar />
             {dateSummary}
           </summary>
           <div className="cm-tasks-dates-pop">
@@ -925,9 +918,7 @@ export function TaskList() {
                 >
                   <span className="cm-tasks-chip-label">{chip.label}</span>
                   <span className="cm-tasks-chip-value">{chip.value}</span>
-                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                    <path d="m4.5 4.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
+                  <IconX />
                 </button>
               </li>
             ))}
@@ -945,7 +936,7 @@ export function TaskList() {
               <span className="cm-paused-dot" aria-hidden="true" />
               Live updates are paused while you browse history
             </span>
-            <button type="button" className="cm-btn cm-btn-solid cm-btn-sm" onClick={backToLive}>
+            <button type="button" className="cm-btn cm-btn-primary cm-btn-sm" onClick={backToLive}>
               Back to live
             </button>
           </div>
@@ -958,7 +949,7 @@ export function TaskList() {
             </span>
             <button
               type="button"
-              className="cm-btn cm-btn-solid cm-btn-sm"
+              className="cm-btn cm-btn-primary cm-btn-sm"
               onClick={handleBulkRetry}
               disabled={bulkRetrying}
             >
@@ -1000,7 +991,7 @@ export function TaskList() {
         )}
 
         <div
-          className={`cm-panel cm-panel-flush cm-tasks-panel${refreshing ? " cm-panel-refreshing" : ""}`}
+          className={`cm-card cm-card-flush cm-tasks-panel${refreshing ? " cm-card-refreshing" : ""}`}
           aria-busy={refreshing || loadingMore}
         >
           {/* A failed *background* poll must not blow the table away — the
@@ -1008,7 +999,7 @@ export function TaskList() {
               rows behind it is a banner; only an error with nothing behind it
               takes over. */}
           {error && !loading && tasks.length > 0 && (
-            <div className="cm-panel-pad">
+            <div className="cm-card-pad">
               <p className="cm-error" role="alert">
                 {error} Showing the last results loaded;{" "}
                 {historyMode ? "use Back to live to resume updates." : "retrying every few seconds."}
@@ -1017,14 +1008,14 @@ export function TaskList() {
           )}
 
           {loading ? (
-            <div className="cm-panel-pad">
+            <div className="cm-card-pad">
               <p className="cm-loading">
                 <span className="cm-live-dot" aria-hidden="true" />
                 Loading task runs&hellip;
               </p>
             </div>
           ) : error && tasks.length === 0 ? (
-            <div className="cm-panel-pad cm-panel-stack">
+            <div className="cm-card-pad cm-stack">
               <p className="cm-error" role="alert">
                 {error}
               </p>
@@ -1096,12 +1087,15 @@ export function TaskList() {
                         <tr key={t.task_id} data-status={t.status}>
                           {showSelectColumn && (
                             <td className="cm-select-cell">
-                              <input
-                                type="checkbox"
-                                checked={selected.has(t.task_id)}
-                                onChange={() => toggle(t.task_id)}
-                                aria-label={`Select ${t.task_name} (${t.task_id}) for bulk retry`}
-                              />
+                              <span className="cm-checkbox">
+                                <input
+                                  type="checkbox"
+                                  checked={selected.has(t.task_id)}
+                                  onChange={() => toggle(t.task_id)}
+                                  aria-label={`Select ${t.task_name} (${t.task_id}) for bulk retry`}
+                                />
+                                <IconCheck />
+                              </span>
                             </td>
                           )}
                           <td className="cm-cell-primary">
