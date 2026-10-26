@@ -130,6 +130,34 @@ sitting invisibly behind the table.
   refresh, so a bulk retry can never act on a row you can no longer see.
 - Each row links to that task's detail page.
 
+### Filters live in the URL
+
+The status tab, search, group-by, date range and history-mode page are all
+part of the address (`#/?status=failed&q=smtp&from=2026-08-01&group=name`;
+history pages add `offset=50`). Reload, back/forward and a link pasted into a
+fresh tab all restore the same view. Choosing a tab, date, grouping or page
+adds a history entry, so Back undoes it; typing in the search box replaces the
+current entry instead, so Back is not a per-keystroke undo. Defaults are left
+out of the URL, and unknown values in a hand-edited link are ignored.
+
+**Copy link** copies the current address (it falls back to a hidden-textarea
+copy where the clipboard API is unavailable) and confirms with "Link copied".
+
+### Saved views
+
+**Views** in the toolbar saves the current status, search, date range and
+grouping under a name; picking one applies it as a single history entry.
+Views can be renamed and deleted (deleting asks for confirmation). They are
+stored in this browser's `localStorage` only, so they do not follow you to
+another browser or profile and are not shared. If the browser refuses to store
+them, the menu says so.
+
+### Export
+
+**Export** downloads every run matching the current filters (not just the
+loaded page) as CSV or JSON, using `GET /api/tasks/export`. If the result hit
+the server's row cap, the page tells you it exported the newest N of M runs.
+
 ### Live mode and history mode
 
 The list has two modes, and it always says which one it is in.
