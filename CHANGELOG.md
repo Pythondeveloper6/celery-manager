@@ -32,6 +32,21 @@ All notable changes to celery-manager are recorded here. The format follows
   A paused schedule's page shows who paused it and when, and marks upcoming
   runs as "Will be skipped".
 
+- **Task list filters in the URL, saved views, copy link.** Status tab,
+  search, group-by, date range and history-mode page are reflected in the
+  hash-route query string (`#/?status=failed&q=smtp`), restored on load and
+  on back/forward. Discrete choices push a history entry; typing in search
+  replaces. **Copy link** copies the view URL. **Views** saves named filter
+  sets per browser in `localStorage` (rename/delete supported; no backend).
+  Filter state moved into `useTaskFilters`.
+
+- **Export task runs.** `GET /api/tasks/export?format=csv|json` streams every
+  run matching the list filters, capped at the new
+  `CeleryManagerConfig.export_max_rows` (default 50000) with an
+  `X-Export-Truncated` header, CSV formula-injection escaping, a timestamped
+  filename, and an `export_tasks` audit row. The task list gains an Export
+  menu.
+
 ### Changed
 
 - **Dashboard redesign.** shadcn/ui-style look (zinc theme, Geist fonts) in

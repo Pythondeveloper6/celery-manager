@@ -22,6 +22,9 @@ class CeleryManagerConfig:
         never sign sessions and may leave it as-is.
     eta_tolerance_seconds: how close "now" must be to a schedule
         override's target time for the decorator to treat it as a match.
+    export_max_rows: hard cap on rows in one `GET /api/tasks/export` download.
+        Larger results are cut off (newest first) and flagged with an
+        `X-Export-Truncated: true` header.
     cookie_secure: sets the `Secure` flag on the session cookie, so the
         browser only ever sends it over HTTPS. Defaults to True — the
         session cookie is a bearer credential for the whole dashboard, and
@@ -36,3 +39,4 @@ class CeleryManagerConfig:
     secret_key: str = "change-me"
     eta_tolerance_seconds: int = 60
     cookie_secure: bool = True
+    export_max_rows: int = 50_000

@@ -133,6 +133,31 @@ are inclusive (`>=` / `<=`). Two consequences:
     mean UTC — that is this codebase's standing convention, and there is no
     per-request timezone to interpret it against.
 
+### Exporting runs
+
+`GET /api/tasks/export?format=csv|json` downloads every run matching the same
+filters as `GET /api/tasks` (`status`, `task_name`, `q`, `date_from`,
+`date_to`; `limit`/`offset` do not apply). `format` defaults to `csv`; any
+other value is a `422`. Requires a session.
+
+- **Columns / keys:** `task_id`, `task_name`, `status`, `queue`, `worker`,
+  `args`, `kwargs`, `started_at`, `finished_at`, `runtime_seconds`,
+  `retry_count`, `exception`, `schedule_name`. Timestamps are ISO 8601 UTC. In
+  CSV, `args`/`kwargs` are the stored JSON text; in JSON they are decoded.
+- **Streaming:** rows are read from the database in batches and written as
+  they go, newest first, so memory stays flat for large exports. JSON is a
+  single array.
+- **Row cap:** at most `CeleryManagerConfig.export_max_rows` rows (default
+  `50000`). When more match, the newest rows are returned and the response
+  carries `X-Export-Truncated: true`. `X-Export-Rows` and `X-Export-Total`
+  give rows returned and rows matched.
+- **CSV safety:** a cell starting with `=`, `+`, `-`, `@`, tab or CR gets a
+  leading `'` so a spreadsheet will not evaluate it as a formula.
+- **Filename:** `Content-Disposition: attachment; filename="task-runs-YYYYMMDD-HHMMSS.csv"`
+  (UTC).
+- **Audit:** writes an `export_tasks` row whose details hold the format, the
+  filters applied, rows exported, rows matched and whether it was truncated.
+
 ### Datetimes in task responses
 
 Every datetime the task endpoints emit — `eta`, `started_at`,
