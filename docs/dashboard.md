@@ -162,10 +162,11 @@ the server's row cap, the page tells you it exported the newest N of M runs.
 
 The list has two modes, and it always says which one it is in.
 
-**Live** is the default: it polls every 5 seconds, and **Load more**
-widens the page up to the API's 500-row ceiling. Every refresh re-requests
-the whole span you have open rather than just the newest page, so a
-background poll can never collapse your loaded rows back to page one.
+**Live** is the default: it updates as runs change (see
+[Live updates](#live-updates) below), and **Load more** widens the page up
+to the API's 500-row ceiling. Every refresh re-requests the whole span you
+have open rather than just the newest page, so a background refresh can
+never collapse your loaded rows back to page one.
 
 **History** is for reading further back. You get into it from **Browse all
 N runs by page** under the table, or from **Browse older runs** when a live
@@ -183,14 +184,18 @@ ignored in this mode too. The header indicator changes from a pulsing
 
 The screen opens an SSE connection (`GET /api/stream`) on mount and
 refetches when a task event arrives (in live mode only — see above), rather
-than patching individual rows from the event payload. **Alongside** that, it
-polls every 5 seconds.
-The poll is not redundant: the SSE event bus lives in the API process's
-memory, but the documented deployment runs the events listener as a
-separate OS process which cannot publish into it — so in a standard
-deployment the SSE connection opens and then delivers nothing, and the
-poll is what actually keeps the list current. See
-[REST API: live updates](rest-api.md#live-updates-sse).
+than patching individual rows from the event payload. A burst of events
+becomes at most one refetch a second. Events come from the database, so
+writes by the separate events listener and by workers reach the list
+within about a second. See
+[REST API: how changes reach the stream](rest-api.md#how-changes-reach-the-stream).
+
+The header indicator tells you whether that connection is up. **Live**
+(pulsing) means it is. **Connecting** or **Reconnecting** (still) means it
+isn't, and while it isn't, the list falls back to polling every 5 seconds;
+it also polls while the last refresh failed. When the stream comes back the
+list refetches once to catch up and the poll stops. A run's detail page
+works the same way for that one run, with a 2-second fallback poll.
 
 A refetch never replaces the rows with a spinner: only the first load shows
 a full "Loading tasks…" state. A refetch you *caused* — changing a filter,
@@ -274,9 +279,10 @@ already retried it, then the log, then args/kwargs as the recipe to
 reproduce it.
 
 While the run is still *active* — `queued`, `started` or `retried`, not
-just running — the page refreshes itself every 2 seconds, and stops the
-moment the run reaches a terminal status, so a finished run's page isn't
-left polling forever. If one of those refreshes fails the page keeps the
+just running — the page listens on the live stream and refreshes itself
+whenever the run changes (progress included). It stops the moment the run
+reaches a terminal status, so a finished run's page isn't left listening
+forever. While the stream is down it polls every 2 seconds instead. If one of those refreshes fails the page keeps the
 data it has and says so ("Live updates paused… Still retrying every 2s.")
 rather than blanking.
 

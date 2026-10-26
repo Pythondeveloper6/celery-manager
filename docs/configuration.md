@@ -27,9 +27,10 @@ config = CeleryManagerConfig(
 | `eta_tolerance_seconds` | `int` | `60` | How close a stored `ScheduleOverride.target_time` must be to "now" (in the `@track` decorator, at task-run time) or to a freshly recomputed occurrence timestamp (in `GET /api/schedules/{name}/occurrences`, at read time) for them to be treated as the same logical occurrence. See the trade-off below. |
 | `cookie_secure` | `bool` | `True` | Sets the `Secure` flag on the session cookie, so browsers only ever send it back over HTTPS. See below for why the default is `True` and when to change it. |
 | `export_max_rows` | `int` | `50000` | Hard cap on rows in one `GET /api/tasks/export` download. Larger results are cut to the newest rows and flagged with `X-Export-Truncated: true`. |
+| `live_poll_interval_seconds` | `float` | `1.0` | How often each API process polls `task_runs` for changes to push down `/api/stream` while at least one dashboard has it open. Each poll is a small query on an indexed column; nothing is polled while nobody is connected. Lower means quicker live updates and more queries. See [REST API: how changes reach the stream](rest-api.md#how-changes-reach-the-stream). |
 | `auto_migrate` | `bool` | `True` | Whether `init_db()` upgrades the database schema to the latest revision at startup. Set it to `False` to run `celery-manager migrate` as a deploy step instead; `init_db()` then leaves the database untouched and logs a warning if the schema isn't current. See [Schema and upgrades](#schema-and-upgrades). |
 
-Those seven fields are the whole dataclass — `CeleryManagerConfig` has no
+Those eight fields are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
 the environment.
 
