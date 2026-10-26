@@ -283,6 +283,24 @@ rather than blanking.
 ![Task detail for a failed run: traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-light.png){ .cm-shot .cm-only-light }
 ![Task detail for a failed run: traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-dark.png){ .cm-shot .cm-only-dark }
 
+### Workflow card
+
+When a run belongs to a chain, group or chord, the detail page shows a
+**Workflow** card between the run summary and the log. It lays out every run
+that shares the same root as an indented tree, exactly as Celery's
+`parent_id` links them: each row has a status, the task name (a link to its
+own page), and its runtime, and the run you are on is highlighted. Members of
+a group are gathered under a **Group** row, and a chord's callback appears
+under the parent that Celery recorded for it. A summary line counts tasks by
+status ("7 tasks: 5 succeeded, 1 failed, 1 started").
+
+Rows with children have a disclosure button (keyboard operable), and the card
+has **Expand all** / **Collapse all**. Trees of more than 30 tasks start
+collapsed except for the path to the current run. Very large workflows show
+the first 500 runs and say so. Runs that stand alone show no card. The
+lineage is captured from Celery events (`task-sent`/`task-received`) and by
+`@track`, so it appears for runs seen by either.
+
 ## Schedules list
 
 ![The schedules view, with one upcoming occurrence skipped](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }

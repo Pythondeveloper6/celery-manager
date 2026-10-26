@@ -136,6 +136,10 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
             # once, and each attempt is its own run.
             "retried_from_id": run.retried_from_id,
             "retried_by": [r.task_id for r in list_retries_of(session, task_id)],
+            # Workflow lineage (chain/group/chord); see GET /{task_id}/workflow.
+            "parent_id": run.parent_id,
+            "root_id": run.root_id,
+            "group_id": run.group_id,
         }
 
 

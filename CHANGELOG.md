@@ -70,6 +70,12 @@ All notable changes to celery-manager are recorded here. The format follows
   optional `{"args", "kwargs"}` body (no body behaves as before); retry
   lineage is recorded as usual and the audit row notes the edit and the
   arguments sent. The task detail page gains **Retry with changes**.
+- **Workflow tree for chains, groups and chords.** Runs now record Celery's
+  `parent_id`, `root_id` and group id (schema revision `0003`; captured from
+  task events and from `@track`'s request). `GET /api/tasks/{id}/workflow`
+  returns the whole tree (capped at 500 nodes), the task detail payload gains
+  `parent_id`/`root_id`/`group_id`, and the task detail page shows a
+  **Workflow** card: an indented, collapsible tree with a status summary.
 
 - **Workers page.** A new Workers page lists every worker that answers the
   broker: status, PID, uptime, pool, processed count, active/reserved/

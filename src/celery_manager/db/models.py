@@ -53,6 +53,14 @@ class TaskRun(Base):
     progress_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     progress_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Workflow lineage (chains, groups, chords), from Celery's own
+    # `parent_id` / `root_id` / `group`. Plain task_id strings, not
+    # ForeignKeys, for the same reason as `retried_from_id`: rows are created
+    # independently and in any order by the listener and the decorator.
+    parent_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    root_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    group_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
 
 class PeriodicSchedule(Base):
     __tablename__ = "periodic_schedules"

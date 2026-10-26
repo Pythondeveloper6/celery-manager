@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { cancelTask, getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
 import { IconCheck, IconChevronLeft, IconCopy } from "../components/icons";
+import { WorkflowCard } from "../components/WorkflowCard";
 import { TaskCallDialog } from "../components/TaskCallDialog";
 import { StatusBadge } from "../components/Status";
 import {
@@ -628,6 +629,9 @@ export function TaskDetail() {
                   <p className="cm-run-hint">No duration recorded: this run never reported a start time.</p>
                 )}
               </section>
+
+              {/* Renders nothing unless this run is part of a chain, group or chord. */}
+              <WorkflowCard taskId={task.task_id} status={task.status} />
 
               {/* Logs before args: the log is what you read next after the
                   traceback; args/kwargs are the reproduction recipe. */}
