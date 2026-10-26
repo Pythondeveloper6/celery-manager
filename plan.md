@@ -4939,7 +4939,9 @@ git commit -m "feat: task search, date-range filter, group-by, and worker/timing
 Append new mid-implementation requests here too, tagged with the task they'd extend.
 
 **Phase 2 (fast follow):**
-- **Schema migrations (Alembic or equivalent)** — *added by the final-review
+- ~~**Schema migrations (Alembic or equivalent)**~~ — **done in 0.1.0a4**
+  (`celery_manager.db.migrate`, `celery-manager migrate`, revisions in
+  `celery_manager/db/migrations/versions/`). *Added by the final-review
   fix wave, finding I5.* `init_db()` uses `Base.metadata.create_all` only,
   which creates missing tables but never alters existing ones. Any future
   column add/change therefore breaks upgrades in place: users have to

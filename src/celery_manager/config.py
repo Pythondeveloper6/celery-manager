@@ -29,6 +29,13 @@ class CeleryManagerConfig:
         thought about it with a cookie leakable over plain HTTP. Set it to
         False only for local HTTP development, where there is no HTTPS to
         send it over.
+    auto_migrate: when True (the default), `init_db()` upgrades the
+        database schema to the latest revision at startup, in every process
+        that calls it (API, workers, events listener; concurrent upgrades
+        are serialised by a lock). Set it to False to run migrations as a
+        separate deploy step with `celery-manager migrate`; `init_db()`
+        then leaves the database untouched and only logs a warning if the
+        schema isn't current.
     """
 
     celery_app: Celery
@@ -36,3 +43,4 @@ class CeleryManagerConfig:
     secret_key: str = "change-me"
     eta_tolerance_seconds: int = 60
     cookie_secure: bool = True
+    auto_migrate: bool = True
