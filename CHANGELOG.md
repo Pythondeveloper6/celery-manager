@@ -32,6 +32,30 @@ All notable changes to celery-manager are recorded here. The format follows
   A paused schedule's page shows who paused it and when, and marks upcoming
   runs as "Will be skipped".
 
+- **Queue depth.** `GET /api/queues` lists every queue celery-manager knows
+  of (default, `task_queues`, `task_routes`, queues seen on runs, and
+  queues live workers consume). For each one it gives the broker's message
+  count and consumer count, read with a passive `queue_declare`, next to the
+  number of runs recorded as `queued` there. It always answers `200`: an
+  unreachable or slow broker (3s deadline) or a `memory://` broker gives
+  `depth: null` and a reason. A new **Queues** page in the dashboard shows
+  this, refreshes every 5 seconds (paused while the tab is hidden) and draws
+  a sparkline of depth over the session. See `docs/queues.md`.
+
+- **Purge a queue.** `POST /api/queues/{name}/purge` removes the ready
+  messages from one queue and returns how many. If it removed any, runs
+  recorded as `queued` in that queue without an ETA are marked `revoked`,
+  since no event will ever arrive for them. Audited as `purge` with both
+  counts. In the dashboard you confirm by typing the queue name.
+
+- **Bulk cancel.** `POST /api/tasks/cancel-bulk` revokes a list of
+  `task_ids`, or every `queued`/`started`/`retried` run matching the task
+  list's filters. It is capped at 1,000 (above that it's refused, not cut
+  short), has a `dry_run` count and an opt-in `terminate`, and writes one
+  `cancel_bulk` audit row. The task list gains **Cancel N selected** on the
+  Queued, Started and Retried tabs, and **Cancel all matching…** with the
+  count shown before you confirm.
+
 ### Changed
 
 - **Dashboard redesign.** shadcn/ui-style look (zinc theme, Geist fonts) in
