@@ -35,7 +35,7 @@ from celery_manager.decorator import track
 from celery_manager.progress import report_progress
 from celery_manager.runtime import setup
 
-__version__ = "0.1.0a3"
+__version__ = "0.1.0a4"
 
 __all__ = [
     "CeleryManagerConfig",

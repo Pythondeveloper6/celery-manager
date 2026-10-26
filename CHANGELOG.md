@@ -6,6 +6,8 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a4] — 2026-10-26
+
 ### Added
 
 - **Pause and resume a whole schedule.** `POST /api/schedules/{name}/pause`
@@ -522,6 +524,7 @@ because anyone who pinned a git SHA during development *will* hit them.
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
 
+[0.1.0a4]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a4
 [0.1.0a3]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a3
 [0.1.0a2]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a2
 [0.1.0a1]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a1

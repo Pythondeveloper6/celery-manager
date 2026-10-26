@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "celery-manager"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "A dashboard and control API for Celery background tasks."
 readme = "README.md"
 requires-python = ">=3.10"
