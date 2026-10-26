@@ -36,15 +36,69 @@ without touching your beat schedule or restarting anything.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/task-detail-dark.png">
-  <img alt="Task detail for a running import with a live progress bar and cancel and terminate controls" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/task-detail-light.png" width="100%">
+  <img alt="Task detail for a running import with a live progress bar" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/task-detail-light.png" width="100%">
 </picture>
 
 </td>
 <td width="50%">
 
 <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/workflow-dark.png">
+  <img alt="A chord's workflow tree with one failed group member" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/workflow-light.png" width="100%">
+</picture>
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/insights-dark.png">
+  <img alt="Insights page with run volume, success rate and runtime charts" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/insights-light.png" width="100%">
+</picture>
+
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/failures-dark.png">
+  <img alt="Failures grouped by exception signature with retry-all" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/failures-light.png" width="100%">
+</picture>
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/workers-dark.png">
+  <img alt="Workers page with live worker cards and runtime rate limits" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/workers-light.png" width="100%">
+</picture>
+
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/queues-dark.png">
+  <img alt="Queue depth per queue with purge controls" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/queues-light.png" width="100%">
+</picture>
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/schedules-dark.png">
-  <img alt="Schedules view with one upcoming occurrence of a periodic task skipped" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/schedules-light.png" width="100%">
+  <img alt="Schedules with one schedule paused until a set time" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/schedules-light.png" width="100%">
+</picture>
+
+</td>
+<td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/start-task-dark.png">
+  <img alt="Start a task sheet with prefilled arguments" src="https://raw.githubusercontent.com/Pythondeveloper6/celery-manager/main/docs/assets/screenshots/start-task-light.png" width="100%">
 </picture>
 
 </td>
@@ -64,10 +118,24 @@ without touching your beat schedule or restarting anything.
 - **Log capture** — `logging` output from inside a task body (and `print()`
   too, in a real worker — [see why](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/decorator.md#what-log-capture-actually-captures)),
   attached to that run and readable in the dashboard.
-- **Control** — cancel/terminate, retry, and bulk retry from the UI; starting
-  a task is available through the API (`POST /api/tasks/start`). Retries keep their lineage, so you can walk the chain.
+- **Control** — cancel/terminate, retry (optionally with edited args), bulk
+  retry, bulk cancel, and **start any registered task** from a searchable
+  picker with prefilled arguments. Retries keep their lineage.
+- **Workflows** — chains, groups and chords shown as a collapsible tree on
+  every run that belongs to one.
 - **Per-occurrence schedule control** — skip or cancel one upcoming run of a
-  periodic task, and see it stay paused.
+  periodic task, or **pause a whole schedule** indefinitely or until a set
+  time; it resumes from the current time, with no catch-up.
+- **Insights** — runs, success rate and p50/p95 runtime over 1h–30d, a page
+  per task, and failures grouped by exception signature with retry-all.
+- **Workers and queues** — live worker state, pool grow/shrink, queue
+  consume/cancel, shutdown, runtime rate limits, broker queue depth and purge.
+- **Shareable views** — filters live in the URL, saved views, and CSV/JSON
+  export of any filtered list.
+- **Live updates** — the dashboard follows changes from the events listener,
+  workers and other API processes within about a second.
+- **Schema migrations** — Alembic migrations ship in the package and run at
+  startup, or as a deploy step with `celery-manager migrate`.
 - **Audit log** — who did what, when, for every control action.
 - **Light and dark themes** — an explicit per-user choice, not just whatever
   the OS says.
@@ -95,11 +163,11 @@ pip install --pre "celery-manager[flask]"        # adds Flask and a2wsgi
 Alternatively, install a tagged release straight from git:
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a3"
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"
 ```
 
 (Extras with git: `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a3"`.)
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"`.)
 
 Optional extras:
 
@@ -173,6 +241,9 @@ Full documentation is at **<https://pythondeveloper6.github.io/celery-manager/>*
 - [Live progress](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/progress.md) — reporting progress from inside a task.
 - [REST API](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/rest-api.md) — every endpoint and payload.
 - [Dashboard](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/dashboard.md) — the screens and what they do.
+- [Insights](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/insights.md) — trends, per-task pages and grouped failures.
+- [Workers and rate limits](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/workers.md) — live worker state and controls.
+- [Queues, purge and bulk cancel](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/queues.md) — broker depth and clean-up.
 - [Configuration](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/configuration.md) — every config field, the schema
   and upgrade story, and production notes.
 - [Working on celery-manager](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/contributing.md) — running the tests,
@@ -191,7 +262,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is the first alpha, **0.1.0a3**. It is feature-complete for the v1 scope,
+This is an alpha, **0.1.0a4**. It is feature-complete for the v1 scope,
 but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
 backlog of known gaps and planned follow-ups.
 

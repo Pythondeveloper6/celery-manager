@@ -1,8 +1,21 @@
 /* Let a long "Paused until …" badge wrap on narrow screens. */
-.cm-badge.cm-badge-wrap {
-  flex: 0 1 auto;
-  max-width: 100%;
-  white-space: normal;
+/* Paused state in the schedules table: a one-line badge with who paused it
+   underneath. The cell is fit-to-content, so neither part may wrap. */
+.cm-pause-state {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--cm-space-1);
+}
+
+.cm-pause-state .cm-badge,
+.cm-pause-state-by {
+  white-space: nowrap;
+}
+
+.cm-pause-state-by {
+  color: var(--cm-color-text-muted);
+  font-size: var(--cm-text-xs);
 }
 
 /* Pause menu for a whole schedule (ScheduleToggle). Tokens only. */

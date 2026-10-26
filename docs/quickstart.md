@@ -19,11 +19,11 @@ Alternatively, install a tagged release straight from git (`v0.1.0a1` is a
 GitHub-only pre-release; PyPI starts at `0.1.0a2`):
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a3"
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"
 ```
 
 (Extras with git: `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a3"`.)
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"`.)
 
 `uvicorn` is **not** a core dependency — celery-manager is an ASGI app, and
 mounting it into a server you already run needs no server of its own. If you

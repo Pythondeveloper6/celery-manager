@@ -72,6 +72,7 @@ function useIsMobile(): boolean {
 function sectionLabel(pathname: string): string {
   if (pathname.startsWith("/schedules")) return "Schedules";
   if (pathname.startsWith("/audit")) return "Audit log";
+  if (pathname.startsWith("/insights") || pathname.startsWith("/task-types")) return "Insights";
   if (pathname.startsWith("/workers")) return "Workers";
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/queues")) return "Queues";

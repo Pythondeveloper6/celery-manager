@@ -120,9 +120,9 @@ export function ScheduleList() {
                     <td>{s.schedule_spec}</td>
                     <td className="cm-col-fit">
                       {s.paused ? (
-                        <span className="cm-badge cm-badge-wrap" title={formatPausedBy(s.paused_by, s.paused_at)}>
-                          {formatPauseState(s.paused_until)}
-                          {s.paused_by && <span className="cm-schedule-enabled"> {formatPausedBy(s.paused_by, s.paused_at)}</span>}
+                        <span className="cm-pause-state">
+                          <span className="cm-badge">{formatPauseState(s.paused_until)}</span>
+                          {s.paused_by && <span className="cm-pause-state-by">{formatPausedBy(s.paused_by, s.paused_at)}</span>}
                         </span>
                       ) : s.enabled ? (
                         <span className="cm-schedule-enabled">Enabled</span>
