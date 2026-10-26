@@ -4951,7 +4951,16 @@ Append new mid-implementation requests here too, tagged with the task they'd ext
   baseline revision matching the v1 models, and adding a
   `celery-manager migrate` command.
 - **Cross-process SSE delivery (Redis pub/sub, or an in-process listener)** —
-  *added by the final-review fix wave, finding I1, per the ledger's
+  **done**, by a third option: a DB change feed. Every write to `task_runs`
+  bumps a new indexed `updated_at` column (migration 0003), and each API
+  process's `EventBus` runs one poller thread (only while it has SSE
+  subscribers) that reads `(updated_at, id) > cursor` every
+  `live_poll_interval_seconds` and publishes the changed rows, with a short
+  overlap window + dedupe for late commits and clock skew
+  (`db/changefeed.py`). Broker-agnostic, no new infrastructure, works with
+  several API processes; the listener's direct publish was removed, and the
+  dashboard polls only while the stream is down. See CHANGELOG.
+  *Originally: added by the final-review fix wave, finding I1, per the ledger's
   deliberately-partial ruling.* `EventBus` (`api/sse.py`) is an in-memory
   `asyncio.Queue` fan-out living inside the API process, but the only thing
   that publishes to it is `EventListener`, which the documented deployment

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { bulkRetryTasks, listTasks, subscribeToUpdates, type BulkCancelResult, type TaskSummary } from "../api/tasks";
+import { bulkRetryTasks, listTasks, subscribeToUpdates, type BulkCancelResult, type StreamState, type TaskSummary } from "../api/tasks";
 import { TaskCallDialog } from "../components/TaskCallDialog";
 import { CancelMatching, CancelSelected } from "../components/BulkCancel";
 import { describeCancel } from "../lib/bulkCancel";
@@ -41,11 +41,12 @@ const STALLED_AFTER_SECONDS = 120;
 /** How the list is reading the table, and it is always one or the other.
  *
  *  "live"    — the default. Refetches the whole accumulated span from
- *              offset 0 every time, polls every 5s, grows by "Load more" up
- *              to the API's single-page ceiling. Correct for the newest runs,
- *              which is what a dashboard is for.
+ *              offset 0 every time, refetches when the live stream reports a
+ *              change (or every 5s while the stream is down), grows by "Load
+ *              more" up to the API's single-page ceiling. Correct for the
+ *              newest runs, which is what a dashboard is for.
  *  "history" — explicit offset paging over the full filtered total, one page
- *              at a time, with the poll switched off. Correct for deliberately
+ *              at a time, with live refetching switched off. Correct for deliberately
  *              reading old runs, which is the only case the live contract
  *              cannot serve (see the note on `refresh`).
  *
@@ -56,6 +57,11 @@ const STALLED_AFTER_SECONDS = 120;
  *  mode is internally consistent and the switch between them is an explicit,
  *  visible, reversible user action — never a silent change of behaviour. */
 type ViewMode = "live" | "history";
+
+// Live updates: a burst of stream events becomes at most one refetch per this
+// many ms. The fallback poll only runs while the stream is down.
+const STREAM_REFRESH_MS = 1000;
+const FALLBACK_POLL_MS = 5000;
 
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
   { value: "none", label: "None" },
@@ -517,24 +523,47 @@ export function TaskList() {
   // Subscription stays open across mode changes (no EventSource churn); the
   // guard is in the handler. An SSE event is a live-head event, and applying
   // it while the user reads page 11 would move the ground under them.
-  useEffect(
-    () =>
-      subscribeToUpdates(() => {
-        if (modeRef.current === "history") return;
-        refresh();
-      }),
-    [refresh]
-  );
+  //
+  // The API's change feed announces every changed row, so a busy deployment
+  // sends bursts of events; each one refetching the whole span would be a
+  // request storm. They are coalesced instead: at most one refresh per
+  // STREAM_REFRESH_MS, with a trailing one so the last change in a burst is
+  // never lost. Silent, because on a busy deployment the panel would
+  // otherwise dim every second. A *re*connect refreshes once too: nothing is
+  // replayed for the time the stream was down.
+  const [stream, setStream] = useState<StreamState>("connecting");
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lastRun = 0;
+    let wasConnected = false;
+    const scheduleRefresh = () => {
+      if (modeRef.current === "history" || timer !== null) return;
+      const wait = Math.max(0, lastRun + STREAM_REFRESH_MS - Date.now());
+      timer = setTimeout(() => {
+        timer = null;
+        lastRun = Date.now();
+        if (modeRef.current !== "history") refresh({ silent: true });
+      }, wait);
+    };
+    const unsubscribe = subscribeToUpdates(scheduleRefresh, (next) => {
+      setStream(next);
+      if (next !== "connected") return;
+      if (wasConnected) scheduleRefresh();
+      wasConnected = true;
+    });
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [refresh]);
+  const streamUp = stream === "connected";
 
-  // Polling fallback, deliberately *alongside* the SSE subscription above
-  // rather than instead of it. The EventBus that /api/stream reads from lives
-  // in the API process's memory, but the documented deployment runs the
-  // events listener as a separate OS process — which cannot publish into it.
-  // So in a real deployment SSE connects and then delivers nothing, and this
-  // poll is what actually keeps the list live. When SSE *does* deliver
-  // (single-process setups, and once the backlog's cross-process fix lands),
-  // both paths simply call the same refresh and the poll is redundant rather
-  // than harmful. See plan.md's Backlog, "Cross-process SSE delivery".
+  // Polling fallback, for when the stream is *not* delivering: before it
+  // first connects, while it is reconnecting, and while the last fetch failed
+  // (the error banner promises a retry, and with a healthy stream nothing
+  // else would fetch until the next task changed). With the stream up there
+  // is no poll — the change feed behind /api/stream hears writes from every
+  // process, the separate events listener and the workers included.
   //
   // THE PAUSE POINT: in history mode no interval is created at all — the poll
   // isn't merely ignored, it doesn't exist. That is deliberate. A poll that
@@ -543,11 +572,12 @@ export function TaskList() {
   // refetch behind your back" a structural property rather than a
   // convention, and that property is exactly what makes offset paging safe.
   // Switching back to live re-runs this effect and restarts the poll.
+  const pollNeeded = !streamUp || error !== null;
   useEffect(() => {
-    if (mode === "history") return;
-    const interval = setInterval(() => refresh({ silent: true }), 5000);
+    if (mode === "history" || !pollNeeded) return;
+    const interval = setInterval(() => refresh({ silent: true }), FALLBACK_POLL_MS);
     return () => clearInterval(interval);
-  }, [mode, refresh]);
+  }, [mode, pollNeeded, refresh]);
 
   // A stale selection pointing at a row the list no longer shows is worse
   // than an empty one — a bulk retry must never silently act on a
@@ -819,10 +849,19 @@ export function TaskList() {
               <span className="cm-paused-dot" aria-hidden="true" />
               Paused
             </div>
-          ) : (
+          ) : streamUp ? (
             <div className="cm-live-indicator" title="Updates as workers report task events">
               <span className="cm-live-dot" aria-hidden="true" />
               Live
+            </div>
+          ) : (
+            <div
+              className="cm-live-indicator"
+              role="status"
+              title="The live connection is down. Refreshing every 5 seconds until it's back."
+            >
+              <span className="cm-paused-dot" aria-hidden="true" />
+              {stream === "connecting" ? "Connecting" : "Reconnecting"}
             </div>
           )}
           <button type="button" className="cm-btn cm-btn-primary cm-btn-sm" onClick={() => setStartOpen(true)}>

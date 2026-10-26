@@ -113,11 +113,11 @@ working tree. To add a revision, from the repo root:
 rm -f alembic-scratch.db
 venv/bin/alembic upgrade head          # scratch DB at the current latest revision
 # ...edit src/celery_manager/db/models.py...
-venv/bin/alembic revision --autogenerate --rev-id 0005 -m "add my_column"
+venv/bin/alembic revision --autogenerate --rev-id 0006 -m "add my_column"
 venv/bin/alembic upgrade head && venv/bin/alembic check   # applies cleanly, no diff left
 ```
 
-That writes `versions/0005_add_my_column.py`. Then:
+That writes `versions/0006_add_my_column.py`. Then:
 
 - **Read the generated file.** Autogenerate misses some changes (renames
   become drop + add, and server defaults and some constraint changes

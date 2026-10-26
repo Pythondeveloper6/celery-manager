@@ -44,6 +44,12 @@ class CeleryManagerConfig:
         (`inspect()`, `pool_grow`, `rate_limit`, ...). Kept short because
         the request blocks for it: a worker that hasn't answered within a
         second is, for an operator, effectively offline.
+    live_poll_interval_seconds: how often, while at least one dashboard
+        has the live stream (`/api/stream`) open, each API process polls
+        `task_runs` for rows other processes changed (the events listener,
+        workers) and pushes them to the browser. Lower is snappier and
+        costs one small indexed query per interval per API process; nothing
+        is polled while nobody is watching.
     """
 
     celery_app: Celery
@@ -54,3 +60,4 @@ class CeleryManagerConfig:
     export_max_rows: int = 50_000
     auto_migrate: bool = True
     inspect_timeout_seconds: float = 1.0
+    live_poll_interval_seconds: float = 1.0

@@ -2,7 +2,13 @@ import "../styles/task-detail.css";
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { cancelTask, getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
+import {
+  cancelTask,
+  getTask,
+  retryTask,
+  subscribeToUpdates,
+  type TaskDetail as TaskDetailData,
+} from "../api/tasks";
 import { IconCheck, IconChevronLeft, IconCopy } from "../components/icons";
 import { WorkflowCard } from "../components/WorkflowCard";
 import { TaskCallDialog } from "../components/TaskCallDialog";
@@ -19,11 +25,11 @@ import {
   useNow,
 } from "../lib/taskProgress";
 
-// Statuses where more is still going to happen, so the page keeps polling.
+// Statuses where more is still going to happen, so the page keeps listening.
 // Anything else — succeeded, failed, skipped, revoked, or a status string
-// this build doesn't recognise — is treated as terminal and stops the timer.
+// this build doesn't recognise — is treated as terminal and stops listening.
 // Erring towards "stop" matters more than erring towards "keep watching": a
-// stuck interval on a finished run is a bug nobody notices, while a stopped
+// stuck listener on a finished run is a bug nobody notices, while a stopped
 // one on a live run is one refresh away from fixed.
 //
 // `retried` is in here despite reading like an ending. Celery emits
@@ -34,9 +40,10 @@ import {
 // that is about to start working again.
 const ACTIVE_STATUSES = new Set(["queued", "started", "retried"]);
 
-// One task row, once every two seconds. Fast enough that a progress bar
-// visibly moves, cheap enough that a tab left open on a long import isn't a
-// problem. (TaskList polls the whole list, so it uses 5s.)
+// The fallback poll, while the live stream is down: one task row, once every
+// two seconds. Fast enough that a progress bar visibly moves, cheap enough
+// that a tab left open on a long import isn't a problem. (TaskList polls the
+// whole list, so it uses 5s.)
 const POLL_INTERVAL_MS = 2000;
 
 // Statuses a revoke can still mean something for. `received` is not a status
@@ -184,24 +191,75 @@ export function TaskDetail() {
   const running = task !== null && isRunning(task);
   const live = task !== null && ACTIVE_STATUSES.has(task.status);
 
-  // Live refresh: a plain poll, not the SSE helper. /api/stream reads an
-  // in-process EventBus, but the documented deployment runs the events
-  // listener as a separate OS process that cannot publish into it — so SSE
-  // connects and then delivers nothing, which is exactly why TaskList polls
-  // too. A poll is the path that actually works.
+  // Live refresh. While the run is active the page listens on /api/stream
+  // and refetches this one row whenever the change feed reports it — the
+  // feed polls the database, so it hears the events listener and the
+  // workers even though they are separate processes. Progress writes bump
+  // the row too, so the bar moves without a timer.
   //
-  // `live` is what stops it: the moment a poll returns a terminal status,
+  // `live` is what stops it: the moment a refetch returns a terminal status,
   // this effect's dependency flips to false, React runs the cleanup, and the
-  // interval is cleared. Nothing keeps ticking on a finished run.
+  // stream is closed. Nothing keeps listening on a finished run.
+  const [streamUp, setStreamUp] = useState(false);
   useEffect(() => {
     if (!taskId || !live) return;
-    // `cancelled` as well as clearInterval, because clearing the timer does
-    // nothing about the request it already dispatched. Navigating from one
-    // live run to another tears this effect down while a getTask() for the
-    // *old* id is still in flight; without the guard its response lands
-    // afterwards and repaints the new run's page with the old run's data
-    // until the new fetch overtakes it. Same reason the loader effect above
-    // carries one.
+    // `cancelled` because closing the stream does nothing about a request
+    // already dispatched. Navigating from one live run to another tears this
+    // effect down while a getTask() for the *old* id is still in flight;
+    // without the guard its response lands afterwards and repaints the new
+    // run's page with the old run's data. Same reason the loader effect
+    // above carries one. `again` coalesces a burst of events into one
+    // follow-up fetch instead of a request per event.
+    let cancelled = false;
+    let inFlight = false;
+    let again = false;
+    const reload = () => {
+      if (inFlight) {
+        again = true;
+        return;
+      }
+      inFlight = true;
+      getTask(taskId)
+        .then((next) => {
+          if (cancelled) return;
+          setTask(next);
+          setLiveError(null);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setLiveError(err instanceof Error ? err.message : "Couldn't refresh this run.");
+        })
+        .finally(() => {
+          inFlight = false;
+          if (again && !cancelled) {
+            again = false;
+            reload();
+          }
+        });
+    };
+    const unsubscribe = subscribeToUpdates(
+      (event) => {
+        if (event.task_id === taskId) reload();
+      },
+      (state) => {
+        setStreamUp(state === "connected");
+        // Nothing is replayed for the time before (or while) the stream was
+        // down, so every (re)connect catches up with one fetch.
+        if (state === "connected") reload();
+      }
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      setStreamUp(false);
+    };
+  }, [taskId, live]);
+
+  // Polling fallback, only while the stream is not delivering (connecting,
+  // reconnecting) or the last refetch failed — a healthy stream would not
+  // retry it until the run changed again.
+  useEffect(() => {
+    if (!taskId || !live || (streamUp && liveError === null)) return;
     let cancelled = false;
     const timer = setInterval(() => {
       getTask(taskId)
@@ -219,7 +277,7 @@ export function TaskDetail() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [taskId, live]);
+  }, [taskId, live, streamUp, liveError]);
 
   // The one-second clock behind the elapsed counter. Only runs while the task
   // is actually running — a finished run's page settles completely instead of
