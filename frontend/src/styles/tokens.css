@@ -2,25 +2,31 @@
    celery-manager design system
    ==========================================================================
 
-   Direction: "signal panel" — a calm, precise instrument-panel aesthetic
-   for an ops tool people reach for mid-incident. A quiet slate/paper
-   surface carries the UI; a single phosphor-cyan accent (evoking an
-   oscilloscope trace / NOC wall display) marks the one interactive
-   colour, kept separate from the red/amber/green triad reserved for task
-   status elsewhere in the dashboard so status colour never doubles as
-   brand colour. IBM Plex Sans carries UI copy and headings; IBM Plex Mono
-   marks data — credentials, identifiers, meta text — the way a terminal
-   would.
+   Direction: shadcn/ui's default zinc theme, rebuilt as plain CSS on --cm-*
+   tokens. Neutral zinc surfaces, 1px borders, `shadow-sm` on cards, 0.5rem
+   radius, h-9 controls and text-sm UI. The component classes below mirror
+   shadcn's: Button (primary/secondary/outline/ghost/destructive, sm/icon),
+   Input, Select, Checkbox, Badge, Card, Table, Tabs, Popover, Separator,
+   Tooltip and the collapsible Sidebar.
+
+   Colour beyond zinc is spent on two things. Task status, which keeps its
+   meaning in both themes (failed red, started blue, retried amber, succeeded
+   green). And the primary: zinc-900 / zinc-50 out of the box, or the
+   deployment's brand colour, which branding.tsx derives into the primary
+   fill, hover, foreground, text and soft tint and writes over these tokens.
+   The focus ring is drawn in --cm-color-primary-text so it follows the brand
+   without ever becoming unreadable.
+
+   Geist carries all UI text; Geist Mono is reserved for things that are
+   code: task ids, args/kwargs, tracebacks and log output. Sentence case, no
+   tracked all-caps labels.
 
    Tokens are defined for light mode on bare :root and overridden for dark
    mode twice: once behind `prefers-color-scheme: dark` (guarded so an
    explicit light choice wins) and once behind `:root[data-theme="dark"]`
-   (so an explicit dark choice wins on a light-set OS). See the "Dark mode"
-   block below. No token's only definition lives inside a media query, so a
-   value is always resolvable no matter what the OS says. Every colour,
-   spacing, radius and type value used by components in this file (and by
-   screens added in later tasks) should come from a custom property here —
-   no ad hoc hex values in component files.
+   (so an explicit dark choice wins on a light-set OS). Every colour,
+   spacing, radius and type value used by components comes from a custom
+   property here — no ad hoc hex values in component files.
    ========================================================================== */
 
 @tailwind base;
@@ -28,122 +34,101 @@
 @tailwind utilities;
 
 :root {
-  /* ---- colour: light mode (default) -------------------------------- */
-  --cm-color-bg: #f3f5f6;
-  --cm-color-bg-elevated: #ffffff;
+  /* ---- colour: light mode (default), shadcn zinc ------------------- */
+  --cm-color-bg: #ffffff;
   --cm-color-surface: #ffffff;
-  --cm-color-surface-sunken: #eaedef;
+  --cm-color-sidebar: #fafafa;
+  /* muted = shadcn muted/secondary/accent (all zinc-100); muted-subtle is
+     muted/50 composited on the background — table headers and row hover. */
+  --cm-color-muted: #f4f4f5;
+  --cm-color-muted-subtle: #fafafa;
 
-  --cm-color-border: #d8dee2;
-  --cm-color-border-strong: #7c8a93;
+  --cm-color-border: #e4e4e7;
+  --cm-color-input: #e4e4e7;
 
-  --cm-color-text: #101820;
-  --cm-color-text-muted: #55636b;
-  --cm-color-text-faint: #838f97;
+  --cm-color-text: #09090b;
+  /* A shade darker than zinc-500 so it clears 4.5:1 on muted too (4.80:1;
+     zinc-500 is 4.40:1 there, e.g. inactive tabs). */
+  --cm-color-text-muted: #6b6b74;
+  /* Non-text marks only (hollow dots, a queued bar), where a word always
+     sits beside the mark. */
+  --cm-color-mark: #a1a1aa;
 
-  --cm-color-accent: #0a7478;
-  --cm-color-accent-hover: #086063;
-  --cm-color-accent-active: #064e50;
-  --cm-color-accent-contrast: #ffffff;
-  --cm-color-accent-soft: #e3f2f1;
+  /* Primary: a fill (buttons, the brand mark) with its paired foreground,
+     and a separate *text* token for the same signal painted straight onto a
+     surface (links, the focus ring). The split matters once a deployment
+     sets a brand colour (see branding.tsx): a pale brand still works as a
+     fill but would be unreadable as text. */
+  --cm-color-primary: #18181b;
+  --cm-color-primary-hover: #27272a;
+  --cm-color-primary-active: #3f3f46;
+  --cm-color-primary-foreground: #fafafa;
+  --cm-color-primary-soft: rgba(24, 24, 27, 0.06);
+  --cm-color-primary-text: #18181b;
+  --cm-color-primary-text-hover: #3f3f46;
 
-  /* Accent *as foreground text* — a separate token from --cm-color-accent
-     even though the two are identical out of the box. --cm-color-accent is
-     a fill (button backgrounds, borders, the brand dot) where the paired
-     --cm-color-accent-contrast guarantees legibility; --cm-color-accent-text
-     is the same signal painted straight onto a surface, where nothing
-     guarantees anything. That distinction is dormant for the built-in
-     phosphor cyan and load-bearing the moment a deployment sets its own
-     brand accent (see branding.tsx): a pale brand colour still works as a
-     button fill with dark text on it, but would be unreadable as link text
-     on white, so branding derives a darkened/lightened variant for these
-     two and leaves the fill alone.
-     Built-in values, measured: #0a7478 on the darkest light-mode backdrop
-     it can land on (--cm-color-surface-sunken #eaedef) = 4.72:1; the hover
-     step #086063 on the same = 6.24:1. Both clear AA for body text. */
-  --cm-color-accent-text: #0a7478;
-  --cm-color-accent-text-hover: #086063;
+  /* ---- task status --------------------------------------------------
+     One colour per TaskRun state, for the badge dot, the run strip bar and
+     the tab dot. Started and failed also colour their word: blue-600 5.17:1
+     and red-600 4.83:1 on white (4.95 / 4.63 on a hovered row). The quiet
+     states print their word in --cm-color-text-muted. */
+  --cm-color-status-queued: var(--cm-color-mark);
+  --cm-color-status-started: #2563eb;
+  --cm-color-status-started-soft: rgba(37, 99, 235, 0.14);
+  --cm-color-status-succeeded: #059669;
+  --cm-color-status-failed: #dc2626;
+  --cm-color-status-retried: #d97706;
+  --cm-color-status-skipped: var(--cm-color-mark);
+  --cm-color-status-revoked: #52525b;
 
-  --cm-color-danger: #c22b3a;
-  --cm-color-danger-bg: #fbeaea;
-  --cm-color-danger-border: #e7b4b9;
+  /* Destructive: red-600 as fill (white text 4.83:1) and, in light mode,
+     as text. */
+  --cm-color-danger: var(--cm-color-status-failed);
+  --cm-color-danger-fill: #dc2626;
+  --cm-color-danger-fill-hover: #b91c1c;
+  --cm-color-danger-foreground: #ffffff;
+  --cm-color-danger-bg: rgba(220, 38, 38, 0.05);
+  --cm-color-danger-border: rgba(220, 38, 38, 0.45);
 
-  --cm-color-success: #1d8a56;
-  --cm-color-warn: #a66a0a;
+  --cm-color-warn: var(--cm-color-status-retried);
+  --cm-color-success: var(--cm-color-status-succeeded);
 
-  /* ---- task status badges -------------------------------------------
-     A dedicated palette for the seven TaskRun states (Task 13+), kept
-     distinct from --cm-color-accent so brand colour never doubles as
-     status colour (see the file header note). "queued"/"skipped"/
-     "revoked" are administrative, no-alarm states and stay neutral;
-     "started" gets its own hue (not accent cyan, not the red/amber/
-     green outcome triad) since "in progress" isn't an outcome; the
-     text tones for succeeded/retried are tuned a shade darker than
-     --cm-color-success/--cm-color-warn so a badge's text stays >=4.5:1
-     against its own tinted background, not just against plain surface. */
-  --cm-color-status-queued: var(--cm-color-text-muted);
-  --cm-color-status-queued-bg: var(--cm-color-surface-sunken);
-  --cm-color-status-queued-border: var(--cm-color-border);
+  /* A future occurrence a human has paused. A different concept from task
+     status, so its own token, even though it borrows the retried amber. */
+  --cm-color-occurrence-skip: var(--cm-color-status-retried);
 
-  --cm-color-status-started: #4550c4;
-  --cm-color-status-started-bg: #eceefb;
-  --cm-color-status-started-border: #babfea;
+  --cm-color-overlay: rgba(0, 0, 0, 0.5);
 
-  --cm-color-status-succeeded: #177a4b;
-  --cm-color-status-succeeded-bg: #eaf5ef;
-  --cm-color-status-succeeded-border: #abd0be;
+  --cm-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --cm-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --cm-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --cm-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --cm-focus-ring-color: var(--cm-color-primary-text);
 
-  --cm-color-status-failed: var(--cm-color-danger);
-  --cm-color-status-failed-bg: var(--cm-color-danger-bg);
-  --cm-color-status-failed-border: var(--cm-color-danger-border);
+  /* lucide chevron-down in zinc-500, which clears 3:1 on both themes'
+     inputs, so one image serves both (a data URI can't read a variable). */
+  --cm-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 
-  --cm-color-status-retried: #8f5900;
-  --cm-color-status-retried-bg: #faf1de;
-  --cm-color-status-retried-border: #dac39b;
-
-  --cm-color-status-skipped: var(--cm-color-text-faint);
-  --cm-color-status-skipped-bg: var(--cm-color-surface-sunken);
-  --cm-color-status-skipped-border: var(--cm-color-border);
-
-  --cm-color-status-revoked: var(--cm-color-text-muted);
-  --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
-  --cm-color-status-revoked-border: var(--cm-color-border-strong);
-
-  /* ---- schedule-occurrence pause state (Task 14) --------------------
-     A *different* concept from task status above: this marks a future
-     occurrence a human has proactively paused, not an outcome a task
-     run reached. Kept as its own token pair rather than reusing
-     --cm-color-status-retried's identical amber values directly, so the
-     two features stay decoupled — a future change to "retried" task
-     styling shouldn't silently reskin the schedule view. The numbers
-     are deliberately the same tuned amber (already checked >=4.5:1 on
-     its own tinted background, see the status-badge note above) since
-     "paused/deferred" reads correctly with the same hue task 13 already
-     validated; "cancel" intentionally has no colour pair here — it
-     reuses the neutral text-muted/surface-sunken/border-strong tokens
-     plus a strikethrough, exactly like the "revoked" task status above,
-     since both mean "explicitly withdrawn" rather than "warned about". */
-  --cm-color-occurrence-skip: #8f5900;
-  --cm-color-occurrence-skip-bg: #faf1de;
-  --cm-color-occurrence-skip-border: #dac39b;
-
-  --cm-shadow-card: 0 1px 2px rgba(16, 24, 32, 0.04), 0 12px 32px -12px rgba(16, 24, 32, 0.18);
-  --cm-focus-ring: 0 0 0 3px rgba(10, 116, 120, 0.35);
+  /* Alert icons (lucide circle-alert, circle-check, triangle-alert), used as
+     masks so they paint in the alert's own currentColor. */
+  --cm-icon-alert: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E");
+  --cm-icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
+  --cm-icon-warn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E");
 
   /* ---- type ----------------------------------------------------------- */
-  --cm-font-display: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --cm-font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --cm-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --cm-font-body: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cm-font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --cm-text-xs: 0.75rem;
-  --cm-text-sm: 0.875rem;
+  --cm-text-sm: 0.8125rem;
+  --cm-text-md: 0.875rem;
   --cm-text-base: 1rem;
   --cm-text-lg: 1.125rem;
-  --cm-text-xl: 1.375rem;
-  --cm-text-2xl: 1.875rem;
+  --cm-text-xl: 1.5rem;
 
   --cm-leading-tight: 1.2;
   --cm-leading-normal: 1.5;
+  --cm-leading-code: 1.6;
 
   /* ---- spacing (4px base) ---------------------------------------------- */
   --cm-space-1: 0.25rem;
@@ -155,231 +140,140 @@
   --cm-space-7: 3rem;
   --cm-space-8: 4rem;
 
-  /* ---- radius: crisp, not bubbly — an instrument panel, not an app icon */
-  --cm-radius-sm: 4px;
-  --cm-radius-md: 6px;
-  --cm-radius-lg: 10px;
+  /* ---- radius: shadcn's --radius and the steps it derives ------------- */
+  --cm-radius: 0.5rem;
+  --cm-radius-sm: calc(var(--cm-radius) - 4px);
+  --cm-radius-md: calc(var(--cm-radius) - 2px);
+  --cm-radius-lg: var(--cm-radius);
+  --cm-radius-xl: calc(var(--cm-radius) + 4px);
   --cm-radius-full: 999px;
 
-  /* ---- page geometry ----------------------------------------------------
-     One max-width and one horizontal padding, shared by .cm-page and the
-     sticky nav strip, so the wordmark and the content under it sit on the
-     same left edge at every viewport width. Both use border-box (see the
-     reset), so the padding is *inside* the max-width on both — that is what
-     makes the two edges agree above 1600px, where the page is centred.
-
-     1600px, not the 960px this started at: 960 is a reading column and the
-     main screen here is a dense task table with a progress bar, a duration,
-     a search box, a date range and a group-by control. On a 1440px laptop
-     the page now fills the window; on a 27" monitor it stops at 1600 rather
-     than stretching table rows to a width nobody can track across. Prose
-     stays narrow where it belongs — the login card is still 380px. */
-  --cm-page-max: 1600px;
-  --cm-page-pad-x: var(--cm-space-4);
-
-  /* The height of the sticky .cm-app-nav strip: space-3 padding twice plus
-     one line of nav text, measured against the rendered bar at 57.2px and
-     rounded up. Two things need it and neither can read it from the DOM —
-     .cm-page, so a full-height page plus a nav isn't taller than the window,
-     and the task list's sticky filter rail, so it parks below the bar rather
-     than under it. It lives here rather than in either of them so the two
-     can't drift to different numbers. Rounded *up* on purpose: a page a
-     couple of pixels short of the fold is invisible, a page a couple of
-     pixels over it grows a scrollbar. */
-  --cm-app-nav-height: 3.75rem;
-
-  /* A readable line/field length, for the parts of a wide page that are a
-     form or a sentence rather than a table. The page stays full width so
-     every left edge still lines up; only the content column stops. */
+  /* ---- control and page geometry --------------------------------------
+     Content stops at 1400px so a table row on a wide monitor stays
+     trackable from name to timestamp; --cm-measure caps forms and prose. */
+  --cm-control-h: 2.25rem;
+  --cm-control-h-sm: 2rem;
+  --cm-sidebar-width: 16rem;
+  --cm-sidebar-width-icon: 3rem;
+  --cm-sidebar-width-mobile: 18rem;
+  --cm-topbar-h: 3rem;
+  --cm-page-max: 1400px;
+  --cm-page-pad-x: var(--cm-space-5);
   --cm-measure: 48rem;
 
   /* ---- motion ----------------------------------------------------------- */
-  --cm-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --cm-ease: cubic-bezier(0.2, 0, 0, 1);
   --cm-duration-fast: 120ms;
   --cm-duration-base: 200ms;
-  --cm-duration-pulse: 2600ms;
+  --cm-duration-sheet: 300ms;
+  --cm-duration-pulse: 2000ms;
 }
 
 /* ==========================================================================
-   Dark mode
+   Dark mode — shadcn zinc dark
    ==========================================================================
 
    Resolved from an explicit `data-theme` attribute on <html> first, and only
-   then from the OS setting:
+   then from the OS setting: the media block is guarded with
+   `:not([data-theme="light"])` so a chosen Light stays light on a dark OS,
+   and `:root[data-theme="dark"]` repeats the palette so a chosen Dark stays
+   dark on a light OS. No attribute means "follow the OS".
 
-     * bare `:root` above carries the complete light palette, so every token
-       has a definition that survives no matter what any media query says;
-     * the media block below is guarded with `:not([data-theme="light"])`, so
-       a user who picks Light stays light on a dark-set OS;
-     * `:root[data-theme="dark"]` repeats the palette so a user who picks
-       Dark stays dark on a light-set OS.
-
-   No attribute at all means "follow the OS", which is the default and the
-   third state of the switch in the nav.
-
-   The two declaration lists are intentionally identical: CSS cannot apply
-   one list to both a media query and a selector, and the alternative
-   (indirecting every dark value through a second `--cm-dark-*` token) costs
-   more lines than it saves and hides the real values one hop away. They are
-   kept adjacent so a change to one is visibly a change to the other in the
-   same diff. src/theme.ts owns writing the attribute; the inline script in
-   index.html sets it before first paint so a chosen dark theme never flashes
-   white.
+   The two declaration lists are intentionally identical (CSS cannot apply
+   one list to both a media query and a selector) and kept adjacent so a
+   change to one is visibly a change to the other. src/theme.ts owns the
+   attribute; the inline script in index.html sets it before first paint.
    ========================================================================== */
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    /* ---- colour: dark mode -------------------------------------------- */
-    --cm-color-bg: #0b0f14;
-    --cm-color-bg-elevated: #10161d;
-    --cm-color-surface: #121820;
-    --cm-color-surface-sunken: #0e141b;
+    --cm-color-bg: #09090b;
+    --cm-color-surface: #09090b;
+    --cm-color-sidebar: #18181b;
+    --cm-color-muted: #27272a;
+    --cm-color-muted-subtle: #18181b;
 
-    --cm-color-border: #232c36;
-    --cm-color-border-strong: #5a6875;
+    --cm-color-border: #27272a;
+    --cm-color-input: #27272a;
 
-    --cm-color-text: #e7ecef;
-    --cm-color-text-muted: #9aa7b0;
-    --cm-color-text-faint: #64717a;
+    --cm-color-text: #fafafa;
+    /* zinc-400: 5.81:1 on muted, 7.76:1 on the background. */
+    --cm-color-text-muted: #a1a1aa;
+    --cm-color-mark: #71717a;
 
-    --cm-color-accent: #35d6d2;
-    --cm-color-accent-hover: #5ce3df;
-    --cm-color-accent-active: #2ab5b2;
-    --cm-color-accent-contrast: #05201f;
-    --cm-color-accent-soft: rgba(53, 214, 210, 0.12);
+    --cm-color-primary: #fafafa;
+    --cm-color-primary-hover: #e4e4e7;
+    --cm-color-primary-active: #d4d4d8;
+    --cm-color-primary-foreground: #18181b;
+    --cm-color-primary-soft: rgba(250, 250, 250, 0.08);
+    --cm-color-primary-text: #fafafa;
+    --cm-color-primary-text-hover: #d4d4d8;
 
-    /* Same fill/text split as light mode. Measured: #35d6d2 on the
-       lightest dark-mode backdrop it can land on (--cm-color-surface
-       #121820) = 9.94:1; the hover step #5ce3df on the same = 12.1:1. */
-    --cm-color-accent-text: #35d6d2;
-    --cm-color-accent-text-hover: #5ce3df;
+    /* -400 steps: all above 5.3:1 on muted. */
+    --cm-color-status-started: #60a5fa;
+    --cm-color-status-started-soft: rgba(96, 165, 250, 0.18);
+    --cm-color-status-succeeded: #34d399;
+    --cm-color-status-failed: #f87171;
+    --cm-color-status-retried: #fbbf24;
+    --cm-color-status-revoked: #a1a1aa;
 
-    --cm-color-danger: #ff6b73;
-    --cm-color-danger-bg: rgba(255, 107, 115, 0.12);
-    --cm-color-danger-border: rgba(255, 107, 115, 0.35);
+    --cm-color-danger-bg: rgba(248, 113, 113, 0.06);
+    --cm-color-danger-border: rgba(248, 113, 113, 0.45);
 
-    --cm-color-success: #4fd98b;
-    --cm-color-warn: #f2b33d;
+    --cm-color-overlay: rgba(0, 0, 0, 0.7);
 
-    /* ---- task status badges (dark) ------------------------------- */
-    --cm-color-status-queued: var(--cm-color-text-muted);
-    --cm-color-status-queued-bg: var(--cm-color-surface-sunken);
-    --cm-color-status-queued-border: var(--cm-color-border);
+    --cm-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --cm-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
+    --cm-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+    --cm-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.6);
 
-    --cm-color-status-started: #9aa4ff;
-    --cm-color-status-started-bg: rgba(154, 164, 255, 0.12);
-    --cm-color-status-started-border: rgba(154, 164, 255, 0.35);
-
-    --cm-color-status-succeeded: #4fd98b;
-    --cm-color-status-succeeded-bg: rgba(79, 217, 139, 0.12);
-    --cm-color-status-succeeded-border: rgba(79, 217, 139, 0.35);
-
-    --cm-color-status-failed: var(--cm-color-danger);
-    --cm-color-status-failed-bg: var(--cm-color-danger-bg);
-    --cm-color-status-failed-border: var(--cm-color-danger-border);
-
-    --cm-color-status-retried: #f2b33d;
-    --cm-color-status-retried-bg: rgba(242, 179, 61, 0.12);
-    --cm-color-status-retried-border: rgba(242, 179, 61, 0.35);
-
-    --cm-color-status-skipped: var(--cm-color-text-faint);
-    --cm-color-status-skipped-bg: var(--cm-color-surface-sunken);
-    --cm-color-status-skipped-border: var(--cm-color-border);
-
-    --cm-color-status-revoked: var(--cm-color-text-muted);
-    --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
-    --cm-color-status-revoked-border: var(--cm-color-border-strong);
-
-    /* ---- schedule-occurrence pause state (dark, Task 14) ----------- */
-    --cm-color-occurrence-skip: #f2b33d;
-    --cm-color-occurrence-skip-bg: rgba(242, 179, 61, 0.12);
-    --cm-color-occurrence-skip-border: rgba(242, 179, 61, 0.35);
-
-    --cm-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 48px -20px rgba(0, 0, 0, 0.6);
-    --cm-focus-ring: 0 0 0 3px rgba(53, 214, 210, 0.35);
-
-    /* Tells the browser to paint native widgets (scrollbars, date pickers,
-       the colour swatch on the settings screen) dark. index.html's <meta
-       name="color-scheme"> covers the very first paint; this covers the
-       case where the OS is dark and no explicit choice was ever made. */
+    /* Native widgets (scrollbars, date pickers, the colour swatch). */
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  /* ---- colour: dark mode -------------------------------------------- */
-  --cm-color-bg: #0b0f14;
-  --cm-color-bg-elevated: #10161d;
-  --cm-color-surface: #121820;
-  --cm-color-surface-sunken: #0e141b;
+  --cm-color-bg: #09090b;
+  --cm-color-surface: #09090b;
+  --cm-color-sidebar: #18181b;
+  --cm-color-muted: #27272a;
+  --cm-color-muted-subtle: #18181b;
 
-  --cm-color-border: #232c36;
-  --cm-color-border-strong: #5a6875;
+  --cm-color-border: #27272a;
+  --cm-color-input: #27272a;
 
-  --cm-color-text: #e7ecef;
-  --cm-color-text-muted: #9aa7b0;
-  --cm-color-text-faint: #64717a;
+  --cm-color-text: #fafafa;
+  /* zinc-400: 5.81:1 on muted, 7.76:1 on the background. */
+  --cm-color-text-muted: #a1a1aa;
+  --cm-color-mark: #71717a;
 
-  --cm-color-accent: #35d6d2;
-  --cm-color-accent-hover: #5ce3df;
-  --cm-color-accent-active: #2ab5b2;
-  --cm-color-accent-contrast: #05201f;
-  --cm-color-accent-soft: rgba(53, 214, 210, 0.12);
+  --cm-color-primary: #fafafa;
+  --cm-color-primary-hover: #e4e4e7;
+  --cm-color-primary-active: #d4d4d8;
+  --cm-color-primary-foreground: #18181b;
+  --cm-color-primary-soft: rgba(250, 250, 250, 0.08);
+  --cm-color-primary-text: #fafafa;
+  --cm-color-primary-text-hover: #d4d4d8;
 
-  /* Same fill/text split as light mode. Measured: #35d6d2 on the
-     lightest dark-mode backdrop it can land on (--cm-color-surface
-     #121820) = 9.94:1; the hover step #5ce3df on the same = 12.1:1. */
-  --cm-color-accent-text: #35d6d2;
-  --cm-color-accent-text-hover: #5ce3df;
+  /* -400 steps: all above 5.3:1 on muted. */
+  --cm-color-status-started: #60a5fa;
+  --cm-color-status-started-soft: rgba(96, 165, 250, 0.18);
+  --cm-color-status-succeeded: #34d399;
+  --cm-color-status-failed: #f87171;
+  --cm-color-status-retried: #fbbf24;
+  --cm-color-status-revoked: #a1a1aa;
 
-  --cm-color-danger: #ff6b73;
-  --cm-color-danger-bg: rgba(255, 107, 115, 0.12);
-  --cm-color-danger-border: rgba(255, 107, 115, 0.35);
+  --cm-color-danger-bg: rgba(248, 113, 113, 0.06);
+  --cm-color-danger-border: rgba(248, 113, 113, 0.45);
 
-  --cm-color-success: #4fd98b;
-  --cm-color-warn: #f2b33d;
+  --cm-color-overlay: rgba(0, 0, 0, 0.7);
 
-  /* ---- task status badges (dark) ------------------------------- */
-  --cm-color-status-queued: var(--cm-color-text-muted);
-  --cm-color-status-queued-bg: var(--cm-color-surface-sunken);
-  --cm-color-status-queued-border: var(--cm-color-border);
+  --cm-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --cm-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
+  --cm-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+  --cm-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.6);
 
-  --cm-color-status-started: #9aa4ff;
-  --cm-color-status-started-bg: rgba(154, 164, 255, 0.12);
-  --cm-color-status-started-border: rgba(154, 164, 255, 0.35);
-
-  --cm-color-status-succeeded: #4fd98b;
-  --cm-color-status-succeeded-bg: rgba(79, 217, 139, 0.12);
-  --cm-color-status-succeeded-border: rgba(79, 217, 139, 0.35);
-
-  --cm-color-status-failed: var(--cm-color-danger);
-  --cm-color-status-failed-bg: var(--cm-color-danger-bg);
-  --cm-color-status-failed-border: var(--cm-color-danger-border);
-
-  --cm-color-status-retried: #f2b33d;
-  --cm-color-status-retried-bg: rgba(242, 179, 61, 0.12);
-  --cm-color-status-retried-border: rgba(242, 179, 61, 0.35);
-
-  --cm-color-status-skipped: var(--cm-color-text-faint);
-  --cm-color-status-skipped-bg: var(--cm-color-surface-sunken);
-  --cm-color-status-skipped-border: var(--cm-color-border);
-
-  --cm-color-status-revoked: var(--cm-color-text-muted);
-  --cm-color-status-revoked-bg: var(--cm-color-surface-sunken);
-  --cm-color-status-revoked-border: var(--cm-color-border-strong);
-
-  /* ---- schedule-occurrence pause state (dark, Task 14) ----------- */
-  --cm-color-occurrence-skip: #f2b33d;
-  --cm-color-occurrence-skip-bg: rgba(242, 179, 61, 0.12);
-  --cm-color-occurrence-skip-border: rgba(242, 179, 61, 0.35);
-
-  --cm-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 48px -20px rgba(0, 0, 0, 0.6);
-  --cm-focus-ring: 0 0 0 3px rgba(53, 214, 210, 0.35);
-
-  /* Tells the browser to paint native widgets (scrollbars, date pickers,
-     the colour swatch on the settings screen) dark. index.html's <meta
-     name="color-scheme"> covers the very first paint; this covers the
-     case where the OS is dark and no explicit choice was ever made. */
+  /* Native widgets (scrollbars, date pickers, the colour swatch). */
   color-scheme: dark;
 }
 
@@ -403,7 +297,7 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
@@ -411,11 +305,10 @@ body {
   background-color: var(--cm-color-bg);
   color: var(--cm-color-text);
   font-family: var(--cm-font-body);
-  font-size: var(--cm-text-base);
+  font-size: var(--cm-text-md);
   line-height: var(--cm-leading-normal);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  transition: background-color var(--cm-duration-base) var(--cm-ease), color var(--cm-duration-base) var(--cm-ease);
 }
 
 h1,
@@ -439,32 +332,26 @@ button {
   cursor: pointer;
   background: none;
   border: none;
+  padding: 0;
 }
 
-/* `summary` is in both lists deliberately. It is natively focusable but is
-   none of the element types listed here, so the disclosure that opens the
-   task list's date range was the one control in the filter rail with no
-   visible focus at all — caught by tabbing to it and reading back its
-   computed box-shadow ("none"), not by reading the selector. */
-a,
-button,
-input,
-select,
-summary,
-textarea,
-[tabindex] {
+code,
+pre,
+kbd {
+  font-family: var(--cm-font-mono);
+}
+
+/* One focus treatment for everything: shadcn's `ring-2 ring-offset-2`,
+   drawn as an outline so it follows each control's own radius. Painted in
+   the primary *text* colour so a pale brand can't make it invisible.
+   `summary` is listed because it is natively focusable. */
+:where(a, button, input, select, summary, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--cm-focus-ring-color);
+  outline-offset: 2px;
+}
+
+:where(a, button, input, select, summary, textarea, [tabindex]):focus:not(:focus-visible) {
   outline: none;
-}
-
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-summary:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
-  box-shadow: var(--cm-focus-ring);
-  border-radius: var(--cm-radius-sm);
 }
 
 .cm-visually-hidden {
@@ -479,6 +366,15 @@ textarea:focus-visible,
   border: 0;
 }
 
+/* Lucide-style inline icons (components/icons.tsx) are 16px, shadcn's
+   `[&_svg]:size-4`, unless a component sizes them. Zero specificity so any
+   class wins. */
+:where(svg[viewBox="0 0 24 24"]) {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -489,209 +385,14 @@ textarea:focus-visible,
   }
 }
 
-/* ==========================================================================
-   Login screen
-   ========================================================================== */
-
-.cm-login-shell {
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--cm-space-5);
-  background-color: var(--cm-color-bg);
-  background-image: radial-gradient(var(--cm-color-border) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: -11px -11px;
-}
-
-.cm-login-card {
-  width: 100%;
-  max-width: 380px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-4);
-  padding: var(--cm-space-6) var(--cm-space-5) var(--cm-space-5);
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-lg);
-  box-shadow: var(--cm-shadow-card);
-}
-
-.cm-login-header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-2);
-  margin-bottom: var(--cm-space-2);
-}
-
-.cm-login-header h1 {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  overflow-wrap: anywhere;
-  gap: var(--cm-space-2);
-  font-family: var(--cm-font-display);
-  font-size: var(--cm-text-2xl);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: var(--cm-leading-tight);
-  color: var(--cm-color-text);
-}
-
-.cm-brand-mark {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--cm-radius-full);
-  background-color: var(--cm-color-accent);
-  box-shadow: 0 0 0 3px var(--cm-color-accent-soft);
-  flex: none;
-}
-
-.cm-login-tagline {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-}
-
-/* Signature element: a heartbeat line under the wordmark. Celery's own
-   scheduler is literally named "beat" — this reads as a live signal
-   without resorting to a startup animation that has nothing to do with
-   the product. Reduced-motion users get the static gradient only. */
-.cm-pulse-rule {
-  height: 2px;
-  border-radius: var(--cm-radius-full);
-  background: linear-gradient(90deg, var(--cm-color-accent) 0%, var(--cm-color-accent) 40%, var(--cm-color-border) 100%);
-  animation: cm-pulse var(--cm-duration-pulse) var(--cm-ease) infinite;
-}
-
 @keyframes cm-pulse {
   0%,
   100% {
-    opacity: 0.55;
-  }
-  50% {
     opacity: 1;
   }
-}
-
-.cm-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-2);
-}
-
-.cm-field label {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-}
-
-.cm-login-card input {
-  padding: 0.625rem 0.75rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  background-color: var(--cm-color-surface);
-  color: var(--cm-color-text);
-  border: 1px solid var(--cm-color-border-strong);
-  border-radius: var(--cm-radius-md);
-  transition: border-color var(--cm-duration-fast) var(--cm-ease), box-shadow var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-login-card input::placeholder {
-  color: var(--cm-color-text-faint);
-}
-
-.cm-login-card input:hover:not(:disabled) {
-  border-color: var(--cm-color-accent);
-}
-
-.cm-login-card input:focus-visible {
-  border-color: var(--cm-color-accent);
-  box-shadow: var(--cm-focus-ring);
-}
-
-.cm-login-card input:disabled {
-  background-color: var(--cm-color-surface-sunken);
-  color: var(--cm-color-text-faint);
-  cursor: not-allowed;
-}
-
-.cm-login-card input[aria-invalid="true"] {
-  border-color: var(--cm-color-danger);
-}
-
-.cm-error {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--cm-space-2);
-  padding: 0.625rem 0.75rem;
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-danger);
-  background-color: var(--cm-color-danger-bg);
-  border: 1px solid var(--cm-color-danger-border);
-  border-radius: var(--cm-radius-md);
-}
-
-.cm-error::before {
-  content: "";
-  flex: none;
-  width: 6px;
-  height: 6px;
-  margin-top: 0.4rem;
-  border-radius: var(--cm-radius-full);
-  background-color: var(--cm-color-danger);
-}
-
-.cm-login-card button[type="submit"] {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--cm-space-2);
-  margin-top: var(--cm-space-2);
-  padding: 0.7rem 1rem;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent);
-  border-radius: var(--cm-radius-md);
-  transition: background-color var(--cm-duration-fast) var(--cm-ease), transform var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-login-card button[type="submit"]:hover:not(:disabled) {
-  background-color: var(--cm-color-accent-hover);
-}
-
-.cm-login-card button[type="submit"]:active:not(:disabled) {
-  background-color: var(--cm-color-accent-active);
-  transform: translateY(1px);
-}
-
-.cm-login-card button[type="submit"]:disabled {
-  background-color: var(--cm-color-border-strong);
-  color: var(--cm-color-surface);
-  cursor: not-allowed;
-  opacity: 0.85;
-}
-
-.cm-login-card button[type="submit"][data-loading]::before {
-  content: "";
-  width: 13px;
-  height: 13px;
-  border-radius: var(--cm-radius-full);
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  border-top-color: currentColor;
-  animation: cm-spin 700ms linear infinite;
+  50% {
+    opacity: 0.45;
+  }
 }
 
 @keyframes cm-spin {
@@ -700,148 +401,381 @@ textarea:focus-visible,
   }
 }
 
-.cm-login-meta {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  color: var(--cm-color-text-faint);
-  text-align: center;
-  margin-top: var(--cm-space-1);
+/* ==========================================================================
+   Separator
+   ========================================================================== */
+
+.cm-separator {
+  flex: none;
+  width: 100%;
+  height: 1px;
+  margin: 0;
+  background-color: var(--cm-color-border);
+  border: 0;
+}
+
+.cm-separator-vertical {
+  width: 1px;
+  height: 1rem;
 }
 
 /* ==========================================================================
-   App nav — the one persistent chrome element across every authenticated
-   screen (Task 15). Deliberately thin: a slim instrument-panel strip
-   pinned above whatever `.cm-page` the current route renders, not a
-   second dashboard header competing with each screen's own eyebrow/title.
-   The active link's underline reuses --cm-color-accent (the app's single
-   "this is the current interactive thing" signal) rather than a filled
-   pill, so it reads as a trace/tab rather than another button.
+   Tooltip — shadcn's inverted chip. Sidebar items position theirs beside
+   the icon rail; the run strip places its own.
    ========================================================================== */
 
-/* The strip itself is full-bleed — its background and bottom rule run the
-   whole width of the window, the way an instrument panel's fascia does.
-   Only its *contents* are constrained, by the same max-width and padding
-   .cm-page uses, so the wordmark lines up with the page title beneath it
-   instead of floating off to the left of it on a wide monitor. */
-.cm-app-nav {
+.cm-tooltip {
+  z-index: 50;
+  padding: 0.375rem var(--cm-space-3);
+  font-size: var(--cm-text-xs);
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--cm-color-bg);
+  background-color: var(--cm-color-text);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-md);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   App shell — sidebar, slim header bar, page
+   ========================================================================== */
+
+.cm-shell {
+  display: flex;
+  min-height: 100dvh;
+}
+
+.cm-inset {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cm-main {
+  min-width: 0;
+}
+
+.cm-topbar {
   position: sticky;
   top: 0;
-  z-index: 10;
-  background-color: var(--cm-color-bg-elevated);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  height: var(--cm-topbar-h);
+  padding: 0 var(--cm-space-4) 0 var(--cm-space-3);
+  background-color: var(--cm-color-bg);
   border-bottom: 1px solid var(--cm-color-border);
 }
 
-.cm-app-nav-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--cm-space-3) var(--cm-space-4);
-  max-width: var(--cm-page-max);
-  margin: 0 auto;
-  padding: var(--cm-space-3) var(--cm-page-pad-x);
+.cm-topbar-title {
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  color: var(--cm-color-text);
 }
 
-.cm-app-nav-brand {
+.cm-sidebar-trigger.cm-btn-icon {
+  width: 1.75rem;
+  min-height: 1.75rem;
+}
+
+/* ---- sidebar ------------------------------------------------------------
+   One element, three presentations: expanded (16rem, labels), collapsed
+   (3rem icon rail, labels clipped and offered as tooltips) and, below
+   768px, an off-canvas sheet. Labels are clipped by each item's own
+   overflow rather than the sidebar's, so collapsed tooltips can escape. */
+
+.cm-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  width: var(--cm-sidebar-width);
+  height: 100dvh;
+  padding: var(--cm-space-2);
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-sidebar);
+  border-right: 1px solid var(--cm-color-border);
+  transition: width var(--cm-duration-base) var(--cm-ease);
+}
+
+.cm-sidebar-header {
   display: flex;
   align-items: center;
-  /* Lets the cell shrink below its content width so .cm-brand-name's
-     ellipsis can engage. Without it a flex item's min-width is auto, i.e.
-     min-content — and a 64-character configured brand name (the server's
-     cap) pushed the nav wider than a 375px window instead of truncating.
-     Caught by measuring scrollWidth at 375px with a long name set, not by
-     reading the rule. */
-  min-width: 0;
   gap: var(--cm-space-2);
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
+  min-width: 0;
+}
+
+/* min-width: 0 lets .cm-brand-name's ellipsis engage on a 64-character
+   configured name instead of widening the sidebar. */
+.cm-sidebar-brand {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--cm-space-2);
+  min-width: 0;
+  height: 3rem;
+  overflow: hidden;
+  font-size: var(--cm-text-md);
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
+  color: var(--cm-color-text);
+}
+
+.cm-sidebar-header .cm-sidebar-close {
+  display: none;
+}
+
+.cm-sidebar-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cm-sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cm-sidebar-item {
+  position: relative;
+}
+
+/* shadcn's SidebarMenuButton: h-8, p-2, gap-2, rounded-md, text-sm. */
+.cm-sidebar-button {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  width: 100%;
+  height: 2rem;
+  padding: var(--cm-space-2);
+  overflow: hidden;
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text);
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: var(--cm-radius-md);
+  transition: background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-sidebar-button:hover:not(:disabled) {
+  background-color: var(--cm-color-muted);
+}
+
+/* Active: the primary's soft tint, which is shadcn's neutral sidebar-accent
+   out of the box and picks up the brand when one is set. */
+.cm-sidebar-button[aria-current="page"] {
+  font-weight: 500;
+  background-color: var(--cm-color-primary-soft);
+}
+
+.cm-sidebar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.cm-sidebar-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity var(--cm-duration-base) var(--cm-ease);
+}
+
+.cm-sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+}
+
+.cm-sidebar-footer .cm-theme-switch {
+  display: flex;
+  width: 100%;
+}
+
+.cm-sidebar-footer .cm-theme-switch .cm-tabs-trigger {
+  flex: 1 1 0;
+}
+
+.cm-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  height: 3rem;
+  overflow: hidden;
+}
+
+.cm-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-muted);
+  border-radius: var(--cm-radius-lg);
+}
+
+.cm-sidebar-user-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.cm-sidebar-user-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Wraps, unlike the version that shipped. .cm-app-nav-inner and
-   .cm-app-nav-end both already wrapped, but this innermost row did not — so
-   the four links stayed on one 561px line no matter how narrow the window
-   got and dragged the whole document sideways. Measured with a 200%-scaled
-   default font (WCAG 1.4.4's requirement): every route reported
-   scrollWidth 561 against clientWidth 320. */
-.cm-app-nav-links {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--cm-space-2) var(--cm-space-5);
-}
-
-.cm-app-nav-link {
-  position: relative;
-  padding: 0.35rem 0;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
+.cm-sidebar-user-note {
+  font-size: var(--cm-text-xs);
   color: var(--cm-color-text-muted);
-  text-decoration: none;
-  transition: color var(--cm-duration-fast) var(--cm-ease);
 }
 
-.cm-app-nav-link::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  border-radius: var(--cm-radius-full);
-  background-color: var(--cm-color-accent);
-  opacity: 0;
-  transform: scaleX(0.6);
-  transition: opacity var(--cm-duration-fast) var(--cm-ease), transform var(--cm-duration-fast) var(--cm-ease);
+.cm-sidebar-error {
+  font-size: var(--cm-text-sm);
 }
 
-.cm-app-nav-link:hover {
-  color: var(--cm-color-text);
+.cm-sidebar-item > .cm-tooltip {
+  display: none;
 }
 
-.cm-app-nav-link[aria-current="page"] {
-  color: var(--cm-color-text);
+.cm-sidebar-overlay {
+  display: none;
 }
 
-.cm-app-nav-link[aria-current="page"]::after {
-  opacity: 1;
-  transform: scaleX(1);
+/* Collapsed icon rail. Desktop only: below 768px the sheet always shows
+   labels. Width does the hiding — each item clips its own label — so the
+   transition is one property. */
+@media (min-width: 768px) {
+  .cm-sidebar[data-state="collapsed"] {
+    width: var(--cm-sidebar-width-icon);
+  }
+
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-label,
+  .cm-sidebar[data-state="collapsed"] .cm-brand-name {
+    opacity: 0;
+  }
+
+  .cm-sidebar[data-state="collapsed"] .cm-theme-switch {
+    flex-direction: column;
+  }
+
+  .cm-sidebar[data-state="collapsed"] .cm-theme-switch .cm-tabs-trigger {
+    flex: none;
+    width: 100%;
+    padding: 0;
+  }
+
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-item > .cm-tooltip {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + var(--cm-space-3));
+    display: block;
+    opacity: 0;
+    transform: translateY(-50%);
+    transition: opacity var(--cm-duration-fast) var(--cm-ease);
+  }
+
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-item:hover > .cm-tooltip,
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-item:focus-within > .cm-tooltip {
+    opacity: 1;
+  }
+
+  /* A sign-out failure can't fit a 3rem rail; it floats beside it. */
+  .cm-sidebar[data-state="collapsed"] .cm-sidebar-error {
+    position: absolute;
+    bottom: var(--cm-space-4);
+    left: calc(100% + var(--cm-space-3));
+    width: 16rem;
+    background-color: var(--cm-color-surface);
+    box-shadow: var(--cm-shadow-md);
+  }
+}
+
+/* Mobile: an off-canvas sheet with an overlay. `visibility` waits for the
+   slide-out to finish, then takes the sheet out of the tab order. */
+@media (max-width: 767px) {
+  .cm-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: var(--cm-sidebar-width-mobile);
+    max-width: calc(100vw - 3rem);
+    height: auto;
+    visibility: hidden;
+    transform: translateX(-100%);
+    box-shadow: var(--cm-shadow-lg);
+    transition:
+      transform var(--cm-duration-sheet) var(--cm-ease),
+      visibility 0s linear var(--cm-duration-sheet);
+  }
+
+  .cm-sidebar[data-mobile-open] {
+    visibility: visible;
+    transform: none;
+    transition: transform var(--cm-duration-sheet) var(--cm-ease);
+  }
+
+  .cm-sidebar-header .cm-sidebar-close {
+    display: inline-flex;
+  }
+
+  .cm-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: block;
+    background-color: var(--cm-color-overlay);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--cm-duration-sheet) var(--cm-ease);
+  }
+
+  .cm-sidebar-overlay[data-open] {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* ==========================================================================
-   Dashboard shell (shared by task list / detail; Task 13)
+   Page
    ========================================================================== */
 
 .cm-page {
-  /* Minus the nav, not a flat 100dvh. Every .cm-page renders *below* the
-     sticky nav strip, so a floor of a full viewport made the document
-     nav-height taller than the window on every screen — measured on the
-     schedules list, which has one row of content and still reported
-     scrollHeight 957 against clientHeight 900. A permanent scrollbar on a
-     page with nothing to scroll reads as content you have failed to find. */
-  min-height: calc(100dvh - var(--cm-app-nav-height));
   max-width: var(--cm-page-max);
-  margin: 0 auto;
-  /* 1rem of side chrome, down from 1.5rem, and 1rem above the header, down
-     from 2rem: on a console the frame around the data is the least valuable
-     pixels on the screen. The 2rem at the bottom is scroll runway so the
-     last row isn't jammed against the window edge. */
-  padding: var(--cm-space-4) var(--cm-page-pad-x) var(--cm-space-6);
+  padding: var(--cm-space-5) var(--cm-page-pad-x) var(--cm-space-7);
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-4);
 }
 
+@media (max-width: 767px) {
+  .cm-page {
+    padding: var(--cm-space-4) var(--cm-space-4) var(--cm-space-6);
+  }
+}
+
 .cm-page-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--cm-space-4);
+  gap: var(--cm-space-3) var(--cm-space-4);
   flex-wrap: wrap;
 }
 
@@ -849,60 +783,38 @@ textarea:focus-visible,
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-1);
+  min-width: 0;
 }
 
-.cm-page-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: var(--cm-space-2);
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-}
-
-/* `overflow-wrap: anywhere`, and the choice matters. Two of the four screens
-   put an identifier in this heading: TaskDetail shows the task name and
-   ScheduleOccurrences shows the schedule name. "billing.reconcile_invoices"
-   is a *single unbreakable token* — neither "." nor "_" is a break
-   opportunity under normal wrapping — so at 1.875rem it is 348px of one word
-   and it simply ran past a 360px viewport (measured: scrollWidth 364 vs
-   clientWidth 360 at 360px, and 729 vs 700 at a 200%-scaled default font).
-
-   Not `word-break: break-all`, which would chop every heading mid-word even
-   when there is room. Not `overflow-wrap: break-word`, which permits the
-   break at layout time but leaves the element's *min-content contribution*
-   as the whole unbroken word — and min-content is exactly what sizes this
-   heading, since .cm-detail-header makes the h1 a flex item directly.
-   `anywhere` is the one value that does both: it shrinks the min-content
-   floor so the box can be narrow, while still only breaking a word that
-   genuinely cannot fit a line of its own. .cm-login-header h1 already uses
-   it for the same reason (a 64-character configured brand name). */
+/* `overflow-wrap: anywhere`: TaskDetail and ScheduleOccurrences put an
+   identifier here ("billing.reconcile_invoices"), a single unbreakable
+   token that would otherwise run past a 360px viewport. */
 .cm-page-title {
-  font-family: var(--cm-font-display);
-  font-size: var(--cm-text-2xl);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: var(--cm-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.025em;
   line-height: var(--cm-leading-tight);
   color: var(--cm-color-text);
   overflow-wrap: anywhere;
 }
 
-/* A quiet "this view is receiving live events" signal — reuses the same
-   pulse used for the login screen's heartbeat rule so the motif reads as
-   one system, not two unrelated animations. */
+.cm-page-lede {
+  max-width: var(--cm-measure);
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text-muted);
+}
+
+/* "Live" / "Paused": an outline badge with the dot inside. */
 .cm-live-indicator {
   display: inline-flex;
   align-items: center;
-  gap: var(--cm-space-2);
-  font-family: var(--cm-font-mono);
+  gap: 0.375rem;
+  padding: 0.125rem var(--cm-space-2);
   font-size: var(--cm-text-xs);
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
+  color: var(--cm-color-text);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
 }
 
 .cm-live-dot {
@@ -911,394 +823,260 @@ textarea:focus-visible,
   height: 8px;
   flex: none;
   border-radius: var(--cm-radius-full);
-  background-color: var(--cm-color-accent);
-  box-shadow: 0 0 0 3px var(--cm-color-accent-soft);
-  animation: cm-pulse var(--cm-duration-pulse) var(--cm-ease) infinite;
+  background-color: var(--cm-color-status-started);
+  animation: cm-pulse var(--cm-duration-pulse) ease-in-out infinite;
 }
 
-/* Accent painted straight onto a surface — the --cm-color-accent-text pair
-   rather than the fill pair, so a custom brand accent can't turn the
-   dashboard's links into low-contrast text. Identical to --cm-color-accent
-   for the built-in palette. */
-.cm-back-link {
+/* Paused: the same dot, hollow and still. Stillness is the signal. */
+.cm-paused-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border: 1.5px solid var(--cm-color-mark);
+  border-radius: var(--cm-radius-full);
+}
+
+/* A ghost button pulled flush with the page edge. */
+.cm-back-link.cm-btn {
   align-self: flex-start;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
-  color: var(--cm-color-accent-text);
+  margin-left: calc(-1 * var(--cm-space-3));
+  color: var(--cm-color-text-muted);
 }
 
-.cm-back-link:hover {
-  color: var(--cm-color-accent-text-hover);
+.cm-back-link.cm-btn:hover {
+  color: var(--cm-color-text);
+}
+
+/* Primary painted onto a surface — the text token, not the fill, so a
+   custom brand can't turn a link into low-contrast text. */
+.cm-link {
+  color: var(--cm-color-primary-text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  border-radius: var(--cm-radius-sm);
+}
+
+.cm-link:hover {
+  color: var(--cm-color-primary-text-hover);
+}
+
+/* shadcn's link button variant, in muted ink. */
+.cm-link-btn {
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  color: var(--cm-color-text-muted);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  border-radius: var(--cm-radius-sm);
+  transition: color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-link-btn:hover {
+  color: var(--cm-color-text);
 }
 
 /* ==========================================================================
-   Panels — the surface card used for the table, empty/loading states,
-   the failure callout, and the log block.
+   Card and the states that live in one
    ========================================================================== */
 
-.cm-panel {
-  /* A frame around a table, not a card of prose — 1rem, down from 1.5rem. */
-  padding: var(--cm-space-4);
+.cm-card {
+  padding: var(--cm-space-5);
+  color: var(--cm-color-text);
   background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-lg);
-  box-shadow: var(--cm-shadow-card);
+  border-radius: var(--cm-radius-xl);
+  box-shadow: var(--cm-shadow-sm);
   transition: opacity var(--cm-duration-base) var(--cm-ease);
 }
 
-.cm-panel-refreshing {
-  opacity: 0.65;
+/* A card whose content is a table or a row list runs edge to edge; the
+   rows carry their own padding. */
+.cm-card-flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.cm-card-flush > .cm-card-pad {
+  padding: var(--cm-space-5);
+}
+
+.cm-card-refreshing {
+  opacity: 0.6;
+}
+
+.cm-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.cm-card-title {
+  font-size: var(--cm-text-base);
+  font-weight: 600;
+  line-height: var(--cm-leading-tight);
+  letter-spacing: -0.01em;
+  color: var(--cm-color-text);
+}
+
+.cm-card-description {
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text-muted);
 }
 
 .cm-loading {
   display: flex;
   align-items: center;
   gap: var(--cm-space-2);
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
+  font-size: var(--cm-text-md);
   color: var(--cm-color-text-muted);
 }
 
 .cm-empty-state {
-  padding: var(--cm-space-5);
+  padding: var(--cm-space-6) var(--cm-space-5);
   text-align: center;
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text-faint);
-  border: 1px dashed var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text-muted);
 }
 
-/* An error state that leaves the user somewhere to go: the message, then the
-   button that retries it. Lives up here with the other panel states rather
-   than in the settings section it was written for, because every list screen
-   now uses it — tasks, schedules, occurrences, the audit log and settings —
-   and a failure should look the same wherever it happens. */
-.cm-panel-stack {
+/* An error state that leaves the user somewhere to go: the message, then
+   the button that retries it. */
+.cm-stack {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--cm-space-4);
 }
 
-/* ==========================================================================
-   Filter bar (task list)
-   ========================================================================== */
-
-.cm-filter-bar {
+/* ---- alerts: shadcn's Alert, with a lucide icon painted through a mask in
+   the alert's own colour. Error is destructive; notice confirms an action
+   went through; alert is degraded-but-working. */
+.cm-error,
+.cm-notice,
+.cm-alert {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--cm-space-2);
-}
-
-.cm-filter-bar button {
-  padding: 0.4rem 0.85rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
+  align-items: flex-start;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-3) var(--cm-space-4);
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text);
   background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-full);
-  transition: border-color var(--cm-duration-fast) var(--cm-ease), color var(--cm-duration-fast) var(--cm-ease),
-    background-color var(--cm-duration-fast) var(--cm-ease);
+  border-radius: var(--cm-radius-lg);
 }
 
-.cm-filter-bar button:hover {
-  color: var(--cm-color-text);
-  border-color: var(--cm-color-accent);
+.cm-error::before,
+.cm-notice::before,
+.cm-alert::before {
+  content: "";
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+  background-color: currentColor;
+  -webkit-mask: var(--cm-icon-alert) center / contain no-repeat;
+  mask: var(--cm-icon-alert) center / contain no-repeat;
 }
 
-.cm-filter-bar button[aria-pressed="true"] {
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent);
-  border-color: var(--cm-color-accent);
-}
-
-/* ==========================================================================
-   Task table (task list)
-   ========================================================================== */
-
-.cm-table-scroll {
-  overflow-x: auto;
-}
-
-.cm-task-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-/* Column gutters as padding-*right* only, so the first column stays flush
-   with the panel's content edge and no :first-child rule is needed. That
-   matters for more than tidiness: TaskList's own `.cm-task-table
-   .cm-tasks-table` overrides (styles/tasks.css) win on specificity with the
-   same 1rem value, and a :first-child rule here would tie with them on
-   specificity and start deciding by bundle order instead. Same value, same
-   shape, no fight. */
-.cm-task-table th {
-  padding: 0 var(--cm-space-4) var(--cm-space-2) 0;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-  text-align: left;
-  border-bottom: 1px solid var(--cm-color-border);
-}
-
-.cm-task-table td {
-  padding: var(--cm-space-3) var(--cm-space-4) var(--cm-space-3) 0;
-  border-bottom: 1px solid var(--cm-color-border);
-  vertical-align: middle;
-}
-
-/* Trailing gutter on the last column would push a right-hand action or
-   timestamp away from the panel edge for no reason. */
-.cm-task-table th:last-child,
-.cm-task-table td:last-child {
-  padding-right: 0;
-}
-
-.cm-task-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.cm-task-table tbody tr:hover td {
-  background-color: var(--cm-color-surface-sunken);
-}
-
-.cm-task-link {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  color: var(--cm-color-text);
-  text-decoration: none;
-}
-
-.cm-task-link:hover .cm-task-name {
-  color: var(--cm-color-accent-text);
-  text-decoration: underline;
-}
-
-.cm-task-name {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
-  color: var(--cm-color-text);
-  transition: color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-task-id {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  color: var(--cm-color-text-faint);
-}
-
-.cm-timestamp {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text-muted);
-  white-space: nowrap;
-}
-
-/* ==========================================================================
-   Status badges — shared by the task list and the detail header.
-   Colour comes from the --cm-color-status-* tokens (keyed by the
-   `data-status` attribute) rather than per-status classes, so an
-   unrecognised status string degrades to the neutral default instead of
-   matching nothing.
-   ========================================================================== */
-
-.cm-status-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.6rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: capitalize;
-  color: var(--cm-color-status-queued);
-  background-color: var(--cm-color-status-queued-bg);
-  border: 1px solid var(--cm-color-status-queued-border);
-  border-radius: var(--cm-radius-full);
-}
-
-.cm-status-badge[data-status="started"] {
-  color: var(--cm-color-status-started);
-  background-color: var(--cm-color-status-started-bg);
-  border-color: var(--cm-color-status-started-border);
-}
-
-.cm-status-badge[data-status="succeeded"] {
-  color: var(--cm-color-status-succeeded);
-  background-color: var(--cm-color-status-succeeded-bg);
-  border-color: var(--cm-color-status-succeeded-border);
-}
-
-.cm-status-badge[data-status="failed"] {
-  color: var(--cm-color-status-failed);
-  background-color: var(--cm-color-status-failed-bg);
-  border-color: var(--cm-color-status-failed-border);
-}
-
-.cm-status-badge[data-status="retried"] {
-  color: var(--cm-color-status-retried);
-  background-color: var(--cm-color-status-retried-bg);
-  border-color: var(--cm-color-status-retried-border);
-}
-
-.cm-status-badge[data-status="skipped"] {
-  color: var(--cm-color-status-skipped);
-  background-color: var(--cm-color-status-skipped-bg);
-  border-color: var(--cm-color-status-skipped-border);
-}
-
-/* "Revoked" is an explicit cancellation rather than a passive skip — the
-   strikethrough is the differentiator since both share a neutral colour. */
-.cm-status-badge[data-status="revoked"] {
-  color: var(--cm-color-status-revoked);
-  background-color: var(--cm-color-status-revoked-bg);
-  border-color: var(--cm-color-status-revoked-border);
-  text-decoration: line-through;
-  text-decoration-color: var(--cm-color-text-faint);
-}
-
-/* ==========================================================================
-   Task detail
-   ========================================================================== */
-
-/* Was capped at 760px, a reading width. Nothing on this screen is prose:
-   it is a meta grid, a traceback and a log, all of which are easier to read
-   wide, and a 760px column centred under a 1600px nav put the task name at a
-   different left edge from the wordmark above it. It now shares the page
-   width; the blocks inside keep their own max-heights. */
-.cm-detail-page {
-  max-width: var(--cm-page-max);
-}
-
-.cm-detail-header {
-  display: flex;
-  align-items: center;
-  gap: var(--cm-space-3);
-  flex-wrap: wrap;
-}
-
-.cm-detail-task-id {
-  margin-top: calc(-1 * var(--cm-space-2));
-}
-
-.cm-detail-meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--cm-space-4);
-}
-
-.cm-detail-meta dt {
-  margin-bottom: var(--cm-space-2);
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-}
-
-.cm-detail-meta dd {
-  margin: 0;
-}
-
-.cm-code-block {
-  margin: 0;
-  padding: var(--cm-space-3);
-  max-height: 220px;
-  overflow: auto;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  line-height: var(--cm-leading-normal);
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.cm-failure-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-3);
+.cm-error {
+  font-weight: 500;
+  color: var(--cm-color-danger);
   background-color: var(--cm-color-danger-bg);
   border-color: var(--cm-color-danger-border);
 }
 
-.cm-failure-panel h2 {
-  font-family: var(--cm-font-display);
-  font-size: var(--cm-text-base);
-  font-weight: 700;
-  color: var(--cm-color-danger);
+.cm-notice::before {
+  background-color: var(--cm-color-success);
+  -webkit-mask-image: var(--cm-icon-check);
+  mask-image: var(--cm-icon-check);
 }
 
-.cm-failure-message {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text);
-  word-break: break-word;
-}
-
-.cm-traceback {
-  margin: 0;
-  padding: var(--cm-space-3);
-  max-height: 360px;
-  overflow: auto;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  line-height: var(--cm-leading-normal);
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-danger-border);
-  border-radius: var(--cm-radius-md);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.cm-log-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-3);
-}
-
-.cm-log-panel h2 {
-  font-family: var(--cm-font-display);
-  font-size: var(--cm-text-base);
-  font-weight: 700;
-  color: var(--cm-color-text);
-}
-
-.cm-log-output {
-  margin: 0;
-  padding: var(--cm-space-3);
-  max-height: 420px;
-  overflow: auto;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  line-height: var(--cm-leading-normal);
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
-  white-space: pre-wrap;
-  word-break: break-word;
+.cm-alert::before {
+  background-color: var(--cm-color-warn);
+  -webkit-mask-image: var(--cm-icon-warn);
+  mask-image: var(--cm-icon-warn);
 }
 
 /* ==========================================================================
-   Action buttons — shared solid/outline treatments for retry, bulk retry,
-   and schedule-occurrence skip/cancel (Task 14). Same type scale and
-   timing as every other interactive control in the file; no new colour
-   beyond the tokens already declared above.
+   Badge — shadcn's outline badge. Task status adds a coloured dot, keyed by
+   `data-status` so an unrecognised status degrades to neutral. Started and
+   failed colour their word too; the rest stay muted so a screen of
+   successes reads calm. Neutral badges (Disabled, Preview) and paused
+   occurrences share the box.
+   ========================================================================== */
+
+.cm-status,
+.cm-badge,
+.cm-occurrence-badge {
+  --cm-status-color: var(--cm-color-status-queued);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  line-height: 1rem;
+  color: var(--cm-color-text-muted);
+  white-space: nowrap;
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-status::before,
+.cm-badge::before,
+.cm-occurrence-badge::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cm-radius-full);
+  background-color: var(--cm-status-color);
+}
+
+.cm-status[data-status="queued"]::before,
+.cm-badge::before {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--cm-color-mark);
+}
+
+.cm-status[data-status="started"] {
+  --cm-status-color: var(--cm-color-status-started);
+  color: var(--cm-color-status-started);
+}
+
+.cm-status[data-status="started"]::before {
+  animation: cm-pulse var(--cm-duration-pulse) ease-in-out infinite;
+}
+
+.cm-status[data-status="succeeded"] {
+  --cm-status-color: var(--cm-color-status-succeeded);
+}
+
+.cm-status[data-status="failed"] {
+  --cm-status-color: var(--cm-color-status-failed);
+  color: var(--cm-color-status-failed);
+  border-color: var(--cm-color-danger-border);
+}
+
+.cm-status[data-status="retried"] {
+  --cm-status-color: var(--cm-color-status-retried);
+}
+
+.cm-status[data-status="skipped"] {
+  --cm-status-color: var(--cm-color-status-skipped);
+}
+
+.cm-status[data-status="revoked"] {
+  --cm-status-color: var(--cm-color-status-revoked);
+}
+
+/* ==========================================================================
+   Button — shadcn's variants and sizes
    ========================================================================== */
 
 .cm-btn {
@@ -1306,140 +1084,573 @@ textarea:focus-visible,
   align-items: center;
   justify-content: center;
   gap: var(--cm-space-2);
-  padding: 0.45rem 0.85rem;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  border-radius: var(--cm-radius-md);
+  min-height: var(--cm-control-h);
+  padding: 0 var(--cm-space-4);
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
   border: 1px solid transparent;
-  transition: background-color var(--cm-duration-fast) var(--cm-ease), border-color var(--cm-duration-fast) var(--cm-ease),
-    color var(--cm-duration-fast) var(--cm-ease), opacity var(--cm-duration-fast) var(--cm-ease);
+  border-radius: var(--cm-radius-md);
+  transition:
+    background-color var(--cm-duration-fast) var(--cm-ease),
+    border-color var(--cm-duration-fast) var(--cm-ease),
+    color var(--cm-duration-fast) var(--cm-ease);
 }
 
 .cm-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
-.cm-btn-solid {
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent);
+.cm-btn-primary {
+  color: var(--cm-color-primary-foreground);
+  background-color: var(--cm-color-primary);
+  box-shadow: var(--cm-shadow-sm);
 }
 
-.cm-btn-solid:hover:not(:disabled) {
-  background-color: var(--cm-color-accent-hover);
+.cm-btn-primary:hover:not(:disabled) {
+  background-color: var(--cm-color-primary-hover);
 }
 
-.cm-btn-solid:active:not(:disabled) {
-  background-color: var(--cm-color-accent-active);
+.cm-btn-primary:active:not(:disabled) {
+  background-color: var(--cm-color-primary-active);
+}
+
+.cm-btn-secondary {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-muted);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-btn-secondary:hover:not(:disabled) {
+  background-color: var(--cm-color-input);
 }
 
 .cm-btn-outline {
   color: var(--cm-color-text);
-  background-color: var(--cm-color-surface);
-  border-color: var(--cm-color-border-strong);
+  background-color: var(--cm-color-bg);
+  border-color: var(--cm-color-input);
+  box-shadow: var(--cm-shadow-sm);
 }
 
 .cm-btn-outline:hover:not(:disabled) {
-  border-color: var(--cm-color-accent-text);
-  color: var(--cm-color-accent-text);
+  background-color: var(--cm-color-muted);
 }
 
-/* The action matching an occurrence's current override — pressed state
-   reuses the accent tokens (the app's one "this is the selected
-   interactive thing" signal) rather than borrowing task-status colour.
-   Needs to out-rank :hover:not(:disabled) above (0,3,0) on specificity —
-   without the explicit :hover variant below, hovering a pressed button
-   fell back to the plain hover rule's `color: accent` on an
-   accent-background button, i.e. invisible teal-on-teal text (caught by
-   actually hovering the rendered button, not just reading the CSS). */
+/* The occurrence action matching its current override: a shadcn Toggle
+   that is on — the muted fill, with a firmer edge. */
 .cm-btn-outline[aria-pressed="true"] {
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent);
-  border-color: var(--cm-color-accent);
+  background-color: var(--cm-color-muted);
+  border-color: var(--cm-color-mark);
 }
 
-.cm-btn-outline[aria-pressed="true"]:hover:not(:disabled) {
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent-hover);
-  border-color: var(--cm-color-accent-hover);
+.cm-btn-ghost {
+  color: var(--cm-color-text);
+}
+
+.cm-btn-ghost:hover:not(:disabled) {
+  background-color: var(--cm-color-muted);
+}
+
+.cm-btn-destructive {
+  color: var(--cm-color-danger-foreground);
+  background-color: var(--cm-color-danger-fill);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-btn-destructive:hover:not(:disabled) {
+  background-color: var(--cm-color-danger-fill-hover);
+}
+
+/* Outline in destructive ink: the first, reversible step (Terminate asks
+   to confirm before the solid destructive button appears). */
+.cm-btn-destructive-outline {
+  color: var(--cm-color-danger);
+  background-color: var(--cm-color-bg);
+  border-color: var(--cm-color-danger-border);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-btn-destructive-outline:hover:not(:disabled) {
+  background-color: var(--cm-color-danger-bg);
+  border-color: var(--cm-color-danger);
+}
+
+.cm-btn-sm {
+  min-height: var(--cm-control-h-sm);
+  padding: 0 var(--cm-space-3);
+  font-size: var(--cm-text-xs);
+}
+
+.cm-btn-icon {
+  width: var(--cm-control-h);
+  padding: 0;
+}
+
+.cm-btn[data-loading]::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: var(--cm-radius-full);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: cm-spin 700ms linear infinite;
 }
 
 /* ==========================================================================
-   Bulk-select bar and row checkboxes (task list, Task 14)
+   Form controls — Label, Input, Select, Checkbox
+   ========================================================================== */
+
+.cm-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  min-width: 0;
+}
+
+.cm-field > label {
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--cm-color-text);
+}
+
+.cm-input,
+.cm-select {
+  width: 100%;
+  min-width: 0;
+  height: var(--cm-control-h);
+  padding: 0 var(--cm-space-3);
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text);
+  background-color: transparent;
+  border: 1px solid var(--cm-color-input);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-sm);
+  transition: border-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-select {
+  padding-right: 2rem;
+  appearance: none;
+  background-image: var(--cm-select-chevron);
+  background-position: right 0.625rem center;
+  background-repeat: no-repeat;
+  background-size: 1rem;
+  cursor: pointer;
+}
+
+/* The native option list paints its own surface. */
+.cm-select option {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-bg);
+}
+
+.cm-input::placeholder {
+  color: var(--cm-color-text-muted);
+}
+
+.cm-input:focus-visible,
+.cm-select:focus-visible {
+  border-color: var(--cm-focus-ring-color);
+  outline-offset: 1px;
+}
+
+.cm-input:disabled,
+.cm-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.cm-input[aria-invalid="true"] {
+  border-color: var(--cm-color-danger);
+}
+
+/* Values that are code (a hex colour, a URL) read better in mono. */
+.cm-input-code {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+}
+
+.cm-field-hint {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-field-error {
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  color: var(--cm-color-danger);
+}
+
+/* Checkbox: the native input, redrawn as shadcn's 16px rounded box, with a
+   lucide check laid over it in the primary foreground. */
+.cm-checkbox {
+  position: relative;
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  vertical-align: middle;
+}
+
+.cm-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+  appearance: none;
+  background-color: transparent;
+  border: 1px solid var(--cm-color-primary);
+  border-radius: var(--cm-radius-sm);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-checkbox input:checked {
+  background-color: var(--cm-color-primary);
+}
+
+.cm-checkbox svg {
+  position: absolute;
+  inset: 2px;
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--cm-color-primary-foreground);
+  stroke-width: 3;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cm-checkbox input:checked + svg {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   Tabs — shadcn's TabsList: a muted pill holding triggers, the active one
+   lifted onto the background. Also the theme switch.
+   ========================================================================== */
+
+.cm-tabs-list {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: var(--cm-control-h);
+  padding: 3px;
+  color: var(--cm-color-text-muted);
+  background-color: var(--cm-color-muted);
+  border-radius: var(--cm-radius-lg);
+}
+
+.cm-tabs-trigger {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  padding: 0 var(--cm-space-3);
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--cm-color-text-muted);
+  border-radius: var(--cm-radius-md);
+  transition:
+    color var(--cm-duration-fast) var(--cm-ease),
+    background-color var(--cm-duration-fast) var(--cm-ease),
+    box-shadow var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tabs-trigger:hover {
+  color: var(--cm-color-text);
+}
+
+.cm-tabs-trigger:focus-visible {
+  outline-offset: 0;
+}
+
+.cm-tabs-trigger[aria-pressed="true"] {
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-bg);
+  box-shadow: var(--cm-shadow);
+}
+
+/* Theme switch: icon-only (sidebar) or icon + word (settings). */
+.cm-theme-switch .cm-tabs-trigger {
+  padding: 0 var(--cm-space-2);
+}
+
+.cm-theme-switch-labelled .cm-tabs-trigger {
+  padding: 0 var(--cm-space-3);
+}
+
+/* ==========================================================================
+   Table — shadcn's Table: a muted header row, rows separated by borders,
+   hover at muted/50. Cells carry gutters on both sides so the first and
+   last columns sit a gutter in from the card edge.
+   ========================================================================== */
+
+.cm-table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.cm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--cm-text-md);
+}
+
+.cm-table th {
+  height: 2.5rem;
+  padding: 0 var(--cm-space-4);
+  font-weight: 500;
+  color: var(--cm-color-text-muted);
+  text-align: left;
+  white-space: nowrap;
+  background-color: var(--cm-color-muted-subtle);
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-table td {
+  height: 3rem;
+  padding: var(--cm-space-2) var(--cm-space-4);
+  border-bottom: 1px solid var(--cm-color-border);
+  vertical-align: middle;
+}
+
+.cm-table tbody:last-child tr:last-child td {
+  border-bottom: none;
+}
+
+.cm-table tbody tr {
+  transition: background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-table tbody tr:hover {
+  background-color: var(--cm-color-muted-subtle);
+}
+
+/* Narrow screens: rows stack instead of scrolling sideways. Still a real
+   <table> (the header row is visually hidden, not removed); each row
+   becomes a wrapping line of cells, with the .cm-cell-primary cell on a
+   line of its own and the rest flowing beneath it. Tables opt in with
+   .cm-table-stack; per-table tweaks live with the screen. */
+@media (max-width: 640px) {
+  .cm-table-stack,
+  .cm-table-stack tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .cm-table-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .cm-table-stack tbody tr {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cm-space-2) var(--cm-space-3);
+    padding: var(--cm-space-3) var(--cm-space-4);
+    border-bottom: 1px solid var(--cm-color-border);
+  }
+
+  .cm-table-stack tbody:last-child tr:last-child {
+    border-bottom: none;
+  }
+
+  .cm-table-stack td {
+    display: block;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .cm-table-stack .cm-cell-primary {
+    flex: 1 0 100%;
+    order: -1;
+  }
+}
+
+/* `width: 1%` on every column but the last: the auto table algorithm then
+   rounds each down to its content and gives the slack to the one column
+   with variable-length content. */
+.cm-col-fit {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.cm-timestamp {
+  color: var(--cm-color-text-muted);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Bulk-select bar (task list)
    ========================================================================== */
 
 .cm-select-cell {
-  width: 2.25rem;
-}
-
-/* Task table only. The `.cm-occurrence-row input[type="checkbox"]` half of
-   this selector was removed: ScheduleOccurrences acts on a row with two
-   buttons and has never rendered a checkbox, so that half matched nothing. */
-.cm-task-table input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--cm-color-accent);
+  width: 2.75rem;
 }
 
 .cm-bulk-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--cm-space-3);
-  padding: var(--cm-space-3) var(--cm-space-4);
-  background-color: var(--cm-color-accent-soft);
-  border: 1px solid var(--cm-color-accent);
-  border-radius: var(--cm-radius-md);
+  padding: var(--cm-space-2) var(--cm-space-2) var(--cm-space-2) var(--cm-space-4);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-lg);
+  box-shadow: var(--cm-shadow-sm);
 }
 
 .cm-bulk-bar-label {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  color: var(--cm-color-text);
+}
+
+/* ==========================================================================
+   Login — shadcn's login-01: brand above a centred card
+   ========================================================================== */
+
+.cm-login-shell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--cm-space-5) var(--cm-space-4);
+  background-color: var(--cm-color-muted-subtle);
+}
+
+.cm-login-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-5);
+  width: 100%;
+  max-width: 24rem;
+}
+
+.cm-login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cm-space-2);
+  min-width: 0;
   font-weight: 600;
   color: var(--cm-color-text);
 }
 
-/* ==========================================================================
-   Inline status notice — confirms a pause/cancel/retry action actually
-   went through, rather than the view just silently re-fetching (Task 14).
-   Uses the accent tokens: this always confirms something the user just
-   *did* succeeded, the same "one interactive colour" the rest of the
-   file reserves for user-driven state, not a task-outcome colour.
-   ========================================================================== */
+.cm-login-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-5);
+}
 
-.cm-notice {
-  padding: 0.625rem 0.75rem;
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-accent-soft);
-  border: 1px solid var(--cm-color-accent);
-  border-radius: var(--cm-radius-md);
+.cm-login-title {
+  font-size: var(--cm-text-xl);
+}
+
+.cm-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-5);
+}
+
+.cm-login-form .cm-btn {
+  width: 100%;
 }
 
 /* ==========================================================================
-   Schedule occurrences (future-schedule pause/cancel view, Task 14)
+   Brand mark and logo
    ========================================================================== */
 
-/* Capped at --cm-measure, unlike the tables. An occurrence row is a
-   timestamp on the left and its two actions on the right, and it was written
-   when .cm-page was a 960px column. At 1600px the same space-between row put
-   "Thu, Aug 20, 2:19 PM" and the "Skip this run" that acts on it ~950px
-   apart, measured on the real page — a card with nothing in the middle of it
-   and a metre of eye travel between a thing and its button.
-   --cm-measure exists for exactly this ("the parts of a wide page that are a
-   form or a sentence rather than a table"); the page stays full width so the
-   header and the left edge still line up. */
+/* shadcn's sidebar-header logo slot: a primary square holding a glyph. */
+.cm-brand-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--cm-color-primary-foreground);
+  background-color: var(--cm-color-primary);
+  border-radius: var(--cm-radius-lg);
+}
+
+.cm-brand-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity var(--cm-duration-base) var(--cm-ease);
+}
+
+/* Height-constrained, width-free: the operator's logo is whatever aspect
+   ratio it is; max-width stops a wide banner from eating the sidebar. */
+.cm-brand-logo {
+  display: block;
+  flex: none;
+  height: 2rem;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+}
+
+.cm-brand-logo-lg {
+  height: 2.5rem;
+  max-width: 220px;
+}
+
+/* ==========================================================================
+   Schedules list and occurrences
+   ========================================================================== */
+
+.cm-schedule-link {
+  font-weight: 500;
+  color: var(--cm-color-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  border-radius: var(--cm-radius-sm);
+}
+
+.cm-schedule-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.cm-schedules-table td {
+  color: var(--cm-color-text-muted);
+}
+
+.cm-schedules-table td:first-child {
+  color: var(--cm-color-text);
+}
+
+/* Enabled is the normal state, so it gets no badge — only the exception
+   (Disabled, a .cm-badge) is marked. */
+.cm-schedule-enabled {
+  color: var(--cm-color-text-muted);
+}
+
+/* Capped at --cm-measure: an occurrence row is a time on the left and its
+   two actions on the right, and at full width the two drift a metre apart. */
 .cm-occurrence-list {
   max-width: var(--cm-measure);
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-2);
-  list-style: none;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 
 .cm-occurrence-row {
@@ -1447,24 +1658,12 @@ textarea:focus-visible,
   align-items: center;
   flex-wrap: wrap;
   gap: var(--cm-space-3);
-  padding: var(--cm-space-4);
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
-  box-shadow: var(--cm-shadow-card);
+  padding: var(--cm-space-3) var(--cm-space-4);
+  border-bottom: 1px solid var(--cm-color-border);
 }
 
-/* A paused row (skip or cancel already recorded) gets a visibly
-   different card treatment, not just a badge, so the "already acted on"
-   set reads as a distinct group when scanning the list. */
-.cm-occurrence-row[data-state="paused"] {
-  background-color: var(--cm-color-occurrence-skip-bg);
-  border-color: var(--cm-color-occurrence-skip-border);
-}
-
-.cm-occurrence-row[data-state="paused"][data-action="cancel"] {
-  background-color: var(--cm-color-surface-sunken);
-  border-color: var(--cm-color-border-strong);
+.cm-occurrence-row:last-child {
+  border-bottom: none;
 }
 
 .cm-occurrence-row[data-state="resolved"] {
@@ -1475,58 +1674,42 @@ textarea:focus-visible,
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--cm-space-3);
+  gap: var(--cm-space-2) var(--cm-space-4);
   flex: 1 1 auto;
-  /* Same yielding floor as .cm-schedule-list-link below. */
   min-width: min(200px, 100%);
 }
 
 .cm-occurrence-time {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--cm-color-text);
 }
 
-.cm-occurrence-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.6rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-radius: var(--cm-radius-full);
-  color: var(--cm-color-occurrence-skip);
-  background-color: var(--cm-color-occurrence-skip-bg);
-  border: 1px solid var(--cm-color-occurrence-skip-border);
-}
-
-/* "Cancel" is an explicit withdrawal rather than a soft skip — same
-   neutral-plus-strikethrough language as the "revoked" task-status
-   badge above, so the two "this was deliberately called off" states
-   read as the same idea across the dashboard. */
-.cm-occurrence-badge[data-action="cancel"] {
+.cm-occurrence-row[data-state="paused"] .cm-occurrence-time {
   color: var(--cm-color-text-muted);
-  background-color: var(--cm-color-surface-sunken);
-  border-color: var(--cm-color-border-strong);
+}
+
+.cm-occurrence-row[data-action="cancel"] .cm-occurrence-time {
   text-decoration: line-through;
-  text-decoration-color: var(--cm-color-text-faint);
+  text-decoration-color: var(--cm-color-mark);
 }
 
-.cm-occurrence-badge-resolved {
-  color: var(--cm-color-text-faint);
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border);
+/* A paused occurrence: amber dot for skip, revoked grey for cancel, hollow
+   once resolved. The box comes from the shared badge rules. */
+.cm-occurrence-badge {
+  --cm-status-color: var(--cm-color-occurrence-skip);
 }
 
-/* `flex: 0 1 auto` and a wrap, not `flex: none`: with `none` the pair of
-   buttons was an unshrinkable 494px block, so at a scaled font size it left
-   the card and the page scrolled sideways (measured: 561 vs 500 at a 32px
-   default font). It still prefers to sit on one line — the row above wraps
-   this whole group to its own line first, since a flex line breaks on
-   max-content — it just can no longer force the page wider than the window. */
+.cm-occurrence-badge[data-action="cancel"] {
+  --cm-status-color: var(--cm-color-status-revoked);
+}
+
+.cm-occurrence-badge-resolved::before {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--cm-color-mark);
+}
+
+/* `flex: 0 1 auto` and a wrap: the pair prefers one line but can never
+   force the page wider than the window. */
 .cm-occurrence-actions {
   display: flex;
   align-items: center;
@@ -1537,390 +1720,61 @@ textarea:focus-visible,
 
 .cm-occurrence-row-error {
   flex: 1 0 100%;
-  margin-top: var(--cm-space-1);
 }
 
 /* ==========================================================================
-   Audit log (Task 15) — reuses the exact table structure and cell tokens
-   the task table established (same th/td rhythm, same hover row) rather
-   than inventing a second table language for the same "scannable rows of
-   records" job.
+   Audit log
    ========================================================================== */
 
-.cm-audit-log {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.cm-audit-log th {
-  padding: 0 var(--cm-space-4) var(--cm-space-2) 0;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-  text-align: left;
-  border-bottom: 1px solid var(--cm-color-border);
-}
-
-.cm-audit-log td {
-  padding: var(--cm-space-3) var(--cm-space-4) var(--cm-space-3) 0;
-  border-bottom: 1px solid var(--cm-color-border);
-  vertical-align: middle;
-}
-
-.cm-audit-log th:last-child,
-.cm-audit-log td:last-child {
-  padding-right: 0;
-}
-
-/* Shrink-to-content on every column except the last. This table was designed
-   for a 960px column and .cm-page is now 1600px; the auto table algorithm
-   hands the spare width out in proportion, which at 1665px put the "When"
-   column at 599px around 151px of timestamp — 448px of blank between a run's
-   time and the person who acted on it, measured on the real page. Reading
-   across a row stops being possible at that distance.
-
-   `width: 1%` is the same idiom .cm-tasks-col-* uses in styles/tasks.css:
-   an under-specified width the auto algorithm rounds up to the content's own
-   width, leaving all the slack for the one column that has variable-length
-   content — here "Target", which carries task ids and setting keys and is
-   deliberately last. Written as :not(:last-child) rather than pinned to three
-   nth-childs so inserting a column in the middle can't silently make the
-   wrong one flexible. */
-.cm-audit-log th:not(:last-child),
-.cm-audit-log td:not(:last-child) {
-  width: 1%;
-  white-space: nowrap;
-}
-
-.cm-audit-log tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.cm-audit-log tbody tr:hover td {
-  background-color: var(--cm-color-surface-sunken);
-}
-
 .cm-audit-user {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--cm-color-text);
 }
 
-/* A manual action, not a task outcome — deliberately not reusing the
-   status-badge palette (that's reserved for the seven TaskRun states) so
-   "a human did this" never gets mistaken for "a task reached this
-   state." Mono + accent keeps it legible as a distinct signal without
-   introducing a new hue. */
+/* A manual action, not a task outcome — ink, no status colour. */
 .cm-audit-action {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--cm-color-accent-text);
+  font-weight: 500;
+  color: var(--cm-color-text);
 }
 
 .cm-audit-target {
   font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  color: var(--cm-color-text-faint);
-}
-
-/* ==========================================================================
-   Periodic schedules list (Task 18) — the missing discovery step for
-   ScheduleOccurrences (Task 14). Rows render as cards, reusing the exact
-   surface/border/shadow treatment cm-occurrence-row already established
-   for schedule-related content, rather than the cm-task-table grid: a
-   schedule row has too little per-column data (name, task, spec) to
-   earn tabular alignment. The name/meta split inside the link reuses
-   cm-task-link's own name-then-meta stacking and hover-underline
-   convention verbatim, just renamed for this list.
-   ========================================================================== */
-
-.cm-schedule-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-2);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* Left-packed, not space-between. The "disabled" badge describes the
-   schedule beside it, and space-between put the two at opposite ends of a
-   1600px card — a label a metre away from its subject. (The occurrence rows
-   keep a two-ended layout because their buttons are an action column and
-   .cm-occurrence-list caps the width instead; here the badge is an
-   annotation and belongs next to what it annotates.) */
-.cm-schedule-list-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--cm-space-3);
-  padding: var(--cm-space-4);
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
-  box-shadow: var(--cm-shadow-card);
-  transition: border-color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-schedule-list-row:hover {
-  border-color: var(--cm-color-accent);
-  background-color: var(--cm-color-surface-sunken);
-}
-
-.cm-schedule-list-link {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  /* 0 1, not 1 1: growing to fill the card is what pushed the badge to the
-     far edge in the first place. */
-  flex: 0 1 auto;
-  /* A floor, not a fixed width — and floors have to yield. A flat 200px is
-     wider than the card's content box at 320px with a scaled font, which is
-     how the schedules list ended up pushing the page sideways. */
-  min-width: min(200px, 100%);
-  color: var(--cm-color-text);
-  text-decoration: none;
-}
-
-.cm-schedule-list-link:hover .cm-schedule-list-name {
-  color: var(--cm-color-accent-text);
-  text-decoration: underline;
-}
-
-/* Both wrap `anywhere`, for the reason .cm-page-title documents above: a
-   schedule name and a dotted task path ("demo.send_report") are single
-   unbreakable tokens, and the meta line was the last thing still forcing the
-   schedules page wider than a 320px window. */
-.cm-schedule-list-name {
-  font-family: var(--cm-font-body);
   font-size: var(--cm-text-sm);
-  font-weight: 600;
-  color: var(--cm-color-text);
-  overflow-wrap: anywhere;
-  transition: color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-schedule-list-meta {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  color: var(--cm-color-text-faint);
+  color: var(--cm-color-text-muted);
   overflow-wrap: anywhere;
 }
 
-/* Generic administrative-state badge — same neutral text-muted /
-   surface-sunken / border-strong grammar the status-badge system
-   already reserves for "queued"/"skipped"/"revoked" (see the status
-   badge note above): a disabled schedule isn't an alarm, just a
-   notable, non-default state, so it gets the same quiet treatment
-   rather than a new colour. Enabled schedules render no badge at all —
-   silence is the "normal" state, exactly like an occurrence with no
-   override renders no badge in ScheduleOccurrences. */
-.cm-badge {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  padding: 0.2rem 0.6rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border-strong);
-  border-radius: var(--cm-radius-full);
-}
-
 /* ==========================================================================
-   Brand surface — wordmark, logo, and the theme switch (Task 19)
-   ==========================================================================
-   A deployment can replace the wordmark and the brand dot with its own name
-   and logo (see src/branding.tsx). Everything below is the chrome that has
-   to keep working when it does: a name up to 64 characters long, and an
-   image of unknown aspect ratio dropped where a 10px dot used to be.
+   Settings — one card per scope, labels above inputs
    ========================================================================== */
 
-/* The nav's own brand cell can't grow, so a long configured name truncates
-   there rather than pushing the links off the bar. The login card lets the
-   same name wrap instead (it has a whole line to itself). */
-.cm-brand-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Height-constrained, width-free: the operator's logo is whatever aspect
-   ratio it is, and the one thing that must not happen is a tall image
-   stretching the nav strip. max-width stops a very wide banner from eating
-   the links. */
-.cm-brand-logo {
-  display: block;
-  flex: none;
-  height: 18px;
-  width: auto;
-  max-width: 140px;
-  object-fit: contain;
-}
-
-.cm-brand-logo-lg {
-  height: 30px;
-  max-width: 220px;
-}
-
-/* The nav's right-hand cluster: route links and the theme switch. Grouped so
-   the pair moves as one unit when the bar wraps on a narrow window. */
-.cm-app-nav-end {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--cm-space-4);
-}
-
-/* --------------------------------------------------------------------------
-   Segmented control — a three-position switch recessed into the panel, which
-   is what a theme preference actually is: not a button that toggles
-   something, but a selector whose current position has to be readable at a
-   glance without being clicked. The well (surface-sunken + border) groups the
-   three options into one instrument; the selected option takes the same solid
-   accent fill .cm-filter-bar already uses for "this is the chosen one", so
-   the dashboard has exactly one visual grammar for selection.
-   Unselected labels are --cm-color-text-muted on --cm-color-surface-sunken:
-   5.28:1 light, 7.52:1 dark. Selected is --cm-color-accent-contrast on
-   --cm-color-accent: 5.55:1 light, 9.49:1 dark.
-   -------------------------------------------------------------------------- */
-
-/* Wraps. Three uppercase pills in a fixed well is 347px at a 200%-scaled
-   default font, and as an unwrappable row it took a 320px window with it
-   (measured: scrollWidth 379 against clientWidth 320 on every route). Two
-   rows of pills in the well is a worse-looking switch than one; a dashboard
-   that scrolls sideways on every screen is a worse dashboard. */
-.cm-segmented {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px;
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-full);
-}
-
-.cm-segmented-option {
-  padding: 0.25rem 0.65rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-  background-color: transparent;
-  border-radius: var(--cm-radius-full);
-  transition: color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-segmented-option:hover {
-  color: var(--cm-color-text);
-}
-
-.cm-segmented-option[aria-pressed="true"] {
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent);
-}
-
-/* Has to out-rank .cm-segmented-option:hover, or hovering the selected
-   option repaints muted-on-accent — the same trap .cm-btn-outline documents
-   above. */
-.cm-segmented-option[aria-pressed="true"]:hover {
-  color: var(--cm-color-accent-contrast);
-  background-color: var(--cm-color-accent-hover);
-}
-
-/* The global button:focus-visible rule squares corners to --cm-radius-sm,
-   which on a pill reads as a rendering glitch. Keep the ring, keep the pill. */
-.cm-segmented-option:focus-visible {
-  border-radius: var(--cm-radius-full);
-}
-
-/* ==========================================================================
-   Settings screen (Task 19)
-   ========================================================================== */
-
-/* Panels on this screen carry a heading and a scope note before their body,
-   unlike the single-purpose panels elsewhere in the app. */
-.cm-panel-head {
+.cm-settings-section {
   display: flex;
   flex-direction: column;
-  gap: var(--cm-space-3);
-  margin-bottom: var(--cm-space-4);
-}
-
-.cm-panel-title {
-  font-family: var(--cm-font-display);
-  font-size: var(--cm-text-lg);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: var(--cm-leading-tight);
-  color: var(--cm-color-text);
-}
-
-/* Who a change affects, stated where the change is made. Branding is one
-   row in the deployment's database; the theme is one key in this browser's
-   localStorage. Users assume both are personal, so the note is part of the
-   control, not documentation kept somewhere else. */
-.cm-scope-note {
+  gap: var(--cm-space-5);
   max-width: var(--cm-measure);
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--cm-space-2);
-  padding: var(--cm-space-2) var(--cm-space-3);
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text-muted);
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
 }
 
+/* Who a change affects, stated where the change is made: branding is one
+   row in the deployment's database, the theme one key in this browser. */
 .cm-scope-tag {
-  /* Allowed to shrink, so "Deployment-wide" can break at its hyphen when a
-     scaled font makes it 252px wide. `flex: none` pinned it to max-content
-     and pushed the settings panel past the window. The basis is still auto,
-     so it only ever breaks when it genuinely cannot fit. */
-  flex: 0 1 auto;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
   color: var(--cm-color-text);
 }
 
-/* Capped, unlike a table panel: a hex-colour field 1500px wide is a worse
-   control than a 700px one, and the eye has to travel the whole width to
-   get from a label to its input. */
 .cm-settings-form {
-  max-width: var(--cm-measure);
   display: flex;
   flex-direction: column;
-  gap: var(--cm-space-4);
+  gap: var(--cm-space-5);
 }
 
-/* A <fieldset>, not a <div>: `disabled` on the fieldset disables every
-   control inside it in one go, so an in-flight save can't be edited out from
-   under itself. min-width:0 undoes the fieldset's default min-content floor,
-   which otherwise stops the inputs shrinking on a narrow window. */
+/* A <fieldset>: `disabled` on it disables every control inside in one go,
+   so an in-flight save can't be edited out from under itself. min-width:0
+   undoes the fieldset's min-content floor. */
 .cm-fieldset {
   display: flex;
   flex-direction: column;
-  gap: var(--cm-space-4);
+  gap: var(--cm-space-5);
   margin: 0;
   padding: 0;
   border: 0;
@@ -1928,43 +1782,7 @@ textarea:focus-visible,
 }
 
 .cm-fieldset:disabled {
-  opacity: 0.75;
-}
-
-.cm-input {
-  width: 100%;
-  padding: 0.5rem 0.7rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  background-color: var(--cm-color-surface);
-  color: var(--cm-color-text);
-  border: 1px solid var(--cm-color-border-strong);
-  border-radius: var(--cm-radius-md);
-  transition: border-color var(--cm-duration-fast) var(--cm-ease), box-shadow var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-input::placeholder {
-  color: var(--cm-color-text-faint);
-}
-
-.cm-input:hover:not(:disabled) {
-  border-color: var(--cm-color-accent);
-}
-
-.cm-input:focus-visible {
-  border-color: var(--cm-color-accent);
-  border-radius: var(--cm-radius-md);
-  box-shadow: var(--cm-focus-ring);
-}
-
-.cm-input:disabled {
-  background-color: var(--cm-color-surface-sunken);
-  color: var(--cm-color-text-faint);
-  cursor: not-allowed;
-}
-
-.cm-input[aria-invalid="true"] {
-  border-color: var(--cm-color-danger);
+  opacity: 0.7;
 }
 
 .cm-field-inline {
@@ -1975,20 +1793,19 @@ textarea:focus-visible,
 
 .cm-field-inline .cm-input {
   flex: 1 1 auto;
-  min-width: 0;
 }
 
-/* The native colour picker, dressed to match .cm-input. It is a convenience
-   next to the hex field, never the source of truth: the text input is what
-   gets submitted, so an operator can still paste a value or clear it. */
+/* The native colour picker, dressed to match .cm-input. A convenience next
+   to the hex field, never the source of truth. */
 .cm-colour-swatch {
   flex: none;
   width: 2.75rem;
-  height: 2.4rem;
-  padding: 2px;
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border-strong);
+  height: var(--cm-control-h);
+  padding: 3px;
+  background-color: transparent;
+  border: 1px solid var(--cm-color-input);
   border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-sm);
   cursor: pointer;
 }
 
@@ -2002,25 +1819,7 @@ textarea:focus-visible,
 
 .cm-colour-swatch::-webkit-color-swatch {
   border: none;
-  border-radius: 3px;
-}
-
-/* Hints carry instructions people need to follow, so they use text-muted
-   (6.21:1 light / 7.24:1 dark) rather than the text-faint the meta lines
-   elsewhere in the file use for repeatable identifiers. */
-.cm-field-hint {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  color: var(--cm-color-text-muted);
-}
-
-/* Field-level rejection, sat under the field it belongs to, in the server's
-   own words. --cm-color-danger on --cm-color-surface: 5.67:1 light,
-   6.46:1 dark. */
-.cm-field-error {
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-danger);
+  border-radius: var(--cm-radius-sm);
 }
 
 .cm-settings-actions {
@@ -2030,26 +1829,17 @@ textarea:focus-visible,
   gap: var(--cm-space-3);
 }
 
-/* --------------------------------------------------------------------------
-   Branding preview — the reason a branding screen exists. Built from the
-   real components (.cm-brand-mark, .cm-btn-solid, .cm-notice, .cm-badge)
-   with the derived accent tokens set inline on the container, so what shows
-   here is the same CSS the nav and the buttons will run, not a drawing of
-   it. The dot grid is the login shell's own backdrop, reused so the preview
-   reads as "the app", not as another form field.
-   -------------------------------------------------------------------------- */
-
+/* Branding preview, built from the real components with the derived tokens
+   set inline on the container, so it runs the same CSS the sidebar and the
+   buttons will. */
 .cm-preview {
   display: flex;
   flex-direction: column;
-  gap: var(--cm-space-3);
+  gap: var(--cm-space-4);
   padding: var(--cm-space-4);
-  background-color: var(--cm-color-bg);
-  background-image: radial-gradient(var(--cm-color-border) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: -11px -11px;
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
+  background-color: var(--cm-color-sidebar);
+  border: 1px dashed var(--cm-color-input);
+  border-radius: var(--cm-radius-lg);
 }
 
 .cm-preview-chrome {
@@ -2057,10 +1847,10 @@ textarea:focus-visible,
   align-items: center;
   justify-content: space-between;
   gap: var(--cm-space-3);
-  padding: var(--cm-space-3) var(--cm-space-4);
-  background-color: var(--cm-color-bg-elevated);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
+}
+
+.cm-preview-chrome .cm-sidebar-brand {
+  height: auto;
 }
 
 .cm-preview-body {
@@ -2070,70 +1860,24 @@ textarea:focus-visible,
   gap: var(--cm-space-3);
 }
 
+/* The active sidebar item, as a still. */
+.cm-preview-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  height: 2rem;
+  padding: 0 var(--cm-space-3) 0 var(--cm-space-2);
+  font-weight: 500;
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-primary-soft);
+  border-radius: var(--cm-radius-md);
+}
+
 /* The measured numbers behind the preview, not a promise about them. */
 .cm-preview-readout {
   display: flex;
   flex-wrap: wrap;
   gap: var(--cm-space-1) var(--cm-space-4);
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
+  font-size: var(--cm-text-sm);
   color: var(--cm-color-text-muted);
-}
-
-/* Signed-in user and sign-out. Same mono/xs/uppercase voice as the brand
-   wordmark and the theme pills; the button is a quiet outlined pill so it
-   reads as a control without competing with the accent-filled theme option. */
-.cm-app-nav-user {
-  display: flex;
-  align-items: center;
-  gap: var(--cm-space-3);
-  min-width: 0;
-}
-
-.cm-app-nav-username {
-  max-width: 14ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--cm-color-text-muted);
-}
-
-.cm-app-nav-signout {
-  padding: 0.25rem 0.65rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--cm-color-text-muted);
-  background-color: transparent;
-  border: 1px solid var(--cm-color-border-strong);
-  border-radius: var(--cm-radius-full);
-  transition: color var(--cm-duration-fast) var(--cm-ease), border-color var(--cm-duration-fast) var(--cm-ease),
-    opacity var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-app-nav-signout:hover:not(:disabled) {
-  color: var(--cm-color-accent-text);
-  border-color: var(--cm-color-accent-text);
-}
-
-.cm-app-nav-signout:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.cm-app-nav-signout:focus-visible {
-  border-radius: var(--cm-radius-full);
-}
-
-.cm-app-nav-error {
-  max-width: var(--cm-page-max);
-  margin: 0 auto;
-  padding: 0 var(--cm-page-pad-x) var(--cm-space-3);
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listOccurrences, pauseOccurrence, type Occurrence, type PauseAction } from "../api/schedules";
-import { BrandMark } from "../branding";
+import { IconChevronLeft } from "../components/icons";
 
 // Keyed by PauseAction rather than a bare string, so adding an action to the
 // API without giving it a label here is a compile error instead of a blank
@@ -9,6 +9,12 @@ import { BrandMark } from "../branding";
 const ACTION_LABEL: Record<PauseAction, string> = {
   skip: "Skip",
   cancel: "Cancel",
+};
+
+// How a paused occurrence's state reads beside its time.
+const PAUSED_LABEL: Record<PauseAction, string> = {
+  skip: "Will be skipped",
+  cancel: "Cancelled",
 };
 
 function formatTargetTime(value: string): string {
@@ -101,17 +107,17 @@ export function ScheduleOccurrences() {
           at the time; now that /schedules is where a person actually arrives
           from, sending them to the task table instead is a dead end that
           costs a second navigation every time. */}
-      <Link to="/schedules" className="cm-back-link">
-        &larr; All schedules
+      <Link to="/schedules" className="cm-btn cm-btn-ghost cm-btn-sm cm-back-link">
+        <IconChevronLeft />
+        All schedules
       </Link>
 
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
-          <p className="cm-page-eyebrow">
-            <BrandMark />
-            schedule
-          </p>
           <h1 className="cm-page-title">{name}</h1>
+          <p className="cm-page-lede">
+            Upcoming runs. Skipping or cancelling one leaves the schedule itself unchanged.
+          </p>
         </div>
       </header>
 
@@ -124,7 +130,7 @@ export function ScheduleOccurrences() {
       {error ? (
         // Same error treatment as the other list screens: the server's own
         // message plus a retry, rather than a sentence with no way forward.
-        <div className="cm-panel-stack">
+        <div className="cm-stack">
           <p className="cm-error" role="alert">
             {error}
           </p>
@@ -138,9 +144,11 @@ export function ScheduleOccurrences() {
           Loading upcoming runs&hellip;
         </p>
       ) : occurrences.length === 0 ? (
-        <p className="cm-empty-state">No upcoming occurrences to show yet.</p>
+        <div className="cm-card">
+          <p className="cm-empty-state">No upcoming runs to show yet. Check that the schedule is enabled.</p>
+        </div>
       ) : (
-        <ul className="cm-occurrence-list">
+        <ul className="cm-card cm-card-flush cm-occurrence-list">
           {occurrences.map((o) => {
             const key = o.target_time;
             const state = occurrenceState(o);
@@ -153,17 +161,17 @@ export function ScheduleOccurrences() {
                   <span className="cm-occurrence-time">{formatTargetTime(o.target_time)}</span>
                   {state === "paused" && o.action && (
                     <span className="cm-occurrence-badge" data-action={o.action}>
-                      {ACTION_LABEL[o.action] ?? o.action}
+                      {PAUSED_LABEL[o.action] ?? o.action}
                     </span>
                   )}
-                  {state === "resolved" && <span className="cm-occurrence-badge cm-occurrence-badge-resolved">already resolved</span>}
+                  {state === "resolved" && <span className="cm-occurrence-badge cm-occurrence-badge-resolved">Already resolved</span>}
                 </div>
 
                 {state !== "resolved" && (
                   <div className="cm-occurrence-actions">
                     <button
                       type="button"
-                      className="cm-btn cm-btn-outline"
+                      className="cm-btn cm-btn-outline cm-btn-sm"
                       aria-pressed={o.action === "skip"}
                       disabled={busy}
                       onClick={() => handlePause(o, "skip")}
@@ -172,7 +180,7 @@ export function ScheduleOccurrences() {
                     </button>
                     <button
                       type="button"
-                      className="cm-btn cm-btn-outline"
+                      className="cm-btn cm-btn-outline cm-btn-sm"
                       aria-pressed={o.action === "cancel"}
                       disabled={busy}
                       onClick={() => handlePause(o, "cancel")}

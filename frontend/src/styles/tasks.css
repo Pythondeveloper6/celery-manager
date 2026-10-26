@@ -1,310 +1,231 @@
 /* ==========================================================================
-   Task list — filters, grouping, pagination, and live run progress
+   Task list — run strip, status tabs, toolbar, table, live progress
    ==========================================================================
 
-   An extension of the "signal panel" system in tokens.css, not a restyle.
-   Every value below resolves to a --cm-* custom property, so this file
-   inherits light/dark automatically from whatever tokens.css defines; there
-   are no literal colours here and no media query duplicating a palette.
-
-   Two ideas carry the screen:
-
-     1. A *control rail* above the table. Status stays where it has always
-        been — first thing under the title, because "show me the failures"
-        is the question people arrive with mid-incident. Search, dates and
-        grouping sit below a hairline on a sunken surface, reading as a
-        secondary instrument rather than competing with the status chips.
-
-     2. A *run lane* — the slim track in each running row's Runtime cell,
-        plus a matching 2px rail down the left edge of that row. Both are
-        drawn in --cm-color-status-started, the token the design system
-        already created for "in progress, and that is not an outcome". See
-        the note on .cm-run-lane below for why not accent and not the
-        red/amber/green triad.
+   Built on tokens.css: every value is a --cm-* custom property, so both
+   themes and a custom brand primary track automatically. This file bundles
+   *before* tokens.css, so its selectors use their own cm-tasks-* / cm-strip-*
+   / cm-run-* names rather than competing with shared ones on source order.
    ========================================================================== */
-
-/* ==========================================================================
-   Layout: rail + deck
-   ==========================================================================
-
-   One idea carries the screen: the narrow left rail is what you *set*, the
-   wide deck beside it is what you *read*. Nothing that takes input lives in
-   the deck; nothing that merely reports state lives in the rail. That split
-   is why the ledger, the bulk bar, the mode bar and the live/paused
-   indicator all stay with the table.
-
-   Sized fluidly, never to a fixed page width: `.cm-page`'s max-width is
-   owned by tokens.css and is being widened, so the rail is a clamp and the
-   deck takes whatever is left. `minmax(0, 1fr)` on the deck column is
-   load-bearing — it is the grid form of the min-width:0 fix noted below,
-   and without it a table wider than the column blows the grid open and the
-   whole page scrolls sideways. */
-
-.cm-tasks-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--cm-space-5);
-  align-items: start;
-}
-
-@media (min-width: 64rem) {
-  .cm-tasks-layout {
-    grid-template-columns: clamp(15rem, 19vw, 18.5rem) minmax(0, 1fr);
-  }
-}
 
 .cm-tasks-deck {
   display: flex;
   flex-direction: column;
-  gap: var(--cm-space-4);
+  gap: var(--cm-space-3);
   min-width: 0;
 }
 
 /* ==========================================================================
-   Filter rail
+   Run strip — the screen's one memorable element, in a card. One bar per
+   loaded run, oldest left, newest right; height is log(runtime), colour is
+   status.
    ========================================================================== */
 
-.cm-tasks-rail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-5);
-  padding: var(--cm-space-4);
-  background-color: var(--cm-color-surface-sunken);
+.cm-strip {
+  position: relative;
+  min-width: 0;
+  padding: var(--cm-space-3) var(--cm-space-4) var(--cm-space-3);
+  background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-lg);
+  border-radius: var(--cm-radius-xl);
+  box-shadow: var(--cm-shadow-sm);
 }
 
-/* Sticky only where there is both a column to stick in and enough height to
-   make it worth doing. The min-height guard is the answer to "two competing
-   sticky contexts": the nav is already sticky at top:0, and on a short
-   viewport a sticky rail underneath it would eat what little scroll room is
-   left, so below 34rem tall the rail simply scrolls with the page.
+.cm-strip-track {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: calc(32px + var(--cm-space-3));
+  padding: var(--cm-space-2) 3px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  border-bottom: 1px solid var(--cm-color-border);
+}
 
-   The offset clears the sticky nav. This used to carry its own local copy of
-   the nav's height because tokens.css was owned by another task at the time;
-   it now reads --cm-app-nav-height, which .cm-page's own min-height also
-   uses, so the two can no longer disagree about how tall the bar is. */
-@media (min-width: 64rem) and (min-height: 34rem) {
-  .cm-tasks-rail {
-    position: sticky;
-    top: calc(var(--cm-app-nav-height) + var(--cm-space-4));
-    max-height: calc(100dvh - var(--cm-app-nav-height) - var(--cm-space-6));
-    overflow-y: auto;
+.cm-strip-track[data-dense="true"] {
+  gap: 1px;
+}
+
+.cm-strip-bar {
+  --cm-bar-color: var(--cm-color-status-queued);
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 10px;
+  border-radius: 2px 2px 0 0;
+  background-color: var(--cm-bar-color);
+  transform-origin: bottom;
+  transition: transform var(--cm-duration-fast) var(--cm-ease), opacity var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-strip-bar:hover,
+.cm-strip-bar:focus-visible {
+  transform: translateY(-3px);
+}
+
+/* Lift the one under the pointer by dimming the rest a touch. */
+.cm-strip-track:hover .cm-strip-bar:not(:hover) {
+  opacity: 0.7;
+}
+
+.cm-strip-bar:focus-visible {
+  outline-offset: 1px;
+}
+
+.cm-strip-bar[data-status="queued"] {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--cm-color-mark);
+}
+
+.cm-strip-bar[data-status="started"] {
+  --cm-bar-color: var(--cm-color-status-started);
+  animation: cm-pulse var(--cm-duration-pulse) ease-in-out infinite;
+}
+
+.cm-strip-bar[data-status="succeeded"] {
+  --cm-bar-color: var(--cm-color-status-succeeded);
+}
+
+.cm-strip-bar[data-status="failed"] {
+  --cm-bar-color: var(--cm-color-status-failed);
+}
+
+.cm-strip-bar[data-status="retried"] {
+  --cm-bar-color: var(--cm-color-status-retried);
+}
+
+.cm-strip-bar[data-status="skipped"] {
+  --cm-bar-color: var(--cm-color-status-skipped);
+}
+
+.cm-strip-bar[data-status="revoked"] {
+  --cm-bar-color: var(--cm-color-status-revoked);
+}
+
+/* Positioning only; the chip itself is the shared .cm-tooltip. RunStrip
+   clamps its left edge inside the strip so it can never hang off the page
+   and scroll it sideways. */
+.cm-strip-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: min(20rem, 100%);
+  transform: translateY(calc(-100% + 6px));
+}
+
+.cm-strip-tip-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.cm-strip-tip-detail {
+  opacity: 0.75;
+}
+
+.cm-strip-caption {
+  padding-top: var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-strip-bar {
+    animation: none;
+    transition: none;
   }
 }
 
-.cm-tasks-rail-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--cm-space-3);
+/* ==========================================================================
+   Status tabs — a TabsList (tokens.css) whose triggers carry their status
+   dot. Scrolls inside itself at phone width rather than wrapping.
+   ========================================================================== */
+
+.cm-status-tabs {
+  align-self: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.cm-tasks-rail-title {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
+.cm-status-tab {
+  --cm-tab-color: transparent;
 }
 
-/* --cm-color-accent-*TEXT*, not --cm-color-accent. The distinction is
-   documented in tokens.css and is load-bearing the moment a deployment sets
-   its own brand colour: --cm-color-accent is a *fill*, guaranteed legible
-   only against --cm-color-accent-contrast, while this is accent painted
-   straight onto a surface with nothing guaranteeing anything. Measured
-   against the live deployment's brand (#f2c744): as raw accent this text was
-   1.37:1 on the rail's sunken surface and 1.61:1 on white — and the *hover*
-   step made it worse, 1.28:1, because the fill's hover deliberately steps
-   away from the fill's text colour. The derived text pair measures 4.64:1
-   and improves on hover, by construction (see deriveAccent in branding.tsx).
-   Identical to --cm-color-accent for the built-in phosphor cyan, so this is
-   a no-op for a default deployment. */
-.cm-tasks-clear-all {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  color: var(--cm-color-accent-text);
-  border-radius: var(--cm-radius-sm);
-  transition: color var(--cm-duration-fast) var(--cm-ease);
+.cm-status-tab:not([data-status="all"])::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cm-radius-full);
+  background-color: var(--cm-tab-color);
 }
 
-.cm-tasks-clear-all:hover {
-  color: var(--cm-color-accent-text-hover);
-  text-decoration: underline;
+.cm-status-tab[data-status="queued"]::before {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--cm-color-mark);
 }
 
-/* Active filters. The one thing a rail buys over a top bar: every filter
-   narrowing the list, visible at once, each removable on its own. Accent
-   tokens because dismissing one is an interaction, and because these must
-   never be mistaken for the red/amber/green status vocabulary sitting a few
-   centimetres to the right. */
-.cm-tasks-active {
+.cm-status-tab[data-status="started"] {
+  --cm-tab-color: var(--cm-color-status-started);
+}
+
+.cm-status-tab[data-status="succeeded"] {
+  --cm-tab-color: var(--cm-color-status-succeeded);
+}
+
+.cm-status-tab[data-status="failed"] {
+  --cm-tab-color: var(--cm-color-status-failed);
+}
+
+.cm-status-tab[data-status="retried"] {
+  --cm-tab-color: var(--cm-color-status-retried);
+}
+
+.cm-status-tab[data-status="skipped"] {
+  --cm-tab-color: var(--cm-color-status-skipped);
+}
+
+.cm-status-tab[data-status="revoked"] {
+  --cm-tab-color: var(--cm-color-status-revoked);
+}
+
+/* ==========================================================================
+   Toolbar — search, group-by, date range
+   ========================================================================== */
+
+.cm-tasks-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--cm-space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  align-items: center;
+  gap: var(--cm-space-2) var(--cm-space-3);
 }
 
-.cm-tasks-active-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--cm-space-2);
-  max-width: 100%;
-  padding: 0.2rem 0.5rem;
-  background-color: var(--cm-color-accent-soft);
-  border: 1px solid var(--cm-color-accent);
-  border-radius: var(--cm-radius-full);
-  transition: background-color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-tasks-active-chip:hover {
-  background-color: var(--cm-color-surface);
-}
-
-/* Label in the UI face, value in mono — the system's existing rule that mono
-   marks data. It also makes a chip readable at a glance as "Status: failed"
-   rather than as one undifferentiated blob. */
-.cm-tasks-active-label {
-  flex: none;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  color: var(--cm-color-text-muted);
-}
-
-.cm-tasks-active-value {
-  overflow: hidden;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  color: var(--cm-color-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cm-tasks-active-x {
-  flex: none;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  line-height: 1;
-  color: var(--cm-color-text-faint);
-}
-
-.cm-tasks-active-chip:hover .cm-tasks-active-x {
-  color: var(--cm-color-accent-text);
-}
-
-.cm-tasks-rail-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-2);
-  min-width: 0;
-}
-
-.cm-tasks-rail-section-title {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-}
-
-/* Date range folds away: four rows of rail height for the control people
-   touch least would push "Group by" below the fold on a laptop. */
-.cm-tasks-details {
-  border-top: 1px solid var(--cm-color-border);
-  padding-top: var(--cm-space-4);
-}
-
-.cm-tasks-details-summary {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-  cursor: pointer;
-  border-radius: var(--cm-radius-sm);
-  transition: color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-tasks-details-summary:hover {
-  color: var(--cm-color-text);
-}
-
-.cm-tasks-details-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-3);
-  padding-top: var(--cm-space-3);
-}
-
-.cm-tasks-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-2);
-  min-width: 0;
-}
-
-.cm-tasks-field > label {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--cm-color-text-muted);
-}
-
-.cm-tasks-input,
-.cm-tasks-select {
-  width: 100%;
-  min-width: 0;
-  padding: 0.45rem 0.6rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border-strong);
-  border-radius: var(--cm-radius-md);
-  transition: border-color var(--cm-duration-fast) var(--cm-ease), box-shadow var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-tasks-input::placeholder {
-  color: var(--cm-color-text-faint);
-}
-
-.cm-tasks-input:hover,
-.cm-tasks-select:hover {
-  border-color: var(--cm-color-accent);
-}
-
-.cm-tasks-input:focus-visible,
-.cm-tasks-select:focus-visible {
-  border-color: var(--cm-color-accent);
-  box-shadow: var(--cm-focus-ring);
-}
-
-/* Reserve the right-hand gutter unconditionally rather than only when the
-   clear button is present — otherwise the caret jumps sideways the moment
-   the user types their first character. */
 .cm-tasks-search {
   position: relative;
-  display: flex;
+  flex: 1 1 18rem;
+  min-width: 0;
 }
 
-.cm-tasks-search .cm-tasks-input {
-  padding-right: 2rem;
+.cm-tasks-search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--cm-space-3);
+  color: var(--cm-color-text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
-/* `type="search"` renders its own clear affordance in WebKit, which sat
-   right next to ours — two X's, one of which the app doesn't control.
-   Ours stays because it is styled, labelled for screen readers, and present
-   in every engine. */
-.cm-tasks-search .cm-tasks-input::-webkit-search-cancel-button {
+/* The right gutter is reserved whether or not the clear button is showing,
+   so the caret doesn't jump when the first character is typed. */
+.cm-tasks-search-input.cm-input {
+  padding-left: 2.25rem;
+  padding-right: 2.25rem;
+}
+
+/* WebKit's own clear affordance would sit beside ours. */
+.cm-tasks-search-input::-webkit-search-cancel-button {
   -webkit-appearance: none;
   appearance: none;
 }
@@ -312,118 +233,185 @@
 .cm-tasks-search-clear {
   position: absolute;
   top: 50%;
-  right: 0.3rem;
-  transform: translateY(-50%);
+  right: 0.375rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  line-height: 1;
-  color: var(--cm-color-text-faint);
-  border-radius: var(--cm-radius-full);
-  transition: color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--cm-color-text-muted);
+  border-radius: var(--cm-radius-sm);
+  transform: translateY(-50%);
 }
 
 .cm-tasks-search-clear:hover {
   color: var(--cm-color-text);
-  background-color: var(--cm-color-surface-sunken);
+  background-color: var(--cm-color-muted);
 }
 
-/* Says what the box actually searches, so it isn't a mystery field. */
-.cm-tasks-hint {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  line-height: var(--cm-leading-normal);
-  color: var(--cm-color-text-faint);
+.cm-tasks-search-clear svg {
+  width: 14px;
+  height: 14px;
 }
 
-/* ==========================================================================
-   Collapse toggle (below the two-column breakpoint only)
-   ========================================================================== */
-
-/* A stacked disclosure rather than an overlay drawer: an overlay needs a
-   scrim, a focus trap and an Escape handler to be correct, and every one of
-   those is a way to trap a keyboard user in a filter panel. Stacking is
-   fully accessible with no machinery. */
-.cm-tasks-filters-toggle {
-  display: none;
+.cm-tasks-group {
+  display: flex;
   align-items: center;
   gap: var(--cm-space-2);
-  align-self: flex-start;
-  padding: 0.45rem 0.85rem;
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
+}
+
+.cm-tasks-group label {
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text-muted);
+  white-space: nowrap;
+}
+
+.cm-tasks-group .cm-select {
+  width: auto;
+}
+
+.cm-tasks-dates {
+  position: relative;
+}
+
+/* The popover's trigger: an outline button. */
+.cm-tasks-dates-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  height: var(--cm-control-h);
+  padding: 0 var(--cm-space-3);
+  font-size: var(--cm-text-md);
+  font-weight: 500;
   color: var(--cm-color-text);
-  background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border-strong);
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  background-color: var(--cm-color-bg);
+  border: 1px solid var(--cm-color-input);
   border-radius: var(--cm-radius-md);
-  transition: border-color var(--cm-duration-fast) var(--cm-ease), color var(--cm-duration-fast) var(--cm-ease);
+  box-shadow: var(--cm-shadow-sm);
+  transition: background-color var(--cm-duration-fast) var(--cm-ease);
 }
 
-.cm-tasks-filters-toggle:hover {
-  border-color: var(--cm-color-accent);
-  color: var(--cm-color-accent-text);
+.cm-tasks-dates-summary::-webkit-details-marker {
+  display: none;
 }
 
-@media (max-width: 63.99rem) {
-  .cm-tasks-filters-toggle {
-    display: inline-flex;
-  }
-
-  /* display:none, not visibility/height tricks — a closed panel must leave
-     the accessibility tree, not sit in it as invisible focusable inputs. */
-  .cm-tasks-layout[data-filters-open="false"] .cm-tasks-rail {
-    display: none;
-  }
+.cm-tasks-dates-summary:hover {
+  background-color: var(--cm-color-muted);
 }
 
-/* ==========================================================================
-   Panel + ledger
-   ========================================================================== */
-
-/* min-width:0 is load-bearing, not defensive tidying: .cm-page is a column
-   flex container, and without it a flex item sizes to its min-content —
-   a table wider than the viewport would stretch the panel and make the
-   whole *page* scroll sideways instead of the table scrolling inside its
-   own .cm-table-scroll box. */
-.cm-tasks-panel {
-  min-width: 0;
-}
-
-.cm-tasks-panel .cm-table-scroll {
-  max-width: 100%;
-  overscroll-behavior-x: contain;
-}
-
-.cm-tasks-inline-error {
-  margin-bottom: var(--cm-space-4);
-}
-
-.cm-tasks-ledger {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--cm-space-2) var(--cm-space-4);
-  padding-bottom: var(--cm-space-3);
-}
-
-.cm-tasks-ledger-count {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.cm-tasks-dates-summary svg {
   color: var(--cm-color-text-muted);
 }
 
-/* Caveats the user would otherwise have to infer from missing rows: the
-   date filter hiding never-started runs, and grouping only describing the
-   page in hand. Deliberately quiet — true, but not alarming. */
+.cm-tasks-dates[open] .cm-tasks-dates-summary,
+.cm-tasks-dates-summary[data-active="true"] {
+  background-color: var(--cm-color-muted);
+}
+
+/* shadcn's PopoverContent: w-72, p-4, rounded-md, shadow-md. */
+.cm-tasks-dates-pop {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  width: 18rem;
+  padding: var(--cm-space-4);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  box-shadow: var(--cm-shadow-md);
+}
+
+/* At phone width the popover becomes an inline panel under the toolbar, so
+   it can't overflow the window. */
+@media (max-width: 599px) {
+  .cm-tasks-group {
+    flex: 1 1 auto;
+  }
+
+  .cm-tasks-group .cm-select {
+    flex: 1 1 auto;
+  }
+
+  .cm-tasks-dates[open] {
+    flex: 1 0 100%;
+  }
+
+  .cm-tasks-dates-pop {
+    position: static;
+    width: auto;
+    margin-top: var(--cm-space-2);
+    box-shadow: var(--cm-shadow-sm);
+  }
+}
+
+/* Active filters, each removable on its own: secondary badges. */
+.cm-tasks-active-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2) var(--cm-space-3);
+}
+
+.cm-tasks-active {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cm-tasks-active li {
+  min-width: 0;
+}
+
+.cm-tasks-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  height: 1.5rem;
+  padding: 0 0.375rem 0 var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  font-weight: 500;
+  background-color: var(--cm-color-muted);
+  border: 1px solid transparent;
+  border-radius: var(--cm-radius-md);
+  transition: background-color var(--cm-duration-fast) var(--cm-ease);
+}
+
+.cm-tasks-chip:hover {
+  background-color: var(--cm-color-input);
+}
+
+.cm-tasks-chip-label {
+  flex: none;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-tasks-chip-value {
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--cm-color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-tasks-chip svg {
+  width: 12px;
+  height: 12px;
+  color: var(--cm-color-text-muted);
+}
+
+/* Caveats the user would otherwise have to infer from missing rows. */
 .cm-tasks-notes {
   display: flex;
   flex-direction: column;
@@ -431,133 +419,109 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--cm-text-xs);
-  line-height: var(--cm-leading-normal);
-  color: var(--cm-color-text-faint);
-  text-align: right;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
 }
 
 /* ==========================================================================
    Table
    ========================================================================== */
 
-/* Below this width the five columns stop being readable, so the table
-   scrolls horizontally inside .cm-table-scroll rather than compressing
-   the task name to two characters per line. */
+/* min-width:0 is load-bearing: without it a flex item sizes to its
+   min-content and a wide table stretches the page sideways instead of
+   scrolling inside .cm-table-scroll. */
+.cm-tasks-panel {
+  min-width: 0;
+}
+
+/* Below this width the columns stop being readable, so the table scrolls
+   inside its box rather than squeezing the task name to a few characters. */
 .cm-tasks-table {
-  min-width: 44rem;
+  min-width: 40rem;
 }
 
-/* No column-gutter rule here on purpose. This file used to carry a
-   `.cm-task-table.cm-tasks-table td { padding-right }` override, because
-   tasks.css bundles *before* tokens.css and a same-specificity rule there
-   would have won the tie and zeroed the gutter. tokens.css now sets that
-   gutter itself, at the same 1rem, with a :last-child reset and deliberately
-   no :first-child rule — so there is nothing left to override. Restating it
-   here would just be two rules that can drift to different values. If the
-   gutter needs to change, change it in tokens.css for every table at once.
-*/
-
-/* `width: 1%` is the table-layout idiom for "shrink to your content": the
-   auto algorithm hands every spare pixel to the one column without it,
-   which is Task — the only column whose content is genuinely variable
-   length. Without this, a 1,200px-wide deck spreads four columns evenly and
-   leaves a 400px gulf between a run's duration and the time it started, so
-   reading across a row stops being possible. Found by looking at the real
-   layout at 1680px, not by reading the CSS. */
-.cm-tasks-col-status,
-.cm-tasks-col-runtime,
-.cm-tasks-col-started {
-  width: 1%;
-  white-space: nowrap;
+/* Failed is loud: a red rule down the row's leading edge. */
+.cm-tasks-table tbody tr[data-status="failed"] > td:first-child {
+  box-shadow: inset 2px 0 0 0 var(--cm-color-status-failed);
 }
 
-.cm-tasks-table .cm-task-id {
+.cm-task-link {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cm-space-3);
+  min-width: 0;
+  color: var(--cm-color-text);
+  text-decoration: none;
+  border-radius: var(--cm-radius-sm);
+}
+
+.cm-task-name {
   overflow: hidden;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The left rail: a running row is marked down its leading edge in the same
-   hue as its status badge and its progress lane, so "what is in flight
-   right now" is legible from a scan of the table's edge alone. */
-.cm-tasks-table tbody tr[data-running="true"] td:first-child {
-  box-shadow: inset 2px 0 0 0 var(--cm-color-status-started);
+.cm-task-link:hover .cm-task-name {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
-/* Group headers. A <th scope="colgroup"> inside its own <tbody>, so the
-   grouping is real table structure rather than fake rows. */
-.cm-tasks-table .cm-tasks-group-head th {
-  padding: var(--cm-space-3) var(--cm-space-3) var(--cm-space-2);
+.cm-task-id {
+  flex: none;
   font-family: var(--cm-font-mono);
   font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--cm-color-text-muted);
-  background-color: var(--cm-color-surface-sunken);
+}
+
+.cm-tasks-table .cm-tasks-group-head th {
+  height: 2.25rem;
+  padding: 0 var(--cm-space-4);
+  font-size: var(--cm-text-sm);
+  font-weight: 600;
+  color: var(--cm-color-text);
+  text-align: left;
+  background-color: var(--cm-color-muted);
   border-bottom: 1px solid var(--cm-color-border);
 }
 
-.cm-tasks-group-label {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--cm-space-2);
-}
-
-/* The count is per-group *within what is loaded* — the ledger note above
-   the table says so when there is more history behind it. */
 .cm-tasks-group-count {
-  font-weight: 500;
-  color: var(--cm-color-text-faint);
-  letter-spacing: 0.04em;
-}
-
-/* ==========================================================================
-   Run lane — live progress + elapsed time
-   ==========================================================================
-
-   Colour: the fill is --cm-color-status-started, not --cm-color-accent and
-   not the red/amber/green triad. tokens.css reserves accent for "the one
-   interactive colour" and the triad for task *outcomes*; a progress bar is
-   neither — it is only ever drawn on a row whose status is "started", and
-   "started" already has its own token created for exactly that reason
-   ("in progress isn't an outcome"). Using it makes the bar, the left rail
-   and the row's status badge one signal in one hue.
-   ========================================================================== */
-
-/* The cell stays a real table-cell (see the note in RuntimeCell); the flex
-   column lives one level in. Doing this on the <td> itself knocked the cell
-   out of the table's formatting context and staggered the row rules. */
-.cm-run-cell-inner {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cm-space-1);
-  min-width: 9rem;
-  max-width: 16rem;
-}
-
-.cm-run-clock {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  font-variant-numeric: tabular-nums;
+  margin-left: var(--cm-space-2);
+  font-weight: 400;
   color: var(--cm-color-text-muted);
 }
 
-/* Tabular figures above matter more than usual here: without them a
-   ticking seconds counter jitters its own column every second. */
+/* ==========================================================================
+   Runtime cell — elapsed clock with a progress lane under it for a running,
+   instrumented run. The flex column lives on an inner <div>: making the
+   <td> itself a flex box drops it out of the table formatting context.
+   ========================================================================== */
+
+.cm-run-cell-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 7rem;
+  max-width: 14rem;
+}
+
+.cm-run-clock {
+  color: var(--cm-color-text-muted);
+}
+
+/* Tabular only while it ticks, so the seconds don't jitter the column. */
 .cm-run-clock[data-running="true"] {
   color: var(--cm-color-text);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
+/* shadcn's Progress, at lane height. */
 .cm-run-lane {
-  position: relative;
   width: 100%;
   height: 4px;
   overflow: hidden;
-  background-color: var(--cm-color-status-started-bg);
-  border: 1px solid var(--cm-color-status-started-border);
+  background-color: var(--cm-color-status-started-soft);
   border-radius: var(--cm-radius-full);
 }
 
@@ -569,43 +533,35 @@
   transition: width var(--cm-duration-base) var(--cm-ease);
 }
 
-/* Gone quiet. Deliberately *subdued* rather than alarming: a task that
-   hasn't reported for two minutes may be mid-chunk, not hung, so this
-   drains the colour out of the lane (neutral = the system's grammar for
-   "notable, no alarm") instead of borrowing the amber that means
-   "retried". The accompanying "no update for 2m 00s" text is what
-   actually tells the operator; the colour just stops implying liveness. */
+/* Gone quiet: drained to neutral rather than borrowing an alarm colour —
+   a silent run may be mid-chunk, not hung. The text says what is known. */
 .cm-run-lane[data-stalled="true"] {
-  background-color: var(--cm-color-surface-sunken);
-  border-color: var(--cm-color-border-strong);
+  background-color: var(--cm-color-muted);
 }
 
 .cm-run-lane[data-stalled="true"] .cm-run-lane-fill {
-  background-color: var(--cm-color-text-faint);
+  background-color: var(--cm-color-mark);
 }
 
 .cm-run-meta {
-  display: block;
+  display: flex;
+  gap: var(--cm-space-2);
   overflow: hidden;
-  font-family: var(--cm-font-mono);
   font-size: var(--cm-text-xs);
-  color: var(--cm-color-text-faint);
-  text-overflow: ellipsis;
+  color: var(--cm-color-text-muted);
   white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cm-run-meta > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cm-run-meta[data-stalled="true"] {
-  color: var(--cm-color-text-muted);
+  color: var(--cm-color-text);
 }
 
-/* The bar's width transition is the only thing on this screen that
-   animates. tokens.css already neutralises transitions globally under
-   reduced motion with an `!important` blanket rule — measured: the
-   computed transition-duration here is 1e-06s under
-   `reducedMotion: reduce`, i.e. that global rule is what currently wins.
-   This local rule is kept as the explicit, specific statement of the same
-   intent, so narrowing the global blanket later can't silently
-   reintroduce a sliding bar for motion-sensitive users. */
 @media (prefers-reduced-motion: reduce) {
   .cm-run-lane-fill {
     transition: none;
@@ -613,106 +569,63 @@
 }
 
 /* ==========================================================================
-   Pagination footer + empty states
+   Mode bar, footer, empty states
    ========================================================================== */
 
-/* ==========================================================================
-   Mode: live vs history
-   ==========================================================================
-
-   The rule this design answers: a user must never wonder why the list
-   stopped updating. So the paused state is stated in two places at once —
-   the page header's indicator (which would otherwise be a pulsing "Live" dot
-   telling a lie) and this bar directly above the results, carrying the way
-   back. Accent tokens, the same grammar as .cm-bulk-bar in tokens.css:
-   both mean "you are in a mode, and here is the action that leaves it".
-   ========================================================================== */
-
+/* History mode: you are in a mode, and here is the way out. */
 .cm-tasks-mode-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--cm-space-3);
-  padding: var(--cm-space-3) var(--cm-space-4);
-  background-color: var(--cm-color-accent-soft);
-  border: 1px solid var(--cm-color-accent);
-  border-radius: var(--cm-radius-md);
+  padding: var(--cm-space-2) var(--cm-space-2) var(--cm-space-2) var(--cm-space-4);
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-lg);
+  box-shadow: var(--cm-shadow-sm);
 }
 
 .cm-tasks-mode-text {
   display: inline-flex;
   align-items: center;
   gap: var(--cm-space-2);
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  font-weight: 600;
-  color: var(--cm-color-text);
+  font-weight: 500;
 }
 
-/* Same size and position as .cm-live-dot in tokens.css, deliberately without
-   the pulse and without the accent fill: stillness is the signal. A hollow
-   ring reads as "stopped" next to the filled, breathing live dot. */
-.cm-tasks-paused-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border: 2px solid var(--cm-color-text-faint);
-  border-radius: var(--cm-radius-full);
-}
-
-.cm-tasks-more {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--cm-space-2);
-  padding-top: var(--cm-space-4);
-  margin-top: var(--cm-space-2);
-  border-top: 1px solid var(--cm-color-border);
-  text-align: center;
-}
-
-/* Quiet secondary route into history mode, offered alongside "Load more"
-   when the table is deep enough that clicking ten times is the wrong
-   answer. Deliberately a text button, not a second solid one: two equal
-   buttons would make the common case ambiguous. */
-.cm-tasks-link-btn {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  color: var(--cm-color-accent-text);
-  border-radius: var(--cm-radius-sm);
-  transition: color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-tasks-link-btn:hover {
-  color: var(--cm-color-accent-text-hover);
-  text-decoration: underline;
-}
-
-.cm-tasks-pager-controls {
+.cm-tasks-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+  min-height: 3.25rem;
+  padding: var(--cm-space-2) var(--cm-space-4);
+  border-top: 1px solid var(--cm-color-border);
+}
+
+.cm-tasks-count {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-tasks-more,
+.cm-tasks-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--cm-space-3);
 }
 
 .cm-tasks-pager-position {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--cm-text-sm);
   color: var(--cm-color-text-muted);
 }
 
 .cm-tasks-more-note {
   max-width: 34rem;
-  font-size: var(--cm-text-xs);
-  line-height: var(--cm-leading-normal);
-  color: var(--cm-color-text-faint);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
 }
 
 .cm-tasks-empty {
@@ -720,75 +633,76 @@
   flex-direction: column;
   align-items: center;
   gap: var(--cm-space-3);
-  padding: var(--cm-space-6) var(--cm-space-5);
+  padding: var(--cm-space-7) var(--cm-space-5);
   text-align: center;
-  border: 1px dashed var(--cm-color-border);
-  border-radius: var(--cm-radius-md);
 }
 
 .cm-tasks-empty-title {
   font-size: var(--cm-text-base);
   font-weight: 600;
-  color: var(--cm-color-text-muted);
-}
-
-/* Names the filters doing the narrowing, right in the empty state. Reuses
-   the rail's label/value pair so the same fact looks the same in both
-   places — the user should recognise these as the chips they set. */
-.cm-tasks-empty-filters {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--cm-space-2) var(--cm-space-4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.cm-tasks-empty-filters li {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--cm-space-2);
+  color: var(--cm-color-text);
 }
 
 .cm-tasks-empty-body {
   max-width: 32rem;
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text-faint);
-}
-
-.cm-tasks-retry {
-  display: flex;
-  justify-content: center;
-  padding-top: var(--cm-space-4);
+  color: var(--cm-color-text-muted);
 }
 
 /* ==========================================================================
-   Narrow viewports
+   Narrow screens: stacked rows (see .cm-table-stack in tokens.css).
+   Line 1 is the task name and short id; line 2 is status, runtime (with
+   its progress lane) and start time. The bulk-select checkbox sits in a
+   gutter to the left of both lines.
    ========================================================================== */
 
-@media (max-width: 40rem) {
-  .cm-tasks-notes {
-    text-align: left;
+@media (max-width: 640px) {
+  .cm-tasks-table.cm-table-stack {
+    min-width: 0;
   }
 
-  /* The ledger's count and its caveats stop sharing a line; stacking them
-     keeps the count readable instead of squeezing it to three words wide. */
-  .cm-tasks-ledger {
-    flex-direction: column;
-    align-items: flex-start;
+  .cm-tasks-table.cm-table-stack[data-select="true"] tbody tr {
+    padding-left: calc(var(--cm-space-4) + 1.75rem);
   }
 
-  /* A pager that wraps mid-control is a maze. Give the two buttons a row and
-     the position line its own, so "where am I" always reads as one phrase. */
-  .cm-tasks-pager-controls {
-    width: 100%;
-    justify-content: space-between;
+  .cm-tasks-table.cm-table-stack .cm-select-cell {
+    position: absolute;
+    top: var(--cm-space-3);
+    left: var(--cm-space-4);
+    width: auto;
   }
 
-  .cm-tasks-pager-position {
-    order: -1;
-    width: 100%;
-    text-align: center;
+  /* The failed rule moves from the first cell to the whole row. */
+  .cm-tasks-table.cm-table-stack tbody tr[data-status="failed"] > td:first-child {
+    box-shadow: none;
+  }
+
+  .cm-tasks-table.cm-table-stack tbody tr[data-status="failed"] {
+    box-shadow: inset 2px 0 0 0 var(--cm-color-status-failed);
+  }
+
+  .cm-tasks-table.cm-table-stack tbody tr.cm-tasks-group-head {
+    padding: 0;
+    background-color: var(--cm-color-muted);
+  }
+
+  .cm-tasks-table.cm-table-stack tbody tr.cm-tasks-group-head th {
+    display: block;
+    flex: 1 0 100%;
+    height: auto;
+    padding: var(--cm-space-2) var(--cm-space-4);
+  }
+
+  .cm-tasks-table.cm-table-stack .cm-run-cell-inner {
+    min-width: 0;
+  }
+
+  .cm-tasks-table.cm-table-stack .cm-task-link {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .cm-tasks-table.cm-table-stack .cm-task-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
