@@ -96,12 +96,52 @@ Check two things in the result:
 
 ## Schema changes
 
-There is no migration framework — `init_db()` is `create_all` only, so it
-creates missing tables and never alters existing ones. If you change
-`celery_manager.db.models`, say so in `CHANGELOG.md`: an existing deployment
-will need hand-written DDL or a dropped database, and it will find out by
-getting errors about missing columns. The one exception is a *nullable*
-column added to an existing table: append it to `_ADDITIVE_COLUMNS` in
-`celery_manager/db/session.py` and `init_db()` adds it to older databases
-itself (still mention it in the changelog). See
-[Configuration: schema and upgrades](configuration.md#schema-and-upgrades).
+celery-manager's schema is versioned with Alembic. Revisions live in
+`src/celery_manager/db/migrations/versions/` and ship in the wheel, and
+`init_db()` applies them at startup (see
+[Configuration: schema and upgrades](configuration.md#schema-and-upgrades)).
+Every change to `celery_manager.db.models` needs a new revision.
+`tests/unit/test_migrations.py::test_models_and_migrations_agree` fails until
+it has one.
+
+The repo-root `alembic.ini` is for contributors only. It points at the
+in-package migrations and a scratch SQLite database (`alembic-scratch.db`,
+gitignored), and puts `src/` first on `sys.path`, so it always uses your
+working tree. To add a revision, from the repo root:
+
+```bash
+rm -f alembic-scratch.db
+venv/bin/alembic upgrade head          # scratch DB at the current latest revision
+# ...edit src/celery_manager/db/models.py...
+venv/bin/alembic revision --autogenerate --rev-id 0003 -m "schedule paused_until"
+venv/bin/alembic upgrade head && venv/bin/alembic check   # applies cleanly, no diff left
+```
+
+That writes `versions/0003_schedule_paused_until.py`. Then:
+
+- **Read the generated file.** Autogenerate misses some changes (renames
+  become drop + add, and server defaults and some constraint changes
+  aren't detected), so fix it by hand where needed. Tidy the
+  `# ### commands auto generated` markers.
+- **Revision IDs are sequential, four digits** (`--rev-id 0003`, `0004`, ...),
+  and `down_revision` is the previous one. If two branches both add `0003`,
+  whichever merges second renumbers its revision to `0004` (file name,
+  `revision`, `down_revision`). `test_revision_history_is_linear` fails while
+  there are two heads.
+- **Keep upgrades safe on a live table.** A new column on an existing table
+  should be nullable, or have a `server_default` if it must be `NOT NULL`.
+  Leave the `batch_alter_table` blocks that autogenerate writes (`env.py`
+  sets `render_as_batch=True`): on SQLite they recreate the table for changes
+  `ALTER TABLE` can't make, and on other backends they are plain `ALTER`s.
+- **Write a working `downgrade()`.**
+- **Never edit a revision that has shipped in a release.** Add a new one.
+  Revisions `0001` and `0002` are special: they tolerate databases created
+  before migrations existed. Later revisions don't need to, because every
+  database that reaches them is versioned.
+- **Add a test** if the revision transforms data, and mention the schema
+  change in `CHANGELOG.md`.
+
+To try a revision against PostgreSQL, pass a URL:
+`venv/bin/alembic -x db_url=postgresql+psycopg://... upgrade head`.
+The races and migration tests also run against a server database when
+`CM_TEST_DB_URL` is set (CI does this for PostgreSQL).

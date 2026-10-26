@@ -37,6 +37,10 @@ classifiers = [
 dependencies = [
     "celery>=5.3,<6.0",
     "sqlalchemy>=2.0,<3.0",
+    # Schema migrations for celery-manager's own tables. The revisions ship
+    # inside the package (celery_manager/db/migrations); see
+    # celery_manager.db.migrate.
+    "alembic>=1.13,<2.0",
     "fastapi>=0.110,<1.0",
     # Declared explicitly even though FastAPI already pulls it in: the route
     # modules `import pydantic` directly, and the `>=2` floor is load-bearing
@@ -91,6 +95,7 @@ include = [
     "/CHANGELOG.md",
     "/LICENSE",
     "/mkdocs.yml",
+    "/alembic.ini",
 ]
 # Internal design docs; must not ship in the sdist.
 exclude = ["/docs/superpowers"]
