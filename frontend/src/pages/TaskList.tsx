@@ -4,6 +4,7 @@ import { bulkRetryTasks, listTasks, subscribeToUpdates, type TaskSummary } from 
 import { RunStrip } from "../components/RunStrip";
 import { IconCalendar, IconCheck, IconSearch, IconX } from "../components/icons";
 import { StatusBadge } from "../components/Status";
+import { TaskViewTools } from "../components/TaskViewTools";
 import { statusLabel } from "../lib/status";
 import {
   elapsedSeconds,
@@ -14,11 +15,8 @@ import {
   secondsSince,
   useNow,
 } from "../lib/taskProgress";
+import { PAGE_SIZE, STATUS_FILTERS, useTaskFilters, type GroupBy } from "../lib/useTaskFilters";
 import "../styles/tasks.css";
-
-const STATUS_FILTERS = ["all", "queued", "started", "succeeded", "failed", "retried", "skipped", "revoked"];
-
-const PAGE_SIZE = 50;
 
 // Mirrors MAX_PAGE_SIZE in control/tasks.py. The API *clamps* an oversized
 // limit rather than rejecting it, which means asking for 800 rows silently
@@ -28,8 +26,6 @@ const PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 500;
 const MAX_PAGES = MAX_PAGE_SIZE / PAGE_SIZE;
 
-const SEARCH_DEBOUNCE_MS = 300;
-
 // How long a running task may go without reporting progress before the list
 // says so. Two minutes: `report_progress()` is called by the task body at
 // whatever cadence its author chose, and a chunked job that reports once per
@@ -38,8 +34,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 // while still catching a wedged import inside the span of attention someone
 // gives a dashboard during an incident.
 const STALLED_AFTER_SECONDS = 120;
-
-type GroupBy = "none" | "status" | "name" | "date";
 
 /** How the list is reading the table, and it is always one or the other.
  *
@@ -339,15 +333,13 @@ export function TaskList() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [total, setTotal] = useState(0);
 
-  const [status, setStatus] = useState("all");
-  // Two pieces of state for one box: `searchInput` is what the user sees and
-  // stays perfectly responsive, `search` is the debounced value that actually
-  // hits the API 300ms later.
-  const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  // The filters live in the URL (see lib/useTaskFilters): `searchInput` is
+  // what the user sees, `search` the debounced value that reaches the API.
+  const {
+    status, search, dateFrom, dateTo, groupBy, searchInput,
+    setStatus, setSearchInput, setSearch, setDateFrom, setDateTo, setGroupBy,
+    clearFilters, applyView, view, urlOffset, setUrlOffset,
+  } = useTaskFilters();
 
   // The date range is a popover off the toolbar.
   const [dateOpen, setDateOpen] = useState(false);
@@ -366,10 +358,10 @@ export function TaskList() {
 
   // Live mode is the default: the overwhelmingly common visit is "what is
   // happening right now", not "what happened three weeks ago".
-  const [mode, setMode] = useState<ViewMode>("live");
+  const [mode, setMode] = useState<ViewMode>(urlOffset === null ? "live" : "history");
   // History mode only. Always a multiple of PAGE_SIZE, so "page N" is a
   // meaningful thing to say to the user.
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = useState(urlOffset ?? 0);
 
   // Filters live in a ref as well as in state (the original code did this for
   // `status` alone) so `refresh` can stay a zero-dependency callback. That is
@@ -395,8 +387,9 @@ export function TaskList() {
   // two reasons: `refresh` stays dependency-free (so the EventSource is never
   // torn down), and a mode or page change can set the ref synchronously and
   // fetch immediately instead of waiting a render for the state to land.
-  const modeRef = useRef<ViewMode>("live");
-  const offsetRef = useRef(0);
+  const modeRef = useRef<ViewMode>(urlOffset === null ? "live" : "history");
+  const offsetRef = useRef(urlOffset ?? 0);
+  const firstFilterRun = useRef(true);
 
   // Only the very first fetch shows the full "Loading tasks…" takeover;
   // every fetch after that (filter switch or a live SSE event) just dims
@@ -481,12 +474,6 @@ export function TaskList() {
     }
   }, []);
 
-  // Debounce the search box into the value that actually queries the API.
-  useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
   // Any filter change means a different result set, so three things reset
   // together — and they must, because they are the same fact stated three
   // ways: paging goes back to page one (an offset into the old results is
@@ -511,8 +498,11 @@ export function TaskList() {
   useEffect(() => {
     pagesLoadedRef.current = 1;
     setPagesLoaded(1);
-    offsetRef.current = 0;
-    setOffset(0);
+    // The very first run keeps an offset that arrived in the URL (a pasted
+    // deep link); later filter changes go back to page one.
+    if (firstFilterRun.current) firstFilterRun.current = false;
+    else offsetRef.current = 0;
+    setOffset(offsetRef.current);
     setSelected(new Set());
     setBulkError(null);
     setBulkNotice(null);
@@ -588,14 +578,6 @@ export function TaskList() {
     refresh({ more: true });
   }
 
-  function clearFilters() {
-    setStatus("all");
-    setSearchInput("");
-    setSearch("");
-    setDateFrom("");
-    setDateTo("");
-  }
-
   // Every mode/page transition below drops the selection explicitly, for the
   // same reason a filter change does: a bulk retry must never be able to act
   // on a run the user can no longer see. The prune-against-`tasks` effect
@@ -620,6 +602,7 @@ export function TaskList() {
    *  the ceiling hand-off starts at run 501 (exactly where the live view ran
    *  out), while "browse by page" starts at the first page. */
   function enterHistory(startAt: number) {
+    setUrlOffset(startAt);
     modeRef.current = "history";
     offsetRef.current = startAt;
     setMode("history");
@@ -633,6 +616,7 @@ export function TaskList() {
    *  "wherever you were" would mean resuming a stale offset into a table
    *  that has moved on. The poll restarts via the effect's `mode` dep. */
   function backToLive() {
+    setUrlOffset(null);
     modeRef.current = "live";
     offsetRef.current = 0;
     pagesLoadedRef.current = 1;
@@ -646,12 +630,37 @@ export function TaskList() {
 
   function goToOffset(next: number) {
     if (next < 0 || next === offsetRef.current) return;
+    setUrlOffset(next);
     offsetRef.current = next;
     setOffset(next);
     leaveCurrentRows();
     refresh();
     scrollDeckToTop();
   }
+
+  // Back/forward (or any other external URL change) moved the page position:
+  // follow it. Moves made by the functions above have already updated the refs
+  // by the time this runs, so they fall straight through.
+  useEffect(() => {
+    if (urlOffset === null) {
+      if (modeRef.current === "live") return;
+      modeRef.current = "live";
+      offsetRef.current = 0;
+      pagesLoadedRef.current = 1;
+      setMode("live");
+      setOffset(0);
+      setPagesLoaded(1);
+    } else {
+      if (modeRef.current === "history" && offsetRef.current === urlOffset) return;
+      modeRef.current = "history";
+      offsetRef.current = urlOffset;
+      setMode("history");
+      setOffset(urlOffset);
+    }
+    leaveCurrentRows();
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlOffset]);
 
   function toggle(taskId: string) {
     setSelected((prev) => {
@@ -733,7 +742,7 @@ export function TaskList() {
     if (dateFrom !== "") chips.push({ key: "from", label: "From", value: shortDate(dateFrom), clear: () => setDateFrom("") });
     if (dateTo !== "") chips.push({ key: "to", label: "To", value: shortDate(dateTo), clear: () => setDateTo("") });
     return chips;
-  }, [status, search, dateFrom, dateTo]);
+  }, [status, search, dateFrom, dateTo, setStatus, setSearch, setSearchInput, setDateFrom, setDateTo]);
 
   // A date filter must never be hidden behind a collapsed disclosure the user
   // has forgotten about. Opening it when one becomes active covers the normal
@@ -901,6 +910,17 @@ export function TaskList() {
             <p className="cm-field-hint">Matches on start time, so runs that never started are excluded.</p>
           </div>
         </details>
+
+        <TaskViewTools
+          filters={view}
+          onApplyView={applyView}
+          exportParams={{
+            status: status === "all" ? undefined : status,
+            q: search || undefined,
+            date_from: startOfDayIso(dateFrom),
+            date_to: endOfDayIso(dateTo),
+          }}
+        />
       </div>
 
       {/* What is narrowing this list, each removable on its own — the
