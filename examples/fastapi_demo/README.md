@@ -37,7 +37,7 @@ celery-manager events --celery-app celery_app:app --db-url sqlite:///celery_mana
 uvicorn main:app --port 8000                         # your app + the dashboard
 ```
 
-Open <http://localhost:8000/celery-manager/> and sign in. Trigger work with:
+Open <http://localhost:8000/celery-manager/> and sign in. Trigger work from the dashboard (**Tasks** -> **Start task**) or with:
 
 ```bash
 curl -X POST localhost:8000/welcome/me@example.com

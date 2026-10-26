@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from celery_manager.api.deps import get_current_user
 from celery_manager.api.serialization import utc, utc_bound
@@ -14,6 +14,7 @@ from celery_manager.control.tasks import (
     cancel_task,
     count_task_runs,
     get_task_run,
+    list_registered_tasks,
     list_retries_of,
     list_task_runs,
     retry_task,
@@ -88,6 +89,12 @@ def list_tasks(
         }
 
 
+@router.get("/registered")
+def registered(request: Request, username: str = Depends(get_current_user)):
+    """Task names registered on the Celery app, for the dashboard's task picker."""
+    return {"items": list_registered_tasks(request.app.state.cm_config.celery_app)}
+
+
 @router.get("/{task_id}")
 def get_task(task_id: str, request: Request, username: str = Depends(get_current_user)):
     session_factory = request.app.state.cm_session_factory
@@ -130,10 +137,21 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
         }
 
 
+def _aware(value: datetime | None) -> datetime | None:
+    # Celery reads a naive eta in the app timezone; this codebase's convention
+    # is that naive means UTC, so say so explicitly.
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 class StartRequest(BaseModel):
     task_name: str
     args: list = []
     kwargs: dict = {}
+    queue: str | None = None
+    countdown: float | None = Field(default=None, ge=0)
+    eta: datetime | None = None
 
 
 @router.post("/start")
@@ -146,6 +164,7 @@ def start(payload: StartRequest, request: Request, username: str = Depends(get_c
         task_id = start_task(
             celery_app, payload.task_name, payload.args, payload.kwargs,
             session=session, username=username,
+            queue=payload.queue, countdown=payload.countdown, eta=_aware(payload.eta),
         )
     return {"task_id": task_id}
 
@@ -159,8 +178,20 @@ def cancel(task_id: str, request: Request, terminate: bool = False, username: st
     return {"ok": True}
 
 
+class RetryRequest(BaseModel):
+    """Optional overrides; a field left out keeps the stored value."""
+
+    args: list | None = None
+    kwargs: dict | None = None
+
+
 @router.post("/{task_id}/retry")
-def retry(task_id: str, request: Request, username: str = Depends(get_current_user)):
+def retry(
+    task_id: str,
+    request: Request,
+    payload: RetryRequest | None = None,
+    username: str = Depends(get_current_user),
+):
     """Re-dispatch a stored run. 404 if there is no such run.
 
     A retry of an unknown task id used to escape as an unhandled `ValueError`
@@ -176,7 +207,11 @@ def retry(task_id: str, request: Request, username: str = Depends(get_current_us
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         try:
-            new_id = retry_task(celery_app, session, task_id, username=username)
+            new_id = retry_task(
+                celery_app, session, task_id, username=username,
+                args=payload.args if payload else None,
+                kwargs=payload.kwargs if payload else None,
+            )
         except TaskRunNotFound:
             raise HTTPException(status_code=404, detail="not found")
     return {"new_task_id": new_id}

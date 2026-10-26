@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { bulkRetryTasks, listTasks, subscribeToUpdates, type TaskSummary } from "../api/tasks";
+import { TaskCallDialog } from "../components/TaskCallDialog";
 import { RunStrip } from "../components/RunStrip";
 import { IconCalendar, IconCheck, IconSearch, IconX } from "../components/icons";
 import { StatusBadge } from "../components/Status";
@@ -351,6 +352,8 @@ export function TaskList() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkRetrying, setBulkRetrying] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
+  const navigate = useNavigate();
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
 
@@ -790,21 +793,30 @@ export function TaskList() {
       <header className="cm-page-header">
         <h1 className="cm-page-title">Task runs</h1>
 
-        {/* The mode is legible from the top of the page: the pulsing "Live"
-            dot is a claim about the data, and it would be a lie while the
-            poll is stopped. */}
-        {historyMode ? (
-          <div className="cm-live-indicator" title="Live updates are paused while you browse history">
-            <span className="cm-paused-dot" aria-hidden="true" />
-            Paused
-          </div>
-        ) : (
-          <div className="cm-live-indicator" title="Updates as workers report task events">
-            <span className="cm-live-dot" aria-hidden="true" />
-            Live
-          </div>
-        )}
+        <div className="cm-header-actions">
+          {/* The mode is legible from the top of the page: the pulsing "Live"
+              dot is a claim about the data, and it would be a lie while the
+              poll is stopped. */}
+          {historyMode ? (
+            <div className="cm-live-indicator" title="Live updates are paused while you browse history">
+              <span className="cm-paused-dot" aria-hidden="true" />
+              Paused
+            </div>
+          ) : (
+            <div className="cm-live-indicator" title="Updates as workers report task events">
+              <span className="cm-live-dot" aria-hidden="true" />
+              Live
+            </div>
+          )}
+          <button type="button" className="cm-btn cm-btn-primary cm-btn-sm" onClick={() => setStartOpen(true)}>
+            Start task
+          </button>
+        </div>
       </header>
+
+      {startOpen && (
+        <TaskCallDialog mode="start" onClose={() => setStartOpen(false)} onDone={(id) => navigate(`/tasks/${id}`)} />
+      )}
 
       {!loading && tasks.length > 0 && <RunStrip tasks={tasks} now={now} caption={stripCaption} />}
 
