@@ -81,6 +81,9 @@ def test_stream_emits_published_event():
             assert start["type"] == "http.response.start"
             assert start["status"] == 200
 
+            opening = await asyncio.wait_for(messages.get(), timeout=5)
+            assert opening["body"].decode() == ": connected\n\n"
+
             body_message = await asyncio.wait_for(messages.get(), timeout=5)
             assert body_message["type"] == "http.response.body"
             text = body_message["body"].decode()
@@ -232,6 +235,8 @@ def test_idle_stream_sends_keepalive_comments_and_unsubscribes_on_disconnect(mon
         try:
             start = await asyncio.wait_for(messages.get(), timeout=5)
             assert start["status"] == 200
+            opening = await asyncio.wait_for(messages.get(), timeout=5)
+            assert opening["body"].decode() == ": connected\n\n"
             body = await asyncio.wait_for(messages.get(), timeout=5)
             assert body["body"].decode() == ": keepalive\n\n"
             assert len(bus._subscribers) == 1
@@ -249,3 +254,17 @@ def test_idle_stream_sends_keepalive_comments_and_unsubscribes_on_disconnect(mon
         assert bus._subscribers == []
 
     asyncio.run(run())
+
+
+def test_stream_opens_with_a_frame_so_buffering_proxies_flush_the_headers():
+    """Without a first body frame, a buffering proxy holds the 200 back and
+    EventSource never fires `open` until the first keepalive (15s)."""
+    from celery_manager.api.sse import sse_stream
+
+    async def run():
+        stream = sse_stream(EventBus())
+        first = await asyncio.wait_for(stream.__anext__(), timeout=1)
+        await stream.aclose()
+        return first
+
+    assert asyncio.run(run()) == ": connected\n\n"
