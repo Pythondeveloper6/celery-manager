@@ -172,6 +172,12 @@ def upsert_task_run(session, event: dict) -> None:
         run.task_name = event["name"]
     if event.get("queue"):
         run.queue = event["queue"]
+    # Workflow lineage: task-sent / task-received carry it, later events don't,
+    # so merge-never-null (a `None` or missing key keeps what is stored).
+    # `group` is not in Celery's event payload; the decorator records it.
+    for key in ("parent_id", "root_id", "group_id"):
+        if event.get(key):
+            setattr(run, key, event[key])
     # `hostname` on task-sent is the *producer's* (the API process or beat
     # that dispatched), not a worker's; recording it as `worker` showed the
     # wrong machine and, if task-sent arrived late, overwrote the real one.

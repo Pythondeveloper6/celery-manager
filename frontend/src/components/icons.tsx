@@ -160,3 +160,9 @@ export const IconChartLine = (p: IconProps) => (
     <path d="m19 9-5 5-4-4-3 3" />
   </Icon>
 );
+
+export const IconChevronRight = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m9 18 6-6-6-6" />
+  </Icon>
+);

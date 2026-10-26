@@ -252,6 +252,32 @@ fine): those leaves are stored as their `repr` inside otherwise-valid JSON,
 so they stay searchable by `q=` but do not round-trip back to the original
 object on retry.
 
+### Workflow tree
+
+`GET /api/tasks/{task_id}/workflow` returns the chain/group/chord tree the run
+belongs to (a standalone run is a tree of one). The tree is every run sharing
+the run's `root_id` (or the run itself when it has none).
+
+```json
+{
+  "root_id": "a1",
+  "current": "c3",
+  "nodes": [
+    {"task_id": "a1", "task_name": "etl.extract", "status": "succeeded",
+     "started_at": "2026-10-26T08:40:25+00:00", "finished_at": "2026-10-26T08:40:29+00:00",
+     "runtime_seconds": 4.2, "parent_id": null, "group_id": null}
+  ],
+  "edges": [{"from": "a1", "to": "b2"}],
+  "truncated": false
+}
+```
+
+`edges` follow `parent_id` among the returned nodes. At most 500 nodes are
+returned (oldest first, always including the requested run); `truncated` is
+`true` when there were more. Unknown ids return 404; the endpoint requires a
+session like the rest of the API. `GET /api/tasks/{task_id}` also returns
+`parent_id`, `root_id` and `group_id`.
+
 ## Schedules
 
 | Method | Path | Auth | Request | Response |

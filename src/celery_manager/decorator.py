@@ -268,6 +268,29 @@ def _identify_run(args: tuple, func) -> tuple[object | None, str | None, str]:
     return None, task_id, task_name
 
 
+def _workflow_lineage(task_self) -> dict:
+    """`parent_id` / `root_id` / `group_id` from the running task's request.
+
+    Celery sets these on `request` for chain/group/chord members. Missing or
+    falsy values come back as None, which `_upsert_task_run` skips, so a
+    standalone task writes nothing and a listener-captured value is kept.
+    Never raises: lineage is a nicety, not worth failing a task over.
+    """
+    request = getattr(task_self, "request", None)
+    if request is None:
+        try:
+            from celery import current_task
+
+            request = getattr(current_task, "request", None)
+        except Exception:  # noqa: BLE001 — current_task is a proxy; never trust it
+            request = None
+    lineage = {}
+    for field, attr in (("parent_id", "parent_id"), ("root_id", "root_id"), ("group_id", "group")):
+        value = getattr(request, attr, None)
+        lineage[field] = value if isinstance(value, str) and value else None
+    return lineage
+
+
 def track(schedule_name: str | None = None):
     """Decorator for Celery tasks. Apply above @app.task:
 
@@ -405,6 +428,7 @@ def track(schedule_name: str | None = None):
                 kwargs=run_kwargs,
                 schedule_name=effective_schedule_name,
                 started_at=started_at,
+                **_workflow_lineage(task_self),
                 clear=(
                     "exception", "traceback", "finished_at", "runtime_seconds",
                     "progress_current", "progress_total", "progress_message",
