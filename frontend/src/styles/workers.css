@@ -1,0 +1,321 @@
+/* ==========================================================================
+   Workers page — one card per worker, then the rate-limits table.
+
+   --cm-* tokens only. Like tasks.css this bundles before tokens.css, so its
+   selectors use their own cm-worker* / cm-rate-* names instead of
+   overriding shared ones on source order.
+   ========================================================================== */
+
+.cm-workers-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-workers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--cm-space-4);
+  min-width: 0;
+}
+
+.cm-workers-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+}
+
+.cm-workers-empty .cm-card-description {
+  max-width: var(--cm-measure);
+}
+
+/* ---- one worker ---------------------------------------------------------- */
+
+.cm-worker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  min-width: 0;
+}
+
+.cm-worker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+  min-width: 0;
+}
+
+.cm-worker-titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  min-width: 0;
+}
+
+/* Hostnames ("celery@ip-10-0-3-17.eu-west-1.compute.internal") are one
+   unbreakable token; let them wrap rather than widen the page. */
+.cm-worker-name {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-md);
+  font-weight: 600;
+  line-height: var(--cm-leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.cm-worker-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-1) var(--cm-space-3);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-worker-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-3) 0;
+  margin: 0;
+  border-top: 1px solid var(--cm-color-border);
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-worker-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.cm-worker-stats dt {
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-worker-stats dd {
+  margin: 0;
+  font-size: var(--cm-text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.cm-worker-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  min-width: 0;
+}
+
+.cm-worker-label {
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  color: var(--cm-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cm-worker-muted {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-worker-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  font-size: var(--cm-text-sm);
+}
+
+.cm-worker-tasks li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cm-space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cm-worker-taskid {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-worker-queues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+/* An outline badge with a remove button inside, shadcn-style. */
+.cm-worker-queue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-1);
+  max-width: 100%;
+  padding: 0 0.125rem 0 var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  line-height: 1.5rem;
+  color: var(--cm-color-text);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  overflow-wrap: anywhere;
+}
+
+.cm-worker-queue-remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  color: var(--cm-color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--cm-radius-sm);
+  cursor: pointer;
+}
+
+.cm-worker-queue-remove:hover:not(:disabled) {
+  color: var(--cm-color-danger);
+  background-color: var(--cm-color-muted);
+}
+
+.cm-worker-queue-remove:focus-visible {
+  outline: 2px solid var(--cm-focus-ring-color);
+  outline-offset: 1px;
+}
+
+.cm-worker-queue-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.cm-worker-queue-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.cm-worker-queue-form {
+  display: flex;
+  gap: var(--cm-space-2);
+  min-width: 0;
+}
+
+.cm-worker-queue-form .cm-worker-queue-input {
+  flex: 1 1 auto;
+  height: var(--cm-control-h-sm);
+}
+
+.cm-worker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+  padding-top: var(--cm-space-3);
+  margin-top: auto;
+  border-top: 1px solid var(--cm-color-border);
+}
+
+.cm-worker-actions-spacer {
+  flex: 1 1 auto;
+}
+
+.cm-worker-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+}
+
+/* ---- rate limits --------------------------------------------------------- */
+
+.cm-rate-task {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.cm-rate-default {
+  white-space: nowrap;
+}
+
+.cm-rate-tag {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+}
+
+.cm-rate-applied {
+  display: block;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-rate-edit {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* The row being edited and its editor read as one block. */
+.cm-rate-table tr.cm-rate-row-open > td {
+  border-bottom: none;
+}
+
+.cm-rate-detail > td {
+  padding-top: 0;
+}
+
+.cm-rate-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-rate-label {
+  flex-basis: 100%;
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.cm-rate-form .cm-rate-input {
+  width: 9rem;
+  height: var(--cm-control-h-sm);
+  font-family: var(--cm-font-mono);
+}
+
+.cm-rate-hint {
+  flex-basis: 100%;
+}
+
+.cm-rate-note {
+  max-width: var(--cm-measure);
+  margin-top: var(--cm-space-3);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .cm-rate-default {
+    white-space: normal;
+  }
+
+  .cm-rate-edit {
+    width: auto;
+  }
+
+  .cm-rate-detail > td {
+    flex: 1 0 100%;
+  }
+}

@@ -28,6 +28,9 @@ from celery_manager.api.routes import (
 from celery_manager.api.routes import (
     tasks as task_routes,
 )
+from celery_manager.api.routes import (
+    workers as worker_routes,
+)
 from celery_manager.api.security import SecurityMiddleware
 from celery_manager.api.sse import EventBus, sse_stream
 from celery_manager.config import CeleryManagerConfig
@@ -80,6 +83,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(analytics_routes.router)
+    app.include_router(worker_routes.router)
 
     @app.get("/api/stream")
     def stream(request: Request, username: str = Depends(get_current_user)):

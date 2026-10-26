@@ -12,6 +12,7 @@ import { AuditLog } from "./pages/AuditLog";
 import { Settings } from "./pages/Settings";
 import { Insights } from "./pages/Insights";
 import { TaskOverview } from "./pages/TaskOverview";
+import { Workers } from "./pages/Workers";
 
 // Unmatched hash paths render a real page inside the shell rather than a
 // blank body, which reads as a broken app rather than a bad URL.
@@ -108,6 +109,7 @@ export function App() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/task-types/:taskName" element={<TaskOverview />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/workers" element={<Workers />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AppShell>

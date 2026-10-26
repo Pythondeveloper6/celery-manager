@@ -39,6 +39,11 @@ class CeleryManagerConfig:
         separate deploy step with `celery-manager migrate`; `init_db()`
         then leaves the database untouched and only logs a warning if the
         schema isn't current.
+    inspect_timeout_seconds: how long the Workers page (and the worker
+        control endpoints) wait for workers to answer a broadcast
+        (`inspect()`, `pool_grow`, `rate_limit`, ...). Kept short because
+        the request blocks for it: a worker that hasn't answered within a
+        second is, for an operator, effectively offline.
     """
 
     celery_app: Celery
@@ -48,3 +53,4 @@ class CeleryManagerConfig:
     cookie_secure: bool = True
     export_max_rows: int = 50_000
     auto_migrate: bool = True
+    inspect_timeout_seconds: float = 1.0

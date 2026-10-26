@@ -47,7 +47,7 @@ default (see [Configuration](configuration.md#secret_key-in-production)).
 
 A thin persistent nav bar sits above every authenticated screen: the
 brand mark and wordmark on the left, then **Tasks** / **Schedules** /
-**Audit Log** / **Settings** (`NavLink`, so the active screen is
+**Audit Log** / **Workers** / **Settings** (`NavLink`, so the active screen is
 highlighted), and a three-way **Auto / Light / Dark** theme control on the
 right, and a **Sign out** button. Sign out calls `POST /api/auth/logout`,
 which clears the `cm_session` cookie, and returns you to the login screen; while
@@ -356,6 +356,14 @@ Limitations:
 - Beat restarts: beat may fire an overdue entry immediately when it comes back up after downtime, which is off the projected grid until the next observed run re-anchors it.
 - `relative=True` interval schedules aren't modelled.
 - The `@track(schedule_name=…)` value must equal the `beat_schedule` key. This was already required for skips to work.
+
+## Workers
+
+Every worker that answers the broker, refreshed every 10 seconds while the
+tab is visible, with controls to shut a worker down, resize its pool and
+change its queues, plus a table for changing task rate limits at runtime.
+Runtime rate limits are not saved: they reset when a worker restarts. See
+[Workers and rate limits](workers.md).
 
 ## Audit log
 
