@@ -27,8 +27,19 @@ All notable changes to celery-manager are recorded here. The format follows
   The pause survives restarts: the startup sync from `beat_schedule` leaves
   it alone.
 
+- **Pause/Resume in the dashboard.** Each schedule on the Schedules page has
+  a Pause button (with a confirm step) or a Resume button and a Paused badge.
+  A paused schedule's page shows who paused it and when, and marks upcoming
+  runs as "Will be skipped".
+
 ### Changed
 
+- **Dashboard redesign.** shadcn/ui-style look (zinc theme, Geist fonts) in
+  light and dark. The sidebar collapses to icons (Ctrl/Cmd+B, remembered per
+  browser) and slides in over the page on phones. The task list gains a run
+  strip (one bar per run, coloured by status), status tabs and a search and
+  filter bar. Task detail puts the failure and logs first with execution
+  details alongside. Tables stack on narrow screens.
 - **Schema:** `periodic_schedules` gains two nullable columns, `paused_at`
   and `paused_by`. `init_db()` now adds a known list of nullable columns to
   an existing database itself (`ALTER TABLE ... ADD COLUMN`), so upgrading
