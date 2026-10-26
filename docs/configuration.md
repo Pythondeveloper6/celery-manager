@@ -16,6 +16,7 @@ config = CeleryManagerConfig(
     eta_tolerance_seconds=60,
     cookie_secure=True,
     auto_migrate=True,
+    inspect_timeout_seconds=1.0,
 )
 ```
 
@@ -29,7 +30,9 @@ config = CeleryManagerConfig(
 | `export_max_rows` | `int` | `50000` | Hard cap on rows in one `GET /api/tasks/export` download. Larger results are cut to the newest rows and flagged with `X-Export-Truncated: true`. |
 | `auto_migrate` | `bool` | `True` | Whether `init_db()` upgrades the database schema to the latest revision at startup. Set it to `False` to run `celery-manager migrate` as a deploy step instead; `init_db()` then leaves the database untouched and logs a warning if the schema isn't current. See [Schema and upgrades](#schema-and-upgrades). |
 
-Those seven fields are the whole dataclass — `CeleryManagerConfig` has no
+| `inspect_timeout_seconds` | `float` | `1.0` | How long the [Workers page](workers.md) and the worker control endpoints wait for workers to reply to a broadcast (`inspect()`, `pool_grow`, `rate_limit`, ...). The HTTP request blocks for it, so keep it short; raise it only if workers on a slow or distant broker show as missing when they are running. |
+
+Those eight fields are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
 the environment.
 

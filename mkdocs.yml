@@ -110,6 +110,7 @@ nav:
       - Live progress: progress.md
       - Dashboard: dashboard.md
       - Insights: insights.md
+      - Workers and rate limits: workers.md
   - Reference:
       - REST API: rest-api.md
       - Configuration: configuration.md
