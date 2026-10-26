@@ -1,61 +1,190 @@
 /* ==========================================================================
-   Task detail — run / execution / lineage panels
+   Task detail — header, two-column body, progress, code blocks, lineage
    --------------------------------------------------------------------------
-   Extends the "signal panel" system in tokens.css; every value here comes
-   from a --cm-* token so both themes track automatically. Nothing in this
-   file re-declares a colour, radius, or duration of its own.
-
-   Selector note: this file is imported from TaskDetail.tsx, which the
-   bundler evaluates *before* main.tsx's tokens.css import. So every rule
-   that has to beat a tokens.css rule is written as a two-class selector
-   (e.g. .cm-detail-meta.cm-run-stats) and wins on specificity rather than
-   on source order.
-
-   Naming note: every class new to this screen is prefixed cm-run-* /
-   cm-lineage-* / cm-exec-* rather than taking a generic name like
-   .cm-progress-bar. tokens.css is the shared sheet and always loads last,
-   so a generic name claimed there later would silently overrule this file
-   in a way that is invisible until someone opens a task page.
+   Built on tokens.css; every value is a --cm-* token. This file is imported
+   from TaskDetail.tsx and bundles *before* tokens.css, so its classes are
+   screen-specific (cm-detail-* / cm-run-* / cm-exec-* / cm-lineage-*) rather
+   than restyling shared ones on source order.
    ========================================================================== */
 
-/* Panel shells. tokens.css styles `.cm-log-panel h2` / `.cm-failure-panel h2`
-   individually rather than exposing a shared heading class, so these three
-   panels repeat that same treatment to stay in the family. */
-.cm-run-panel,
-.cm-exec-panel,
-.cm-lineage-panel {
+/* ---- header ------------------------------------------------------------- */
+
+.cm-detail-header {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--cm-space-4);
 }
 
-.cm-run-panel h2,
-.cm-exec-panel h2,
-.cm-lineage-panel h2 {
-  font-family: var(--cm-font-display);
-  font-size: var(--cm-text-base);
-  font-weight: 700;
-  color: var(--cm-color-text);
+.cm-detail-titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  min-width: 0;
 }
 
-/* Title on the left, live indicator on the right. */
+.cm-detail-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2) var(--cm-space-4);
+  min-width: 0;
+}
+
+.cm-detail-id {
+  min-width: 0;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* A small ghost button (tokens.css), in muted ink until hovered. */
+.cm-copy-btn {
+  margin-left: calc(-1 * var(--cm-space-2));
+}
+
+.cm-copy-btn:not(:hover) {
+  color: var(--cm-color-text-muted);
+}
+
+/* Cancel, Terminate, Retry — right-aligned beside the title, wrapping under
+   it on a narrow window. */
+.cm-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--cm-space-2);
+}
+
+.cm-task-actions-warn {
+  flex: 1 0 100%;
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-danger);
+  text-align: right;
+}
+
+@media (max-width: 599px) {
+  .cm-task-actions {
+    justify-content: flex-start;
+  }
+
+  .cm-task-actions-warn {
+    text-align: left;
+  }
+}
+
+/* ---- layout: main + aside --------------------------------------------- */
+
+.cm-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--cm-space-5);
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .cm-detail-grid {
+    grid-template-columns: minmax(0, 1fr) 18.75rem;
+  }
+}
+
+.cm-detail-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  min-width: 0;
+}
+
+.cm-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  min-width: 0;
+}
+
+/* Failure is the loudest thing on the page, and still just a border and a
+   colour: a destructive-tinted card and the exception line in red. */
+.cm-card.cm-failure-panel {
+  border-color: var(--cm-color-danger-border);
+}
+
+.cm-failure-message {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+  color: var(--cm-color-status-failed);
+  overflow-wrap: anywhere;
+}
+
+/* ---- code blocks: tracebacks, logs, args --------------------------------
+   Sunken, mono, 1.6 line-height, and scrolling sideways *inside* the block
+   so a long log line never widens the page. */
+.cm-code {
+  margin: 0;
+  padding: var(--cm-space-3) var(--cm-space-4);
+  max-height: 22rem;
+  overflow: auto;
+  font-size: var(--cm-text-sm);
+  line-height: var(--cm-leading-code);
+  color: var(--cm-color-text);
+  white-space: pre;
+  background-color: var(--cm-color-muted-subtle);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  tab-size: 4;
+}
+
+.cm-code-tall {
+  max-height: 32rem;
+}
+
+.cm-inline-code {
+  padding: 1px 4px;
+  font-size: 0.92em;
+  color: var(--cm-color-text);
+  background-color: var(--cm-color-muted);
+  border-radius: var(--cm-radius-sm);
+  overflow-wrap: anywhere;
+}
+
+.cm-args {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--cm-space-4);
+  margin: 0;
+}
+
+.cm-args > div {
+  min-width: 0;
+}
+
+.cm-args dt {
+  margin-bottom: var(--cm-space-2);
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-args dd {
+  margin: 0;
+}
+
+/* ---- run panel ---------------------------------------------------------- */
+
 .cm-run-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--cm-space-3);
   flex-wrap: wrap;
+  gap: var(--cm-space-3);
 }
 
-/* ==========================================================================
-   Progress readout — the gauge
-   --------------------------------------------------------------------------
-   Treated as an instrument dial rather than a web progress bar: quartile
-   hairlines across the track so a glance reads "just past half" without
-   parsing the number, and a bright leading edge where the fill currently
-   sits. The ticks are drawn by the track's ::after, i.e. on top of the
-   fill, so they stay legible across the filled portion too.
-   ========================================================================== */
+.cm-run-hint {
+  max-width: var(--cm-measure);
+  color: var(--cm-color-text-muted);
+}
 
 .cm-run-progress {
   display: flex;
@@ -71,50 +200,32 @@
 }
 
 .cm-run-pct {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-2xl);
-  font-weight: 500;
+  font-size: var(--cm-text-xl);
+  font-weight: 600;
   line-height: var(--cm-leading-tight);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   color: var(--cm-color-text);
 }
 
 .cm-run-pct-unit {
   margin-left: 0.1em;
-  font-size: var(--cm-text-lg);
+  font-size: var(--cm-text-base);
+  font-weight: 500;
   color: var(--cm-color-text-muted);
 }
 
 .cm-run-count {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  font-variant-numeric: tabular-nums;
   color: var(--cm-color-text-muted);
   text-align: right;
 }
 
 .cm-run-track {
   position: relative;
-  height: 10px;
-  background-color: var(--cm-color-surface-sunken);
-  border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-full);
+  height: 8px;
   overflow: hidden;
-}
-
-.cm-run-track::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.45;
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0,
-    transparent calc(25% - 1px),
-    var(--cm-color-border-strong) calc(25% - 1px),
-    var(--cm-color-border-strong) 25%
-  );
+  background-color: var(--cm-color-status-started-soft);
+  border-radius: var(--cm-radius-full);
 }
 
 .cm-run-fill {
@@ -122,67 +233,34 @@
   top: 0;
   bottom: 0;
   left: 0;
+  background-color: var(--cm-color-status-started);
   border-radius: var(--cm-radius-full);
-  background-image: linear-gradient(90deg, var(--cm-color-accent-active), var(--cm-color-accent));
   transition: width var(--cm-duration-base) var(--cm-ease);
 }
 
-/* The live edge: where the run currently is. Static, not a travelling
-   shimmer — one calm signal beats an animated one on a page an operator
-   may leave open for an hour. */
-.cm-run-fill::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 2px;
-  background-color: var(--cm-color-accent-hover);
-  box-shadow: 0 0 6px 1px var(--cm-color-accent-soft);
-}
-
-/* Gone quiet. The task list already drains the colour out of its run lane
-   when a run stops reporting (.cm-run-lane[data-stalled] in tasks.css, and
-   its note on why neutral rather than amber); without the same treatment
-   here the *same run* read as healthily in-flight on its own page while
-   reading as stalled one click away in the list. The amber alert below the
-   bar is what states the fact; this just stops the bar implying liveness. */
+/* Gone quiet: drained to neutral, the same as the task list's lane, so one
+   run never reads as healthy here and stalled one click away. */
 .cm-run-track[data-stalled="true"] {
-  border-color: var(--cm-color-border-strong);
+  background-color: var(--cm-color-muted);
 }
 
 .cm-run-track[data-stalled="true"] .cm-run-fill {
-  background-image: none;
-  background-color: var(--cm-color-text-faint);
+  background-color: var(--cm-color-mark);
 }
 
-.cm-run-track[data-stalled="true"] .cm-run-fill::after {
-  background-color: var(--cm-color-text-muted);
-  box-shadow: none;
-}
-
-/* tokens.css already zeroes transition durations under reduce; restated
-   here so the bar's width jump stays explicit rather than inherited. */
 @media (prefers-reduced-motion: reduce) {
   .cm-run-fill {
     transition: none;
   }
 }
 
-/* Whatever the task chose to say about itself. */
 .cm-run-message {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
   color: var(--cm-color-text-muted);
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-/* ==========================================================================
-   Headline figure — elapsed on a running run with no bar, duration on a
-   finished one. Whichever number is the most informative thing on the
-   panel gets to be big; there is only ever one of them.
-   ========================================================================== */
-
+/* The one headline number: elapsed on a running run with no bar, duration
+   on a finished one. */
 .cm-run-hero {
   display: flex;
   flex-direction: column;
@@ -190,126 +268,138 @@
 }
 
 .cm-run-hero-label {
-  font-family: var(--cm-font-body);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--cm-text-sm);
+  font-weight: 500;
   color: var(--cm-color-text-muted);
 }
 
 .cm-run-hero-value {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-2xl);
-  font-weight: 500;
+  font-size: var(--cm-text-xl);
+  font-weight: 600;
   line-height: var(--cm-leading-tight);
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   color: var(--cm-color-text);
 }
 
 .cm-run-window {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
   color: var(--cm-color-text-muted);
 }
 
-/* Elapsed / estimate stats. Narrower columns than the default
-   cm-detail-meta grid, because these are three short numbers rather than
-   long identifiers, and mono values so they line up as a readout. */
-.cm-detail-meta.cm-run-stats {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+.cm-run-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: var(--cm-space-3) var(--cm-space-4);
+  margin: 0;
 }
 
-.cm-detail-meta.cm-run-stats dd {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-lg);
-  font-variant-numeric: tabular-nums;
-  color: var(--cm-color-text);
-}
-
-.cm-run-estimate-note {
-  font-size: var(--cm-text-xs);
-  color: var(--cm-color-text-faint);
-}
-
-/* Degraded-but-not-broken: progress has gone quiet, or the poll can't
-   reach the server. Amber rather than the accent, because both are
-   statements about the *run*, not about something the operator did — and
-   quieter than the danger tokens, because neither is a failure yet. */
-.cm-run-alert {
-  padding: 0.625rem 0.75rem;
+.cm-run-stats dt {
   font-size: var(--cm-text-sm);
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-status-retried-bg);
-  border: 1px solid var(--cm-color-status-retried-border);
-  border-left: 3px solid var(--cm-color-warn);
-  border-radius: var(--cm-radius-md);
-}
-
-/* Quiet documentation in place of a blank panel. Reuses the dashed
-   empty-state box and only changes its alignment, so an explanation with
-   a code sample in it doesn't sit centred. */
-.cm-empty-state.cm-run-hint {
-  text-align: left;
+  font-weight: 500;
   color: var(--cm-color-text-muted);
-  line-height: var(--cm-leading-normal);
 }
 
-.cm-run-code {
-  padding: 0.1rem 0.3rem;
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
+.cm-run-stats dd {
+  margin: var(--cm-space-1) 0 0;
+  font-size: var(--cm-text-lg);
+  font-weight: 500;
   color: var(--cm-color-text);
-  background-color: var(--cm-color-surface-sunken);
+}
+
+.cm-run-note {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+/* ---- aside: execution facts and retry lineage -------------------------- */
+
+.cm-detail-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-4);
+  min-width: 0;
+  padding: var(--cm-space-5);
+  background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-sm);
-  word-break: break-word;
+  border-radius: var(--cm-radius-xl);
+  box-shadow: var(--cm-shadow-sm);
+}
+
+.cm-exec-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.cm-exec-list > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cm-space-4);
+  padding: var(--cm-space-2) 0;
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-exec-list > div:last-child {
+  border-bottom: none;
+}
+
+.cm-exec-list dt {
+  flex: none;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-exec-list dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  color: var(--cm-color-text);
+  overflow-wrap: anywhere;
+}
+
+/* Worker hostnames and queue names are identifiers you paste elsewhere. */
+.cm-exec-list dd.cm-exec-code {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
 }
 
 /* A value the system genuinely doesn't have. The dash is for the eye; the
-   adjacent visually-hidden reason is what a screen reader announces, so
-   "—" never arrives as an unexplained noise. */
+   visually-hidden reason beside it is what a screen reader announces. */
 .cm-detail-absent {
-  font-family: var(--cm-font-mono);
-  color: var(--cm-color-text-faint);
+  color: var(--cm-color-text-muted);
 }
 
-/* Identifiers, hostnames, queue names and timestamps are data: mono, same
-   as every other identifier in the system. */
-.cm-exec-panel .cm-detail-meta dd {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text);
-  word-break: break-word;
-}
-
-/* ==========================================================================
-   Retry lineage — a real chain, drawn as one
-   --------------------------------------------------------------------------
-   Ordered because the order is true: the run this came from, this run,
-   then each retry made from it in the order they were made. The rail and
-   dots exist to make "you are here" findable in a chain that can run in
-   both directions.
-   ========================================================================== */
-
-.cm-lineage-chain {
-  position: relative;
-  list-style: none;
-  margin: 0;
-  padding: 0 0 0 var(--cm-space-5);
+.cm-lineage {
   display: flex;
   flex-direction: column;
   gap: var(--cm-space-3);
+  padding-top: var(--cm-space-4);
+  border-top: 1px solid var(--cm-color-border);
+}
+
+.cm-lineage-title {
+  font-size: var(--cm-text-md);
+  font-weight: 600;
+  color: var(--cm-color-text);
+}
+
+/* Ordered because the order is true: where this came from, this run, then
+   each retry made from it. The rail and dots make "you are here" findable. */
+.cm-lineage-chain {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  margin: 0;
+  padding: 0 0 0 var(--cm-space-5);
+  list-style: none;
 }
 
 .cm-lineage-chain::before {
   content: "";
   position: absolute;
   left: 4px;
-  top: 0.5em;
-  bottom: 0.5em;
+  top: 0.6em;
+  bottom: 0.6em;
   width: 1px;
   background-color: var(--cm-color-border);
 }
@@ -317,9 +407,9 @@
 .cm-lineage-item {
   position: relative;
   display: flex;
-  align-items: baseline;
-  gap: var(--cm-space-3);
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .cm-lineage-item::before {
@@ -331,97 +421,40 @@
   height: 9px;
   border-radius: var(--cm-radius-full);
   background-color: var(--cm-color-surface);
-  border: 1px solid var(--cm-color-border-strong);
+  border: 1.5px solid var(--cm-color-mark);
 }
 
 .cm-lineage-item[data-node="self"]::before {
-  background-color: var(--cm-color-accent);
-  border-color: var(--cm-color-accent);
-  box-shadow: 0 0 0 3px var(--cm-color-accent-soft);
+  background-color: var(--cm-color-text);
+  border-color: var(--cm-color-text);
 }
 
 .cm-lineage-label {
-  flex: none;
-  /* 7rem is a column width for the labels to line up in — but rem scales
-     with the reader's font size, so at a 200% default font it became a 224px
-     floor inside a ~230px card and pushed the page sideways (measured: 337
-     against a 320px client width). `min()` keeps the alignment wherever
-     there is room for it and gives it up where there isn't. */
-  min-width: min(7rem, 100%);
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--cm-text-sm);
   color: var(--cm-color-text-muted);
 }
 
-.cm-lineage-id {
-  font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-text);
-  word-break: break-all;
-}
-
-/* The text pair, not the fill pair — same reasoning as .cm-back-link in
-   tokens.css and .cm-tasks-link-btn in tasks.css. These are the only links
-   out of a failed run into its retries, and under the live deployment's
-   brand (#f2c744) the fill token rendered them at 1.61:1 on the panel
-   surface, hovering to 1.51:1. The derived text token measures 5.45:1 there
-   and improves on hover. No change for the built-in accent. */
+.cm-lineage-id,
 .cm-lineage-link {
   font-family: var(--cm-font-mono);
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
-  color: var(--cm-color-accent-text);
-  word-break: break-all;
-  transition: color var(--cm-duration-fast) var(--cm-ease);
+  font-size: var(--cm-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.cm-lineage-id {
+  color: var(--cm-color-text);
+}
+
+/* The text pair, not the fill pair: these are the only links out of a
+   failed run into its retries and must stay readable under any brand. */
+.cm-lineage-link {
+  align-self: flex-start;
+  color: var(--cm-color-primary-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--cm-radius-sm);
 }
 
 .cm-lineage-link:hover {
-  color: var(--cm-color-accent-text-hover);
-  text-decoration: underline;
-}
-
-/* ==========================================================================
-   Cancel / terminate actions
-   --------------------------------------------------------------------------
-   Sits on its own row under the task id so the header (title + badge) never
-   has to share a line with a two-button confirm pair at 390px. Danger colours
-   come from the existing --cm-color-danger* tokens; two-class selectors beat
-   tokens.css's single-class .cm-btn-* rules, which load after this file.
-   ========================================================================== */
-.cm-task-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--cm-space-2);
-}
-
-.cm-task-actions-warn {
-  flex: 1 0 100%;
-  font-size: var(--cm-text-sm);
-  color: var(--cm-color-danger);
-}
-
-.cm-btn.cm-btn-danger-outline {
-  color: var(--cm-color-danger);
-  border-color: var(--cm-color-danger-border);
-}
-
-.cm-btn.cm-btn-danger-outline:hover:not(:disabled) {
-  color: var(--cm-color-danger);
-  border-color: var(--cm-color-danger);
-  background-color: var(--cm-color-danger-bg);
-}
-
-.cm-btn.cm-btn-danger {
-  color: var(--cm-color-danger);
-  background-color: var(--cm-color-danger-bg);
-  border-color: var(--cm-color-danger);
-}
-
-.cm-btn.cm-btn-danger:hover:not(:disabled) {
-  color: var(--cm-color-surface);
-  background-color: var(--cm-color-danger);
+  color: var(--cm-color-primary-text-hover);
 }
