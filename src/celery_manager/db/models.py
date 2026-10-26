@@ -65,6 +65,18 @@ class PeriodicSchedule(Base):
     kwargs: Mapped[str] = mapped_column(Text, default="{}")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Whole-schedule pause. `paused_at IS NOT NULL` *is* the paused state —
+    # there is no separate flag to drift out of step with it. While paused,
+    # every firing of this schedule that reaches a `@track`ed task is
+    # recorded as `skipped` and the body does not run (see
+    # `celery_manager.decorator`). Deliberately separate from `enabled`,
+    # which `sync_periodic_schedules` owns and rewrites on every startup:
+    # an operator's pause must survive a restart. Both columns are nullable
+    # so `init_db()`'s additive upgrade can add them to an existing table
+    # (see `celery_manager.db.session._ADDITIVE_COLUMNS`).
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
 
 class ScheduleOverride(Base):
     __tablename__ = "schedule_overrides"
