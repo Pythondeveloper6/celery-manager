@@ -22,6 +22,9 @@ class CeleryManagerConfig:
         never sign sessions and may leave it as-is.
     eta_tolerance_seconds: how close "now" must be to a schedule
         override's target time for the decorator to treat it as a match.
+    export_max_rows: hard cap on rows in one `GET /api/tasks/export` download.
+        Larger results are cut off (newest first) and flagged with an
+        `X-Export-Truncated: true` header.
     cookie_secure: sets the `Secure` flag on the session cookie, so the
         browser only ever sends it over HTTPS. Defaults to True — the
         session cookie is a bearer credential for the whole dashboard, and
@@ -29,6 +32,24 @@ class CeleryManagerConfig:
         thought about it with a cookie leakable over plain HTTP. Set it to
         False only for local HTTP development, where there is no HTTPS to
         send it over.
+    auto_migrate: when True (the default), `init_db()` upgrades the
+        database schema to the latest revision at startup, in every process
+        that calls it (API, workers, events listener; concurrent upgrades
+        are serialised by a lock). Set it to False to run migrations as a
+        separate deploy step with `celery-manager migrate`; `init_db()`
+        then leaves the database untouched and only logs a warning if the
+        schema isn't current.
+    inspect_timeout_seconds: how long the Workers page (and the worker
+        control endpoints) wait for workers to answer a broadcast
+        (`inspect()`, `pool_grow`, `rate_limit`, ...). Kept short because
+        the request blocks for it: a worker that hasn't answered within a
+        second is, for an operator, effectively offline.
+    live_poll_interval_seconds: how often, while at least one dashboard
+        has the live stream (`/api/stream`) open, each API process polls
+        `task_runs` for rows other processes changed (the events listener,
+        workers) and pushes them to the browser. Lower is snappier and
+        costs one small indexed query per interval per API process; nothing
+        is polled while nobody is watching.
     """
 
     celery_app: Celery
@@ -36,3 +57,7 @@ class CeleryManagerConfig:
     secret_key: str = "change-me"
     eta_tolerance_seconds: int = 60
     cookie_secure: bool = True
+    export_max_rows: int = 50_000
+    auto_migrate: bool = True
+    inspect_timeout_seconds: float = 1.0
+    live_poll_interval_seconds: float = 1.0

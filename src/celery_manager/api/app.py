@@ -8,10 +8,19 @@ from fastapi.staticfiles import StaticFiles
 
 from celery_manager.api.deps import get_current_user
 from celery_manager.api.routes import (
+    analytics as analytics_routes,
+)
+from celery_manager.api.routes import (
     audit as audit_routes,
 )
 from celery_manager.api.routes import (
     auth as auth_routes,
+)
+from celery_manager.api.routes import (
+    export as export_routes,
+)
+from celery_manager.api.routes import (
+    queues as queue_routes,
 )
 from celery_manager.api.routes import (
     schedules as schedule_routes,
@@ -21,6 +30,12 @@ from celery_manager.api.routes import (
 )
 from celery_manager.api.routes import (
     tasks as task_routes,
+)
+from celery_manager.api.routes import (
+    workers as worker_routes,
+)
+from celery_manager.api.routes import (
+    workflows as workflow_routes,
 )
 from celery_manager.api.security import SecurityMiddleware
 from celery_manager.api.sse import EventBus, sse_stream
@@ -63,14 +78,22 @@ def create_app(config: CeleryManagerConfig):
     app = FastAPI(title="celery-manager")
     app.state.cm_config = config
     app.state.cm_session_factory = session_factory
-    app.state.cm_event_bus = EventBus()
+    # The bus polls the DB change feed for writes made by other processes
+    # (events listener, workers); see api/sse.py.
+    app.state.cm_event_bus = EventBus(session_factory, poll_interval=config.live_poll_interval_seconds)
     app.add_middleware(SecurityMiddleware)
 
     app.include_router(auth_routes.router)
+    # Before task_routes: /api/tasks/export must win over /api/tasks/{task_id}.
+    app.include_router(export_routes.router)
     app.include_router(task_routes.router)
     app.include_router(schedule_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(analytics_routes.router)
+    app.include_router(worker_routes.router)
+    app.include_router(queue_routes.router)
+    app.include_router(workflow_routes.router)
 
     @app.get("/api/stream")
     def stream(request: Request, username: str = Depends(get_current_user)):

@@ -4939,7 +4939,9 @@ git commit -m "feat: task search, date-range filter, group-by, and worker/timing
 Append new mid-implementation requests here too, tagged with the task they'd extend.
 
 **Phase 2 (fast follow):**
-- **Schema migrations (Alembic or equivalent)** — *added by the final-review
+- ~~**Schema migrations (Alembic or equivalent)**~~ — **done in 0.1.0a4**
+  (`celery_manager.db.migrate`, `celery-manager migrate`, revisions in
+  `celery_manager/db/migrations/versions/`). *Added by the final-review
   fix wave, finding I5.* `init_db()` uses `Base.metadata.create_all` only,
   which creates missing tables but never alters existing ones. Any future
   column add/change therefore breaks upgrades in place: users have to
@@ -4949,7 +4951,16 @@ Append new mid-implementation requests here too, tagged with the task they'd ext
   baseline revision matching the v1 models, and adding a
   `celery-manager migrate` command.
 - **Cross-process SSE delivery (Redis pub/sub, or an in-process listener)** —
-  *added by the final-review fix wave, finding I1, per the ledger's
+  **done**, by a third option: a DB change feed. Every write to `task_runs`
+  bumps a new indexed `updated_at` column (migration 0003), and each API
+  process's `EventBus` runs one poller thread (only while it has SSE
+  subscribers) that reads `(updated_at, id) > cursor` every
+  `live_poll_interval_seconds` and publishes the changed rows, with a short
+  overlap window + dedupe for late commits and clock skew
+  (`db/changefeed.py`). Broker-agnostic, no new infrastructure, works with
+  several API processes; the listener's direct publish was removed, and the
+  dashboard polls only while the stream is down. See CHANGELOG.
+  *Originally: added by the final-review fix wave, finding I1, per the ledger's
   deliberately-partial ruling.* `EventBus` (`api/sse.py`) is an in-memory
   `asyncio.Queue` fan-out living inside the API process, but the only thing
   that publishes to it is `EventListener`, which the documented deployment
@@ -4967,7 +4978,7 @@ Append new mid-implementation requests here too, tagged with the task they'd ext
   process, which removes the IPC need entirely but couples listener uptime to
   the API's and doesn't scale past one API process. (a) is the more general
   answer; (b) is the cheaper one for single-process deployments.
-- **A "start task" control in the dashboard UI** — *added by the final-review
+- **A "start task" control in the dashboard UI** — **done** (Start task sheet + `GET /api/tasks/registered`; see CHANGELOG). *Originally: added by the final-review
   fix wave, finding I8.* `POST /api/tasks/start` exists and is now audited,
   but nothing in the SPA can invoke it; the demo README was pointing users at
   a UI control that does not exist. The README now documents the real

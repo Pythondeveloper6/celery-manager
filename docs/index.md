@@ -25,7 +25,7 @@ uses Celery.</p>
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-light.png){ .cm-shot .cm-only-light }
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-dark.png){ .cm-shot .cm-only-dark }
 
-!!! warning "Alpha — `0.1.0a3`"
+!!! warning "Alpha — `0.1.0a4`"
 
     Working and tested, but the API may still move, and there is no role system yet
     (any signed-in user can do anything). Use it on an internal tool and pin the
@@ -144,10 +144,40 @@ Celery settings, creating the first user and signing in.
     ![A failed task showing its traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-light.png){ .cm-shot .cm-only-light }
     ![A failed task showing its traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-dark.png){ .cm-shot .cm-only-dark }
 
+=== "Workflow"
+
+    ![A chord's workflow tree with one failed group member](assets/screenshots/workflow-light.png){ .cm-shot .cm-only-light }
+    ![A chord's workflow tree with one failed group member](assets/screenshots/workflow-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Start a task"
+
+    ![The Start task sheet with prefilled arguments](assets/screenshots/start-task-light.png){ .cm-shot .cm-only-light }
+    ![The Start task sheet with prefilled arguments](assets/screenshots/start-task-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Insights"
+
+    ![Insights trends: KPIs, runs by status and runtime charts](assets/screenshots/insights-light.png){ .cm-shot .cm-only-light }
+    ![Insights trends: KPIs, runs by status and runtime charts](assets/screenshots/insights-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Failures"
+
+    ![Failures grouped by exception signature](assets/screenshots/failures-light.png){ .cm-shot .cm-only-light }
+    ![Failures grouped by exception signature](assets/screenshots/failures-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Workers"
+
+    ![Worker cards with live counts, controls and rate limits](assets/screenshots/workers-light.png){ .cm-shot .cm-only-light }
+    ![Worker cards with live counts, controls and rate limits](assets/screenshots/workers-dark.png){ .cm-shot .cm-only-dark }
+
+=== "Queues"
+
+    ![Queue depth per queue, with purge buttons](assets/screenshots/queues-light.png){ .cm-shot .cm-only-light }
+    ![Queue depth per queue, with purge buttons](assets/screenshots/queues-dark.png){ .cm-shot .cm-only-dark }
+
 === "Schedules"
 
-    ![The schedules view with one future occurrence skipped](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
-    ![The schedules view with one future occurrence skipped](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
+    ![The schedules list with one schedule paused until a set time](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
+    ![The schedules list with one schedule paused until a set time](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
 
 === "Audit log"
 

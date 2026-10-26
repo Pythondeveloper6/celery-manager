@@ -3,9 +3,9 @@
 Apply `celery_manager.decorator.track()` above `@app.task` to opt a task
 into three things:
 
-1. **Per-occurrence schedule control** — if someone pauses/cancels a
-   specific future run from the dashboard, this decorator is what makes
-   the task actually skip its body at that run instead of executing.
+1. **Schedule control** — if someone pauses/cancels a specific future run
+   from the dashboard, or pauses the whole schedule, this decorator is what
+   makes the task actually skip its body instead of executing.
 2. **Log capture** — `logging` output produced during the task is captured
    and shown on the task's detail page, not just the traceback on failure.
    See [What "log capture" actually captures](#what-log-capture-actually-captures)
@@ -252,6 +252,15 @@ will rarely line up to the microsecond.
   the decorator marks it `consumed`, records a `TaskRun` with
   `status="skipped"`, and returns `None` **without calling the wrapped
   function** — the task body never runs for that occurrence.
+- Otherwise, if the whole schedule is paused (`PeriodicSchedule.paused_at`
+  is set, via `POST /api/schedules/{name}/pause` or
+  `celery_manager.control.schedules.pause_schedule`), the run is recorded
+  as `skipped` in the same way and the body does not run. The paused check
+  uses the same `effective_schedule_name`; a name that isn't a known
+  schedule is never paused. The override check runs first, so an override
+  aimed at this firing is consumed even while the schedule is paused — the
+  firing it targeted has happened. After a resume, the next firing beat
+  sends runs normally; nothing is caught up.
 - Otherwise the task runs normally. Its log output is captured (via
   `celery_manager.logcapture.capture_logs`, which attaches a handler to the
   root logger for the duration of the call) and, together with the outcome

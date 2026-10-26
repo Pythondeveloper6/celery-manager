@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 from datetime import datetime
 
@@ -224,6 +225,9 @@ def start_task(
     kwargs: dict,
     session=None,
     username: str | None = None,
+    queue: str | None = None,
+    countdown: float | None = None,
+    eta: datetime | None = None,
 ) -> str:
     """Dispatch a task on demand (e.g. from the dashboard's 'run now' action).
 
@@ -233,13 +237,116 @@ def start_task(
     `retry` entry — auditing here unconditionally would double-log every
     retry as a retry *and* a start.
     """
-    result = celery_app.send_task(task_name, args=args, kwargs=kwargs)
+    # Only forward the options the caller actually set, so a plain start
+    # reaches the broker exactly as it always has.
+    options: dict = {}
+    if queue:
+        options["queue"] = queue
+    if countdown is not None:
+        options["countdown"] = countdown
+    if eta is not None:
+        options["eta"] = eta
+    result = celery_app.send_task(task_name, args=args, kwargs=kwargs, **options)
+    if session is not None:
+        # Seed the run row now (the same upsert retry uses) so the dashboard
+        # can open the new run's page straight away; the events listener
+        # fills in the rest when it hears about the task.
+        lock_task_run(session, result.id, seed={
+            "task_name": task_name, "status": "queued",
+            "args": json.dumps(args), "kwargs": json.dumps(kwargs),
+            "queue": queue, "eta": eta,
+        })
+        session.commit()
     if session is not None and username is not None:
-        record_audit(
-            session, username, "start", "task", result.id,
-            {"task_name": task_name, "args": args, "kwargs": kwargs},
-        )
+        details = {"task_name": task_name, "args": args, "kwargs": kwargs}
+        if queue:
+            details["queue"] = queue
+        if countdown is not None:
+            details["countdown"] = countdown
+        if eta is not None:
+            details["eta"] = eta.isoformat()
+        record_audit(session, username, "start", "task", result.id, details)
     return result.id
+
+
+def _task_signature(task) -> list[dict] | None:
+    """Parameter names/defaults/annotations of a task's run function.
+
+    Best effort: builtins, C extensions and odd callables have no inspectable
+    signature, and a registered task must still be listed (the operator can
+    type JSON by hand), so any failure is None rather than an error.
+    """
+    try:
+        fn = getattr(task, "run", task)
+        params = inspect.signature(fn).parameters.values()
+        out = []
+        for p in params:
+            if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+                out.append({"name": p.name, "kind": "var_args" if p.kind is p.VAR_POSITIONAL else "var_kwargs",
+                            "required": False, "default": None, "annotation": None})
+                continue
+            has_default = p.default is not inspect.Parameter.empty
+            default = None
+            if has_default:
+                try:
+                    json.dumps(p.default)
+                    default = p.default
+                except (TypeError, ValueError):
+                    default = repr(p.default)
+            annotation = None
+            if p.annotation is not inspect.Parameter.empty:
+                annotation = p.annotation if isinstance(p.annotation, str) else getattr(p.annotation, "__name__", None) or str(p.annotation)
+            out.append({
+                "name": p.name,
+                "kind": "keyword_only" if p.kind is p.KEYWORD_ONLY else "positional",
+                "required": not has_default,
+                "has_default": has_default,
+                "default": default,
+                "annotation": annotation,
+            })
+        return out
+    except Exception:  # noqa: BLE001 - introspection must never break the listing
+        return None
+
+
+def _default_queue(celery_app: Celery, task, name: str) -> str | None:
+    try:
+        queue = getattr(task, "queue", None)
+        if not queue:
+            router = celery_app.amqp.router
+            if not router.routes:
+                return None
+            queue = router.route({}, name).get("queue")
+        return getattr(queue, "name", None) or (str(queue) if queue else None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def list_registered_tasks(celery_app: Celery) -> list[dict]:
+    """Tasks registered on the Celery app, minus Celery's own `celery.*` ones."""
+    # Import the app's configured task modules (`include`/`imports`), which
+    # a web process otherwise never loads; best effort, the listing is still
+    # useful without them.
+    try:
+        celery_app.loader.import_default_modules()
+    except Exception:  # noqa: BLE001, S110
+        pass
+    items = []
+    for name in sorted(celery_app.tasks.keys()):
+        if name.startswith("celery."):
+            continue
+        task = celery_app.tasks[name]
+        try:
+            doc = inspect.getdoc(task) or ""
+        except Exception:  # noqa: BLE001
+            doc = ""
+        items.append({
+            "name": name,
+            "signature": _task_signature(task),
+            "queue": _default_queue(celery_app, task, name),
+            "doc": doc.strip().splitlines()[0] if doc.strip() else None,
+        })
+    return items
 
 
 def cancel_task(
@@ -281,6 +388,7 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     final_args = args if args is not None else _decode_stored_call_argument(run.args, "args", task_id, [])
     final_kwargs = kwargs if kwargs is not None else _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
 
+    edited = args is not None or kwargs is not None
     new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
 
     # Upsert, never check-then-insert. `task_runs.task_id` is UNIQUE, and by
@@ -318,9 +426,119 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     # explicitly rather than relying on that, so the lineage is durable even
     # if auditing is ever made optional here the way it is in start_task.
     session.commit()
-    record_audit(session, username, "retry", "task", task_id, {"new_task_id": new_id})
+    details: dict = {"new_task_id": new_id}
+    if edited:
+        # Record what was actually sent: an edited retry is a different call
+        # from the one the run stored, and the audit log is the only place
+        # that difference is kept.
+        details.update({"args_edited": True, "args": final_args, "kwargs": final_kwargs})
+    record_audit(session, username, "retry", "task", task_id, details)
     return new_id
 
 
 def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str) -> list[str]:
     return [retry_task(celery_app, session, task_id, username) for task_id in task_ids]
+
+
+# Bulk cancel. A run in one of these statuses may still be stopped; anything
+# else (succeeded/failed/revoked/skipped) has nothing left to cancel and is
+# reported as skipped. `retried` counts as live: Celery will run the same
+# task_id again, and revoking it prevents that.
+CANCELLABLE_STATUSES = ("queued", "started", "retried")
+
+# Most runs one bulk cancel may touch. Above this the request is refused, not
+# truncated: cancelling an arbitrary first-N of a larger set is a destructive
+# action whose scope the operator didn't choose. Narrow the filter instead.
+MAX_BULK_CANCEL = 1000
+
+# Task ids per revoke broadcast. `control.revoke` takes a list, so this is the
+# same primitive `cancel_task` uses, sent in chunks so 1,000 ids is ten
+# broadcasts rather than one enormous message or a thousand tiny ones.
+_REVOKE_CHUNK = 100
+
+
+class BulkCancelTooLarge(ValueError):
+    """The selection exceeds MAX_BULK_CANCEL; nothing was revoked."""
+
+    def __init__(self, count: int):
+        self.count = count
+        super().__init__(
+            f"{count} runs match; bulk cancel is limited to {MAX_BULK_CANCEL} at a time. "
+            "Narrow the filter and try again."
+        )
+
+
+def bulk_cancel(
+    celery_app: Celery,
+    session,
+    *,
+    username: str,
+    task_ids: list[str] | None = None,
+    filters: dict | None = None,
+    terminate: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Revoke many runs, chosen either by id or by the task-list filters.
+
+    Exactly one of `task_ids` / `filters` should be given (task_ids wins if
+    both are). With `filters`, the same `_apply_task_filters` chain the list
+    uses selects the rows — so "cancel all matching" means exactly the rows
+    the operator is looking at — narrowed to `CANCELLABLE_STATUSES`.
+
+    With `task_ids`, ids we have no row for are reported as `unknown` and not
+    revoked: bulk actions only touch runs the operator could see. (The
+    single-run cancel endpoint still revokes any id it is given.)
+
+    Like `cancel_task`, this only *asks* workers to revoke; the run's status
+    changes when the worker's task-revoked event comes back through the
+    listener. `dry_run=True` returns the same counts without revoking or
+    auditing, which is how the dashboard shows "Cancel 37 matching" before
+    the operator confirms.
+
+    Raises `BulkCancelTooLarge` (before revoking anything) when more than
+    `MAX_BULK_CANCEL` runs would be cancelled or ids were sent.
+    """
+    if task_ids is not None:
+        ids = list(dict.fromkeys(task_ids))  # de-dupe, keep order
+        if len(ids) > MAX_BULK_CANCEL:
+            raise BulkCancelTooLarge(len(ids))
+        rows = session.query(TaskRun.task_id, TaskRun.status).filter(TaskRun.task_id.in_(ids)).all() if ids else []
+        status_by_id = dict(rows)
+        targets = [i for i in ids if status_by_id.get(i) in CANCELLABLE_STATUSES]
+        unknown = [i for i in ids if i not in status_by_id]
+        skipped = len(ids) - len(targets) - len(unknown)
+    else:
+        query = _apply_task_filters(session.query(TaskRun), **(filters or {}))
+        query = query.filter(TaskRun.status.in_(CANCELLABLE_STATUSES))
+        count = query.count()
+        if count > MAX_BULK_CANCEL:
+            raise BulkCancelTooLarge(count)
+        targets = [run.task_id for run in query.order_by(TaskRun.id).all()]
+        unknown = []
+        skipped = 0
+
+    result = {
+        "revoked": 0 if dry_run else len(targets),
+        "matched": len(targets),
+        "skipped_finished": skipped,
+        "unknown": len(unknown),
+        "limit": MAX_BULK_CANCEL,
+        "dry_run": dry_run,
+    }
+    if dry_run or not targets:
+        return result
+
+    for start in range(0, len(targets), _REVOKE_CHUNK):
+        celery_app.control.revoke(targets[start:start + _REVOKE_CHUNK], terminate=terminate)
+
+    record_audit(session, username, "cancel_bulk", "task", "filter" if task_ids is None else "selection", {
+        "terminate": terminate,
+        "revoked": len(targets),
+        "skipped_finished": skipped,
+        "unknown": len(unknown),
+        "filter": None if task_ids is not None else {
+            k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in (filters or {}).items() if v is not None
+        },
+        "task_ids": targets,
+    })
+    return result

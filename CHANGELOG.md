@@ -4,6 +4,177 @@ All notable changes to celery-manager are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.1.0a4] — 2026-10-26
+
+### Added
+
+- **Pause and resume a whole schedule.** `POST /api/schedules/{name}/pause`
+  and `POST /api/schedules/{name}/resume` (also
+  `celery_manager.control.schedules.pause_schedule` / `resume_schedule`).
+  While a schedule is paused, every firing is recorded as a `skipped` run and
+  the task body does not run — the same mechanism as an occurrence skip.
+  Both endpoints are idempotent, return `404` for an unknown schedule, and
+  write `pause_schedule` / `resume_schedule` audit rows. `GET /api/schedules`
+  items gain `paused`, `paused_at` and `paused_by`; each occurrence from
+  `GET /api/schedules/{name}/occurrences` gains `paused`. The frontend API
+  client gains `pauseSchedule()` / `resumeSchedule()`. Limitations:
+    - only `@track`-decorated tasks are affected — celery-manager does not
+      own beat, so beat keeps firing and an undecorated task still runs;
+    - resume waits for the next regular beat firing. It doesn't run the task
+      now, doesn't reset beat's interval clock, and doesn't catch up firings
+      missed while paused (they were recorded as `skipped`).
+
+  The pause survives restarts: the startup sync from `beat_schedule` leaves
+  it alone.
+
+- **Pause/Resume in the dashboard.** Each schedule on the Schedules page has
+  a Pause button (with a confirm step) or a Resume button and a Paused badge.
+  A paused schedule's page shows who paused it and when, and marks upcoming
+  runs as "Will be skipped".
+
+- **Task list filters in the URL, saved views, copy link.** Status tab,
+  search, group-by, date range and history-mode page are reflected in the
+  hash-route query string (`#/?status=failed&q=smtp`), restored on load and
+  on back/forward. Discrete choices push a history entry; typing in search
+  replaces. **Copy link** copies the view URL. **Views** saves named filter
+  sets per browser in `localStorage` (rename/delete supported; no backend).
+  Filter state moved into `useTaskFilters`.
+
+- **Export task runs.** `GET /api/tasks/export?format=csv|json` streams every
+  run matching the list filters, capped at the new
+  `CeleryManagerConfig.export_max_rows` (default 50000) with an
+  `X-Export-Truncated` header, CSV formula-injection escaping, a timestamped
+  filename, and an `export_tasks` audit row. The task list gains an Export
+  menu.
+
+- **Insights: trends, per-task pages and grouped failures.** New Insights page
+  with 1h/24h/7d/30d ranges, KPIs, SVG charts (runs by status, p50/p95
+  runtime, each with a text summary and table fallback) and a Failures tab
+  that groups failed runs by a normalised exception signature, with open,
+  show-runs and retry-all-in-group actions. A task page at
+  `/task-types/:taskName` (linked from the task detail title and the Insights
+  top-task lists) shows the same trends for one task plus recent runs and top
+  errors. Backed by `GET /api/analytics/overview`, `/api/analytics/failures`
+  and `/api/analytics/tasks/{task_name}`, computed at query time (no schema
+  change; scans are capped, see [Insights](insights.md)).
+
+- **Start a task from the dashboard.** A **Start task** button on the Task
+  runs page opens a sheet with a searchable task picker, args/kwargs JSON
+  editors prefilled from the task's signature with live validation, and an
+  optional queue and countdown/ETA; submitting opens the new run. New
+  `GET /api/tasks/registered` lists registered tasks (excluding `celery.*`)
+  with best-effort signature, queue and docstring summary.
+  `POST /api/tasks/start` now accepts optional `queue`, `countdown` and `eta`,
+  and seeds a `queued` run row so the run's page exists straight away.
+- **Retry with changed arguments.** `POST /api/tasks/{id}/retry` takes an
+  optional `{"args", "kwargs"}` body (no body behaves as before); retry
+  lineage is recorded as usual and the audit row notes the edit and the
+  arguments sent. The task detail page gains **Retry with changes**.
+- **Workflow tree for chains, groups and chords.** Runs now record Celery's
+  `parent_id`, `root_id` and group id (schema revision `0003`; captured from
+  task events and from `@track`'s request). `GET /api/tasks/{id}/workflow`
+  returns the whole tree (capped at 500 nodes), the task detail payload gains
+  `parent_id`/`root_id`/`group_id`, and the task detail page shows a
+  **Workflow** card: an indented, collapsible tree with a status summary.
+
+- **Workers page.** A new Workers page lists every worker that answers the
+  broker: status, PID, uptime, pool, processed count, active/reserved/
+  scheduled counts (active tasks link to their run), and consumed queues. It
+  refreshes every 10 seconds while the tab is visible. From each worker card
+  you can shut the worker down (with a confirm step), add or remove a pool
+  process, and start or stop consuming a queue. Backed by `GET /api/workers`
+  and `POST /api/workers/{worker}/shutdown`, `.../pool/grow`,
+  `.../pool/shrink`, `.../queues/add` and `.../queues/cancel` (also
+  `celery_manager.control.workers`). Every control is audited. If the broker
+  can't be reached the endpoints answer `503` with a readable message, not a
+  500. New config field `inspect_timeout_seconds` (default `1.0`) caps how
+  long each broadcast waits for replies. See [Workers](docs/workers.md).
+
+- **Runtime rate limits.** `POST /api/tasks/rate-limit` changes a task's rate
+  limit on running workers (all, or a `destination` list) through
+  `control.rate_limit`. The rate format (`10/s`, `10/m`, `100/h`, or `""` to
+  remove the limit) is checked before anything is sent, and the change is
+  audited. `GET /api/workers/rate-limits` lists registered tasks with the
+  limit declared in code. On the Workers page a Rate limits table lets you
+  edit a limit inline and shows which workers confirmed it. These limits are
+  **not persisted**: a worker that restarts goes back to the limit declared
+  in code.
+
+- **Queue depth.** `GET /api/queues` lists every queue celery-manager knows
+  of (default, `task_queues`, `task_routes`, queues seen on runs, and
+  queues live workers consume). For each one it gives the broker's message
+  count and consumer count, read with a passive `queue_declare`, next to the
+  number of runs recorded as `queued` there. It always answers `200`: an
+  unreachable or slow broker (3s deadline) or a `memory://` broker gives
+  `depth: null` and a reason. A new **Queues** page in the dashboard shows
+  this, refreshes every 5 seconds (paused while the tab is hidden) and draws
+  a sparkline of depth over the session. See `docs/queues.md`.
+
+- **Purge a queue.** `POST /api/queues/{name}/purge` removes the ready
+  messages from one queue and returns how many. If it removed any, runs
+  recorded as `queued` in that queue without an ETA are marked `revoked`,
+  since no event will ever arrive for them. Audited as `purge` with both
+  counts. In the dashboard you confirm by typing the queue name.
+
+- **Bulk cancel.** `POST /api/tasks/cancel-bulk` revokes a list of
+  `task_ids`, or every `queued`/`started`/`retried` run matching the task
+  list's filters. It is capped at 1,000 (above that it's refused, not cut
+  short), has a `dry_run` count and an opt-in `terminate`, and writes one
+  `cancel_bulk` audit row. The task list gains **Cancel N selected** on the
+  Queued, Started and Retried tabs, and **Cancel all matching…** with the
+  count shown before you confirm.
+
+- **Pause a schedule until a set time.** `POST /api/schedules/{name}/pause`
+  takes an optional `{"until"}` (future, UTC; past is a `422`) and the
+  schedule resumes by itself afterwards, with no background job: readers
+  clear the stale pause lazily and write one automatic `resume_schedule`
+  audit row. Re-pausing with a new `until` updates it. `paused_until` joins
+  the schedule payloads, and each occurrence's `paused` is now per occurrence.
+  The dashboard's pause button becomes a menu (indefinitely, 1 hour, until
+  tomorrow 9:00, custom time). Schema revision `0004`.
+
+### Changed
+
+- **Dashboard redesign.** shadcn/ui-style look (zinc theme, Geist fonts) in
+  light and dark. The sidebar collapses to icons (Ctrl/Cmd+B, remembered per
+  browser) and slides in over the page on phones. The task list gains a run
+  strip (one bar per run, coloured by status), status tabs and a search and
+  filter bar. Task detail puts the failure and logs first with execution
+  details alongside. Tables stack on narrow screens.
+- **Schema migrations with Alembic.** celery-manager's tables are now
+  versioned, and the migrations ship inside the package (no `alembic.ini`
+  needed). By default `init_db()` upgrades the database at startup, under a
+  lock so the API, workers and listener can start together. Databases from
+  0.1.0a1–0.1.0a3 are adopted automatically and keep their data. The new
+  `auto_migrate` config field (default `True`) turns this off for teams that
+  migrate as a deploy step with the new `celery-manager migrate --db-url ...`
+  command (`--check` reports status and exits 1 if an upgrade is needed).
+  The version is kept in `celery_manager_alembic_version`, so it doesn't
+  clash with a host app's own Alembic history. New dependency: `alembic`.
+  This release's schema changes are migrations `0002`–`0005`: schedule pause
+  (`paused_at`, `paused_by`), workflow lineage (`parent_id`, `root_id`,
+  `group_id`), `paused_until`, and `task_runs.updated_at`. The database user needs DDL
+  rights when a release includes a migration, or run `migrate` with a user
+  that has them. See [Schema and upgrades](docs/configuration.md#schema-and-upgrades).
+- **Live updates now work when the events listener runs as a separate
+  process.** Previously `/api/stream` connected and then sent nothing in the
+  documented deployment, and the dashboard only kept up by polling. Each API
+  process now polls a change feed in the database: a new indexed
+  `task_runs.updated_at` column that every write path bumps (migration
+  `0005`, backfilled from each run's latest timestamp). Changes made by the
+  listener, `@track`, `report_progress()` and retry/start reach the browser
+  within about a second, with several API processes too, and no new
+  infrastructure. Polling happens only while a dashboard is connected; the
+  new `live_poll_interval_seconds` config field (default `1.0`) sets the
+  interval. Stream events are now `{"type": "task-updated", "task_id",
+  "status", "updated_at"}`, one per changed run. The task list and task
+  detail pages poll only while the stream is down, and the header indicator
+  shows **Live** only while it is actually connected (**Reconnecting**
+  otherwise). `EventListener` no longer publishes events itself; its
+  `event_bus` argument is ignored.
+
 ## [0.1.0a3] — 2026-10-25
 
 ### Fixed
@@ -353,6 +524,7 @@ because anyone who pinned a git SHA during development *will* hit them.
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
 
+[0.1.0a4]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a4
 [0.1.0a3]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a3
 [0.1.0a2]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a2
 [0.1.0a1]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a1

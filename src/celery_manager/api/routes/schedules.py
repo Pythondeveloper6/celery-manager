@@ -3,14 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from celery_manager.api.deps import get_current_user
+from celery_manager.api.serialization import utc
 from celery_manager.control.schedules import (
+    is_paused,
     list_periodic_schedules,
     list_upcoming_with_overrides,
     pause_occurrence,
+    pause_schedule,
+    resume_schedule,
 )
 
 router = APIRouter(prefix="/api/schedules")
@@ -63,12 +67,60 @@ def occurrences(name: str, request: Request, username: str = Depends(get_current
         return list_upcoming_with_overrides(session, celery_app, name, eta_tolerance_seconds=eta_tolerance_seconds)
 
 
+def _schedule_summary(s) -> dict:
+    return {
+        "name": s.name,
+        "task_name": s.task_name,
+        "schedule_spec": s.schedule_spec,
+        "enabled": s.enabled,
+        "paused": is_paused(s),
+        "paused_at": utc(s.paused_at),
+        "paused_by": s.paused_by,
+        "paused_until": utc(s.paused_until),
+    }
+
+
+class PauseScheduleRequest(BaseModel):
+    # Optional auto-resume time. Naive = UTC. Must be in the future (422 otherwise).
+    until: datetime | None = None
+
+
+@router.post("/{name}/pause")
+def pause_whole_schedule(
+    name: str,
+    request: Request,
+    payload: PauseScheduleRequest | None = None,
+    username: str = Depends(get_current_user),
+):
+    """Pause every firing of this schedule until resumed, or until the
+    optional body `{"until": <iso>}`. Idempotent: repeating the pause keeps
+    the original `paused_at`/`paused_by`; a different `until` only moves the
+    end time."""
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        try:
+            row = pause_schedule(session, name, username, until=payload.until if payload else None)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="`until` must be a time in the future.") from exc
+        if row is None:
+            raise HTTPException(status_code=404, detail="Unknown schedule.")
+        return _schedule_summary(row)
+
+
+@router.post("/{name}/resume")
+def resume_whole_schedule(name: str, request: Request, username: str = Depends(get_current_user)):
+    """Resume a paused schedule. The next regular beat firing runs; nothing
+    runs immediately and missed firings are not caught up. Idempotent."""
+    session_factory = request.app.state.cm_session_factory
+    with session_factory() as session:
+        row = resume_schedule(session, name, username)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Unknown schedule.")
+        return _schedule_summary(row)
+
+
 @router.get("")
 def list_schedules(request: Request, username: str = Depends(get_current_user)):
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
-        schedules = list_periodic_schedules(session)
-        return [
-            {"name": s.name, "task_name": s.task_name, "schedule_spec": s.schedule_spec, "enabled": s.enabled}
-            for s in schedules
-        ]
+        return [_schedule_summary(s) for s in list_periodic_schedules(session)]

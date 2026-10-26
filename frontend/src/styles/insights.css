@@ -1,0 +1,388 @@
+/* ==========================================================================
+   Insights and the per-task page — KPI tiles, SVG charts, failure groups.
+   Only --cm-* tokens, so light and dark follow tokens.css. Chart colours are
+   set here (not in the SVG attributes) for the same reason.
+   ========================================================================== */
+
+.cm-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--cm-space-3);
+}
+
+.cm-kpi-row-6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+@media (max-width: 1000px) {
+  .cm-kpi-row,
+  .cm-kpi-row-6 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cm-kpi-row:not(.cm-kpi-row-6) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .cm-kpi-row,
+  .cm-kpi-row-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cm-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  padding: var(--cm-space-4);
+  min-width: 0;
+}
+
+.cm-kpi-label,
+.cm-kpi-sub {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-kpi-value {
+  font-size: var(--cm-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: var(--cm-leading-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-kpi[data-tone="danger"] .cm-kpi-value {
+  color: var(--cm-color-danger);
+}
+
+.cm-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+}
+
+/* ---- charts ------------------------------------------------------------- */
+
+.cm-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.cm-chart-title {
+  font-weight: 600;
+}
+
+.cm-chart-readout,
+.cm-chart-summary {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.cm-chart-readout {
+  min-height: 1.25rem;
+}
+
+.cm-chart-frame {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cm-chart-frame svg {
+  display: block;
+  max-width: 100%;
+  touch-action: pan-y;
+}
+
+.cm-ch-grid {
+  stroke: var(--cm-color-border);
+  stroke-width: 1;
+}
+
+.cm-ch-tick {
+  font-size: 11px;
+  fill: var(--cm-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-ch-hover {
+  fill: var(--cm-color-muted);
+}
+
+.cm-ch-cursor {
+  stroke: var(--cm-color-mark);
+  stroke-dasharray: 3 3;
+}
+
+.cm-ch-bar,
+.cm-ch-swatch-status {
+  fill: var(--cm-color-status-queued);
+  background-color: var(--cm-color-status-queued);
+}
+
+.cm-ch-bar[data-status="started"],
+.cm-ch-swatch[data-status="started"] {
+  fill: var(--cm-color-status-started);
+  background-color: var(--cm-color-status-started);
+}
+.cm-ch-bar[data-status="succeeded"],
+.cm-ch-swatch[data-status="succeeded"] {
+  fill: var(--cm-color-status-succeeded);
+  background-color: var(--cm-color-status-succeeded);
+}
+.cm-ch-bar[data-status="failed"],
+.cm-ch-swatch[data-status="failed"] {
+  fill: var(--cm-color-status-failed);
+  background-color: var(--cm-color-status-failed);
+}
+.cm-ch-bar[data-status="retried"],
+.cm-ch-swatch[data-status="retried"] {
+  fill: var(--cm-color-status-retried);
+  background-color: var(--cm-color-status-retried);
+}
+.cm-ch-bar[data-status="revoked"],
+.cm-ch-swatch[data-status="revoked"] {
+  fill: var(--cm-color-status-revoked);
+  background-color: var(--cm-color-status-revoked);
+}
+.cm-ch-bar[data-status="skipped"],
+.cm-ch-swatch[data-status="skipped"] {
+  fill: var(--cm-color-status-skipped);
+  background-color: var(--cm-color-status-skipped);
+}
+
+.cm-ch-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.cm-ch-line-p95 {
+  stroke: var(--cm-color-status-started);
+}
+
+.cm-ch-line-p50 {
+  stroke: var(--cm-color-text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.cm-ch-dot {
+  fill: var(--cm-color-status-started);
+}
+
+.cm-ch-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-1) var(--cm-space-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-ch-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-ch-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+}
+
+.cm-ch-swatch-p95 {
+  height: 3px;
+  width: 1rem;
+  background-color: var(--cm-color-status-started);
+}
+
+.cm-ch-swatch-p50 {
+  height: 0;
+  width: 1rem;
+  border-top: 2px dashed var(--cm-color-text-muted);
+  border-radius: 0;
+}
+
+.cm-chart-table summary,
+.cm-fail-example summary {
+  cursor: pointer;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+  width: fit-content;
+}
+
+.cm-chart-table .cm-table-scroll {
+  margin-top: var(--cm-space-2);
+  max-height: 18rem;
+  overflow: auto;
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-chart-table th[scope="row"] {
+  text-align: left;
+  font-weight: 400;
+  color: var(--cm-color-text);
+  background: none;
+  height: auto;
+}
+
+/* ---- top tasks ---------------------------------------------------------- */
+
+.cm-top-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cm-space-4);
+}
+
+@media (max-width: 800px) {
+  .cm-top-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.cm-top-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  min-width: 0;
+}
+
+.cm-top-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cm-top-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+  min-width: 0;
+}
+
+.cm-top-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cm-top-metric {
+  flex: none;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- failure groups ----------------------------------------------------- */
+
+.cm-fail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cm-fail-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  padding: var(--cm-space-4);
+  min-width: 0;
+}
+
+.cm-fail-head {
+  display: flex;
+  gap: var(--cm-space-3);
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.cm-fail-count {
+  flex: none;
+  min-width: 2.5rem;
+  padding: 0.125rem var(--cm-space-2);
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--cm-color-danger);
+  background-color: var(--cm-color-danger-bg);
+  border: 1px solid var(--cm-color-danger-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-fail-titles {
+  min-width: 0;
+}
+
+.cm-fail-type {
+  font-size: var(--cm-text-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cm-fail-message {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.cm-fail-meta {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.cm-fail-pre {
+  margin: var(--cm-space-2) 0 0;
+  padding: var(--cm-space-3);
+  max-height: 10rem;
+  overflow: auto;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background-color: var(--cm-color-muted);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-fail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-fail-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-size: var(--cm-text-sm);
+}
+
+.cm-fail-result {
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-success);
+}
+
+.cm-section-head .cm-card-title {
+  text-align: left;
+}

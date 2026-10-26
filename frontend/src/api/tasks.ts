@@ -37,6 +37,10 @@ export interface TaskDetail extends TaskSummary {
   // operator can retry the same failed run more than once.
   retried_from_id: string | null;
   retried_by: string[];
+  // Workflow lineage (chain/group/chord) from Celery; null for a standalone run.
+  parent_id: string | null;
+  root_id: string | null;
+  group_id: string | null;
 }
 
 export interface TaskPage {
@@ -77,12 +81,80 @@ export async function getTask(taskId: string): Promise<TaskDetail> {
   return response.json();
 }
 
-export async function retryTask(taskId: string): Promise<{ new_task_id: string }> {
+// FastAPI reports validation failures as `detail: [{loc, msg}]` and other
+// refusals as `detail: "text"`; either way the operator should see words.
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    const detail = body?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((d: { loc?: unknown[]; msg?: string }) => `${(d.loc ?? []).slice(1).join(".")}: ${d.msg}`)
+        .join("; ");
+    }
+  } catch {
+    // not JSON; fall through
+  }
+  return fallback;
+}
+
+// With no overrides this is a plain retry with the stored arguments. Passing
+// `args` and/or `kwargs` re-dispatches with those instead (and is audited as
+// an edited retry); a field left undefined keeps the stored value.
+export async function retryTask(
+  taskId: string,
+  overrides?: { args?: unknown[]; kwargs?: Record<string, unknown> },
+): Promise<{ new_task_id: string }> {
   const response = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}/retry`, {
     method: "POST",
     credentials: "include",
+    ...(overrides ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) } : {}),
   });
-  if (!response.ok) throw new Error("Retry failed.");
+  if (!response.ok) throw new Error(await errorMessage(response, "Retry failed."));
+  return response.json();
+}
+
+export interface SignatureParam {
+  name: string;
+  kind: "positional" | "keyword_only" | "var_args" | "var_kwargs";
+  required: boolean;
+  has_default?: boolean;
+  default: unknown;
+  annotation: string | null;
+}
+
+export interface RegisteredTask {
+  name: string;
+  // null when the task's signature could not be inspected.
+  signature: SignatureParam[] | null;
+  queue: string | null;
+  doc: string | null;
+}
+
+export async function listRegisteredTasks(): Promise<RegisteredTask[]> {
+  const response = await fetch(`${BASE}/tasks/registered`, { credentials: "include" });
+  if (!response.ok) throw new Error("Couldn't load the registered tasks.");
+  return (await response.json()).items;
+}
+
+export interface StartTaskRequest {
+  task_name: string;
+  args: unknown[];
+  kwargs: Record<string, unknown>;
+  queue?: string;
+  countdown?: number;
+  eta?: string;
+}
+
+export async function startTask(request: StartTaskRequest): Promise<{ task_id: string }> {
+  const response = await fetch(`${BASE}/tasks/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response, "Couldn't start the task."));
   return response.json();
 }
 
@@ -108,26 +180,111 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
   return response.json();
 }
 
+// Bulk cancel takes either explicit ids or the list's own filter fields, never
+// both. `dry_run` returns the counts without revoking — used to show "Cancel
+// 37 matching" before the operator confirms. Over the server's cap (1,000)
+// the whole request is refused and `detail` says why.
+export interface BulkCancelFilter {
+  status?: string;
+  task_name?: string;
+  q?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface BulkCancelResult {
+  revoked: number;
+  matched: number;
+  skipped_finished: number;
+  unknown: number;
+  limit: number;
+  dry_run: boolean;
+}
+
+export async function bulkCancelTasks(
+  selector: { task_ids: string[] } | { filter: BulkCancelFilter },
+  options: { terminate?: boolean; dry_run?: boolean } = {}
+): Promise<BulkCancelResult> {
+  const response = await fetch(`${BASE}/tasks/cancel-bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ ...selector, terminate: options.terminate ?? false, dry_run: options.dry_run ?? false }),
+  });
+  if (!response.ok) {
+    let message = "Bulk cancel failed.";
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === "string") message = body.detail;
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+/** One changed `task_runs` row, as the API's change feed saw it. The feed
+ *  hears every writer — the events listener and workers included, which run
+ *  in other processes — because it polls the database, not an in-memory bus. */
 export interface TaskEvent {
   task_id: string;
   type: string;
+  status?: string;
+  updated_at?: string;
 }
 
-export function subscribeToUpdates(onEvent: (event: TaskEvent) => void): () => void {
-  const source = new EventSource(`${BASE}/stream`, { withCredentials: true });
-  source.onmessage = (message) => {
-    // A frame that isn't JSON — a proxy injecting a keep-alive comment as
-    // data, a truncated write — used to throw straight out of the event
-    // handler as an uncaught error. One bad frame is not a reason to make
-    // noise in the console of a dashboard left open all day; the next good
-    // frame, or the poll running alongside this, refreshes the list anyway.
-    let event: TaskEvent;
-    try {
-      event = JSON.parse(message.data);
-    } catch {
-      return;
-    }
-    onEvent(event);
+/** "connecting" until the first open, "connected" while the stream is up,
+ *  "reconnecting" from the moment it drops until it is back. Callers use it
+ *  to decide whether to poll instead, and to show an honest "Live" badge. */
+export type StreamState = "connecting" | "connected" | "reconnecting";
+
+// How long to wait before rebuilding a stream the browser gave up on.
+const RECONNECT_DELAY_MS = 5000;
+
+export function subscribeToUpdates(
+  onEvent: (event: TaskEvent) => void,
+  onState?: (state: StreamState) => void
+): () => void {
+  let source: EventSource | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+
+  const connect = () => {
+    source = new EventSource(`${BASE}/stream`, { withCredentials: true });
+    source.onopen = () => onState?.("connected");
+    source.onerror = () => {
+      onState?.("reconnecting");
+      // EventSource retries a dropped connection by itself, but gives up for
+      // good (readyState CLOSED) on a non-200 answer — a restart's 502, an
+      // expired session's 401. Rebuild it ourselves after a pause, so a
+      // dashboard left open recovers instead of polling forever.
+      if (source?.readyState === EventSource.CLOSED && !closed) {
+        source.close();
+        retryTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+      }
+    };
+    source.onmessage = (message) => {
+      // A frame that isn't JSON — a proxy injecting a keep-alive comment as
+      // data, a truncated write — used to throw straight out of the event
+      // handler as an uncaught error. One bad frame is not a reason to make
+      // noise in the console of a dashboard left open all day; the next good
+      // frame refreshes the list anyway.
+      let event: TaskEvent;
+      try {
+        event = JSON.parse(message.data);
+      } catch {
+        return;
+      }
+      onEvent(event);
+    };
   };
-  return () => source.close();
+
+  onState?.("connecting");
+  connect();
+  return () => {
+    closed = true;
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    source?.close();
+  };
 }

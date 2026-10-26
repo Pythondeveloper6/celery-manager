@@ -109,6 +109,9 @@ nav:
       - The decorator: decorator.md
       - Live progress: progress.md
       - Dashboard: dashboard.md
+      - Insights: insights.md
+      - Workers and rate limits: workers.md
+      - Queues, purge and bulk cancel: queues.md
   - Reference:
       - REST API: rest-api.md
       - Configuration: configuration.md

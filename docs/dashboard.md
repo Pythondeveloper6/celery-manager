@@ -47,7 +47,7 @@ default (see [Configuration](configuration.md#secret_key-in-production)).
 
 A thin persistent nav bar sits above every authenticated screen: the
 brand mark and wordmark on the left, then **Tasks** / **Schedules** /
-**Audit Log** / **Settings** (`NavLink`, so the active screen is
+**Audit Log** / **Workers** / **Settings** (`NavLink`, so the active screen is
 highlighted), and a three-way **Auto / Light / Dark** theme control on the
 right, and a **Sign out** button. Sign out calls `POST /api/auth/logout`,
 which clears the `cm_session` cookie, and returns you to the login screen; while
@@ -130,14 +130,43 @@ sitting invisibly behind the table.
   refresh, so a bulk retry can never act on a row you can no longer see.
 - Each row links to that task's detail page.
 
+### Filters live in the URL
+
+The status tab, search, group-by, date range and history-mode page are all
+part of the address (`#/?status=failed&q=smtp&from=2026-08-01&group=name`;
+history pages add `offset=50`). Reload, back/forward and a link pasted into a
+fresh tab all restore the same view. Choosing a tab, date, grouping or page
+adds a history entry, so Back undoes it; typing in the search box replaces the
+current entry instead, so Back is not a per-keystroke undo. Defaults are left
+out of the URL, and unknown values in a hand-edited link are ignored.
+
+**Copy link** copies the current address (it falls back to a hidden-textarea
+copy where the clipboard API is unavailable) and confirms with "Link copied".
+
+### Saved views
+
+**Views** in the toolbar saves the current status, search, date range and
+grouping under a name; picking one applies it as a single history entry.
+Views can be renamed and deleted (deleting asks for confirmation). They are
+stored in this browser's `localStorage` only, so they do not follow you to
+another browser or profile and are not shared. If the browser refuses to store
+them, the menu says so.
+
+### Export
+
+**Export** downloads every run matching the current filters (not just the
+loaded page) as CSV or JSON, using `GET /api/tasks/export`. If the result hit
+the server's row cap, the page tells you it exported the newest N of M runs.
+
 ### Live mode and history mode
 
 The list has two modes, and it always says which one it is in.
 
-**Live** is the default: it polls every 5 seconds, and **Load more**
-widens the page up to the API's 500-row ceiling. Every refresh re-requests
-the whole span you have open rather than just the newest page, so a
-background poll can never collapse your loaded rows back to page one.
+**Live** is the default: it updates as runs change (see
+[Live updates](#live-updates) below), and **Load more** widens the page up
+to the API's 500-row ceiling. Every refresh re-requests the whole span you
+have open rather than just the newest page, so a background refresh can
+never collapse your loaded rows back to page one.
 
 **History** is for reading further back. You get into it from **Browse all
 N runs by page** under the table, or from **Browse older runs** when a live
@@ -155,14 +184,18 @@ ignored in this mode too. The header indicator changes from a pulsing
 
 The screen opens an SSE connection (`GET /api/stream`) on mount and
 refetches when a task event arrives (in live mode only — see above), rather
-than patching individual rows from the event payload. **Alongside** that, it
-polls every 5 seconds.
-The poll is not redundant: the SSE event bus lives in the API process's
-memory, but the documented deployment runs the events listener as a
-separate OS process which cannot publish into it — so in a standard
-deployment the SSE connection opens and then delivers nothing, and the
-poll is what actually keeps the list current. See
-[REST API: live updates](rest-api.md#live-updates-sse).
+than patching individual rows from the event payload. A burst of events
+becomes at most one refetch a second. Events come from the database, so
+writes by the separate events listener and by workers reach the list
+within about a second. See
+[REST API: how changes reach the stream](rest-api.md#how-changes-reach-the-stream).
+
+The header indicator tells you whether that connection is up. **Live**
+(pulsing) means it is. **Connecting** or **Reconnecting** (still) means it
+isn't, and while it isn't, the list falls back to polling every 5 seconds;
+it also polls while the last refresh failed. When the stream comes back the
+list refetches once to catch up and the poll stops. A run's detail page
+works the same way for that one run, with a 2-second fallback poll.
 
 A refetch never replaces the rows with a spinner: only the first load shows
 a full "Loading tasks…" state. A refetch you *caused* — changing a filter,
@@ -172,6 +205,28 @@ flickered every five seconds on its own would be worse than a table that
 quietly updates. A failed *background* refresh shows a banner above the
 still-visible rows; a failure with no rows behind it shows an error state
 with **Try again**.
+
+### Start task
+
+![The Start task sheet with a picked task and prefilled arguments](assets/screenshots/start-task-light.png){ .cm-shot .cm-only-light }
+![The Start task sheet with a picked task and prefilled arguments](assets/screenshots/start-task-dark.png){ .cm-shot .cm-only-dark }
+
+The **Start task** button in the page header opens a side sheet (Escape or
+**Cancel** closes it and returns focus to the button):
+
+- A searchable picker of the tasks registered on the Celery app
+  (`GET /api/tasks/registered`), each with its docstring's first line. If the
+  web process hasn't imported your task modules the list may be empty or
+  short; type any task name and choose **Use "name"** to dispatch it anyway.
+- **Args** (JSON array) and **Kwargs** (JSON object) editors, with the task's
+  signature shown and kwargs prefilled from its defaults. Invalid JSON, or the
+  wrong shape (an object in Args, an array in Kwargs), shows an error under
+  the field and disables the button.
+- An optional **Queue**, and **Run** now, after a delay (countdown seconds) or
+  at a specific time (ETA, your local time).
+
+Submitting calls `POST /api/tasks/start` (audited) and opens the new run's
+page. You can also start tasks over the [REST API](rest-api.md).
 
 ## Task detail
 
@@ -185,6 +240,13 @@ with **Try again**.
   shows a link to the newly created run (`new_task_id`) rather than
   navigating away, so the user can compare old and new runs side by side
   if they want.
+- **Retry with changes**, next to Retry on a failed run: opens the same
+  editor as Start task, fixed to this run's task and prefilled with its args
+  and kwargs. Submitting sends them in the body of `POST
+  /api/tasks/{task_id}/retry`, records the usual retry lineage, notes the
+  edit in the audit log (with the new arguments), and opens the new run. If a
+  stored value can't be parsed as JSON (older listener-recorded runs keep a
+  Python repr) the editor shows it as-is so you can rewrite it.
 - Args and kwargs, pretty-printed as JSON (the API returns them as raw
   JSON strings; the page re-parses and re-serializes with indentation for
   display, falling back to the raw string if parsing fails).
@@ -220,19 +282,41 @@ already retried it, then the log, then args/kwargs as the recipe to
 reproduce it.
 
 While the run is still *active* — `queued`, `started` or `retried`, not
-just running — the page refreshes itself every 2 seconds, and stops the
-moment the run reaches a terminal status, so a finished run's page isn't
-left polling forever. If one of those refreshes fails the page keeps the
+just running — the page listens on the live stream and refreshes itself
+whenever the run changes (progress included). It stops the moment the run
+reaches a terminal status, so a finished run's page isn't left listening
+forever. While the stream is down it polls every 2 seconds instead. If one of those refreshes fails the page keeps the
 data it has and says so ("Live updates paused… Still retrying every 2s.")
 rather than blanking.
 
 ![Task detail for a failed run: traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-light.png){ .cm-shot .cm-only-light }
 ![Task detail for a failed run: traceback, captured logs and a Retry button](assets/screenshots/task-detail-failed-dark.png){ .cm-shot .cm-only-dark }
 
+### Workflow card
+
+![A chord's workflow tree, with the failed group member highlighted](assets/screenshots/workflow-light.png){ .cm-shot .cm-only-light }
+![A chord's workflow tree, with the failed group member highlighted](assets/screenshots/workflow-dark.png){ .cm-shot .cm-only-dark }
+
+When a run belongs to a chain, group or chord, the detail page shows a
+**Workflow** card between the run summary and the log. It lays out every run
+that shares the same root as an indented tree, exactly as Celery's
+`parent_id` links them: each row has a status, the task name (a link to its
+own page), and its runtime, and the run you are on is highlighted. Members of
+a group are gathered under a **Group** row, and a chord's callback appears
+under the parent that Celery recorded for it. A summary line counts tasks by
+status ("7 tasks: 5 succeeded, 1 failed, 1 started").
+
+Rows with children have a disclosure button (keyboard operable), and the card
+has **Expand all** / **Collapse all**. Trees of more than 30 tasks start
+collapsed except for the path to the current run. Very large workflows show
+the first 500 runs and say so. Runs that stand alone show no card. The
+lineage is captured from Celery events (`task-sent`/`task-received`) and by
+`@track`, so it appears for runs seen by either.
+
 ## Schedules list
 
-![The schedules view, with one upcoming occurrence skipped](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
-![The schedules view, with one upcoming occurrence skipped](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
+![The schedules list, with one schedule paused until a set time](assets/screenshots/schedules-light.png){ .cm-shot .cm-only-light }
+![The schedules list, with one schedule paused until a set time](assets/screenshots/schedules-dark.png){ .cm-shot .cm-only-dark }
 
 `/schedules`, and where the **Schedules** nav link lands. A card per
 configured periodic schedule, backed by `GET /api/schedules`: the schedule's
@@ -248,6 +332,9 @@ is running will not appear until it restarts. Empty state: "No periodic
 schedules configured yet."
 
 ## Schedule occurrences (future-schedule view)
+
+![Upcoming runs of a schedule, with one marked Will be skipped](assets/screenshots/schedule-occurrences-light.png){ .cm-shot .cm-only-light }
+![Upcoming runs of a schedule, with one marked Will be skipped](assets/screenshots/schedule-occurrences-dark.png){ .cm-shot .cm-only-dark }
 
 `/schedules/:name`. Lists the schedule's next 10 computed occurrences
 (`GET /api/schedules/{name}/occurrences`) and lets a user pause one:
@@ -277,6 +364,25 @@ schedules configured yet."
   doesn't block or hide the others; a page-level success notice
   auto-dismisses after 6 seconds.
 
+### Pausing a whole schedule
+
+The **Schedules** list has a **Pause schedule** button on every row, and the
+occurrences page has one in its header. It opens a small menu: **Pause
+indefinitely**, **For 1 hour**, **Until tomorrow 9:00** (your local time), or
+**Until…** with a date and time picker that must be in the future (Escape or a
+click outside closes it). **Resume schedule** acts immediately. The list shows
+a **Paused indefinitely** or **Paused until \<local time\>** badge with who
+paused it and when, and the occurrences page shows a banner with a Resume
+button and marks each upcoming run **Will be skipped**, but only the runs
+before the end time of a timed pause; later ones run normally. When the time
+passes the schedule resumes by itself, and the audit log records an automatic
+resume. Per-occurrence skips and cancels keep their own badges and still work.
+
+While paused, every firing is recorded as `skipped`. Limits: resuming does
+not run anything immediately and does not catch up on missed firings, since
+the next regular beat firing simply runs; and only `@track`-decorated tasks
+are enforced. See [REST API: pausing a whole schedule](rest-api.md#pausing-a-whole-schedule).
+
 ### Interval schedules
 
 **Interval schedules (`schedule(run_every=…)` / bare seconds / `timedelta`).** Celery beat fires these at "previous fire + interval", and beat's own record of the previous fire isn't visible to the dashboard. celery-manager therefore anchors upcoming occurrences to the schedule's most recent observed run: the newest `task_runs` row with that `schedule_name`, including skipped runs and excluding dashboard retries. It then projects forward by the interval. Once the schedule has run at least once while celery-manager was recording, the times shown are stable and match beat's real fire times to within queue latency, and a skip or cancel matches the real run.
@@ -287,6 +393,17 @@ Limitations:
 - Beat restarts: beat may fire an overdue entry immediately when it comes back up after downtime, which is off the projected grid until the next observed run re-anchors it.
 - `relative=True` interval schedules aren't modelled.
 - The `@track(schedule_name=…)` value must equal the `beat_schedule` key. This was already required for skips to work.
+
+## Workers
+
+![Worker cards with live counts and controls, above the rate limits table](assets/screenshots/workers-light.png){ .cm-shot .cm-only-light }
+![Worker cards with live counts and controls, above the rate limits table](assets/screenshots/workers-dark.png){ .cm-shot .cm-only-dark }
+
+Every worker that answers the broker, refreshed every 10 seconds while the
+tab is visible, with controls to shut a worker down, resize its pool and
+change its queues, plus a table for changing task rate limits at runtime.
+Runtime rate limits are not saved: they reset when a worker restarts. See
+[Workers and rate limits](workers.md).
 
 ## Audit log
 

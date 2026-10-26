@@ -52,10 +52,14 @@ framed by another site.
 |---|---|---|---|---|
 | `GET` | `/api/tasks` | required | Query params: `status`, `task_name`, `q`, `date_from`, `date_to`, `limit` (default `50`), `offset` (default `0`) — all optional. See [Filtering, search and pagination](#filtering-search-and-pagination) below for exact semantics. | `200 {"items": [...], "total": int, "limit": int, "offset": int}` — **an envelope, not a bare array** (see the change note below). Each item is `{"task_id", "task_name", "status", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at"}`, newest first (ordered by internal row id descending). `total` is the number of runs matching the *same filters*, ignoring `limit`/`offset`. `limit`/`offset` are echoed back *after* clamping, so a client can see what it actually got. |
 | `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "eta", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at", "retried_from_id", "retried_by"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener and the timings from the decorator, so any of them may be `null` for a run that hasn't started or wasn't seen by both. **`eta` is currently always `null`** — see the note below. `retried_from_id` is the id of the run this one was dispatched as a retry of, or `null`; `retried_by` is a **list** of the ids dispatched as retries *of this run* (an operator can retry the same failed run more than once), `[]` if there are none. The four `progress_*` fields are `null` unless the task calls [`report_progress()`](progress.md). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
-| `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}}` | `200 {"task_id": str}`. Dispatches immediately via `celery_app.send_task(...)` and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}`) — no validation that `task_name` is a registered task; a bad name fails at the broker/worker level, not here. |
+| `GET` | `/api/tasks/registered` | required | — | `200 {"items": [{"name", "signature", "queue", "doc"}]}`. Task names registered on the Celery app in the **API process**, minus Celery's own `celery.*` tasks (the app's `include`/`imports` modules are imported first, best effort). `signature` is a list of `{"name", "kind", "required", "has_default", "default", "annotation"}` per parameter (`kind` is `positional`, `keyword_only`, `var_args` or `var_kwargs`; defaults that aren't JSON-able come back as their `repr`), or `null` when it can't be inspected. `queue` is the task's own or routed queue, `null` if none; `doc` is the docstring's first line. If the web process never imports your task modules the list is short or empty — `start` still accepts any name. Powers the dashboard's task picker. |
+| `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}, "queue": str?, "countdown": number?, "eta": ISO datetime?}` | `200 {"task_id": str}`. Dispatches via `celery_app.send_task(...)` (`queue`, `countdown` >= 0 and `eta` are passed through only when set; a naive `eta` is read as UTC), seeds a `queued` run row so the run's detail page opens immediately, and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}` plus `queue`/`countdown`/`eta` when given). `422` for a wrongly-typed field. No check that `task_name` is registered; a bad name fails at the broker/worker level, not here. |
 | `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Does not check that `task_id` exists in celery-manager's own storage. |
-| `POST` | `/api/tasks/{task_id}/retry` | required | — | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`). `404 {"detail": "not found"}` if no run exists for `task_id`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
+| `POST` | `/api/tasks/{task_id}/retry` | required | optional `{"args": [...]?, "kwargs": {...}?}` | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them (or, if the body supplies `args` and/or `kwargs`, those instead; a field left out keeps the stored value, and no body behaves exactly as before; `422` if `args` is not a list or `kwargs` not an object) as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`; for an edited retry also `"args_edited": true` and the `args`/`kwargs` actually sent). The new run records `retried_from_id` either way). `404 {"detail": "not found"}` if no run exists for `task_id`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
 | `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. **Not partial-failure aware**: it stops at the first unknown id and returns `404 {"detail": "no task run found for <id>"}` for the whole batch — ids earlier in the list have already been dispatched and audited by then, and the response does not tell you which. Check the ids before sending them, or retry one at a time if that matters. |
+| `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | Changes a task's rate limit on running workers (not persisted). Documented with the other worker controls under [Workers](#workers). |
+
+| `POST` | `/api/tasks/cancel-bulk` | required | `{"task_ids": [str, ...]}` **or** `{"filter": {"status", "task_name", "q", "date_from", "date_to"}}` (exactly one; the filter fields mean what they mean on `GET /api/tasks`), plus `"terminate": bool = false`, `"dry_run": bool = false` | `200 {"revoked": int, "matched": int, "skipped_finished": int, "unknown": int, "limit": 1000, "dry_run": bool}`. Revokes only runs in `queued`/`started`/`retried`; finished runs are counted in `skipped_finished`, ids with no stored run in `unknown` (and not revoked). `dry_run` counts without revoking or auditing. `400` if both or neither selector is sent, or if more than 1,000 runs would be cancelled (nothing is revoked then). One `cancel_bulk` audit row per call. See [Bulk cancel](queues.md#bulk-cancel). |
 
 !!! warning "Changed: `GET /api/tasks` no longer returns a bare array"
     This endpoint used to return a JSON **array** of runs, hard-capped at 50
@@ -132,6 +136,31 @@ are inclusive (`>=` / `<=`). Two consequences:
     any offset you send is honoured. A **naive** datetime is still taken to
     mean UTC — that is this codebase's standing convention, and there is no
     per-request timezone to interpret it against.
+
+### Exporting runs
+
+`GET /api/tasks/export?format=csv|json` downloads every run matching the same
+filters as `GET /api/tasks` (`status`, `task_name`, `q`, `date_from`,
+`date_to`; `limit`/`offset` do not apply). `format` defaults to `csv`; any
+other value is a `422`. Requires a session.
+
+- **Columns / keys:** `task_id`, `task_name`, `status`, `queue`, `worker`,
+  `args`, `kwargs`, `started_at`, `finished_at`, `runtime_seconds`,
+  `retry_count`, `exception`, `schedule_name`. Timestamps are ISO 8601 UTC. In
+  CSV, `args`/`kwargs` are the stored JSON text; in JSON they are decoded.
+- **Streaming:** rows are read from the database in batches and written as
+  they go, newest first, so memory stays flat for large exports. JSON is a
+  single array.
+- **Row cap:** at most `CeleryManagerConfig.export_max_rows` rows (default
+  `50000`). When more match, the newest rows are returned and the response
+  carries `X-Export-Truncated: true`. `X-Export-Rows` and `X-Export-Total`
+  give rows returned and rows matched.
+- **CSV safety:** a cell starting with `=`, `+`, `-`, `@`, tab or CR gets a
+  leading `'` so a spreadsheet will not evaluate it as a formula.
+- **Filename:** `Content-Disposition: attachment; filename="task-runs-YYYYMMDD-HHMMSS.csv"`
+  (UTC).
+- **Audit:** writes an `export_tasks` row whose details hold the format, the
+  filters applied, rows exported, rows matched and whether it was truncated.
 
 ### Datetimes in task responses
 
@@ -216,8 +245,9 @@ guessed arguments — re-running somebody's task with silently dropped or
 reinterpreted arguments is far worse than an error. This is a real case, not
 a theoretical one: Celery truncates long values in its event reprs, so a task
 recorded only by the listener and called with large arguments can be
-genuinely undecodable. The fix is to pass `args`/`kwargs` explicitly to
-`control.retry_task()`; the HTTP endpoint has no way to supply them today.
+genuinely undecodable. The fix is to pass `args`/`kwargs` explicitly, either to
+`control.retry_task()` or in the JSON body of `POST .../retry` (the dashboard's
+**Retry with changes** does exactly that).
 
 Note also that the decorator's own writes are lossy for values stdlib JSON
 cannot express (a `datetime` kwarg, which Celery's own serializer handles
@@ -225,13 +255,83 @@ fine): those leaves are stored as their `repr` inside otherwise-valid JSON,
 so they stay searchable by `q=` but do not round-trip back to the original
 object on retry.
 
+### Workflow tree
+
+`GET /api/tasks/{task_id}/workflow` returns the chain/group/chord tree the run
+belongs to (a standalone run is a tree of one). The tree is every run sharing
+the run's `root_id` (or the run itself when it has none).
+
+```json
+{
+  "root_id": "a1",
+  "current": "c3",
+  "nodes": [
+    {"task_id": "a1", "task_name": "etl.extract", "status": "succeeded",
+     "started_at": "2026-10-26T08:40:25+00:00", "finished_at": "2026-10-26T08:40:29+00:00",
+     "runtime_seconds": 4.2, "parent_id": null, "group_id": null}
+  ],
+  "edges": [{"from": "a1", "to": "b2"}],
+  "truncated": false
+}
+```
+
+`edges` follow `parent_id` among the returned nodes. At most 500 nodes are
+returned (oldest first, always including the requested run); `truncated` is
+`true` when there were more. Unknown ids return 404; the endpoint requires a
+session like the rest of the API. `GET /api/tasks/{task_id}` also returns
+`parent_id`, `root_id` and `group_id`.
+
 ## Schedules
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool}`, ordered by `name`. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. |
-| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
+| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool, "paused": bool, "paused_at": datetime\|null, "paused_by": str\|null}`, ordered by `name`. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. It is *not* the pause state: `paused` is, with `paused_at`/`paused_by` saying when the current pause began and who started it (both `null` when not paused; `paused_at` carries an explicit `+00:00` offset). |
+| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool, "paused": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. `paused` is `true` on every entry while the whole schedule is paused (see below): that occurrence will be recorded as skipped whatever `action` says. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
 | `POST` | `/api/schedules/{name}/occurrences/pause` | required | `{"target_time": datetime, "action": "skip"\|"cancel"}` (any other `action` value is a `422`) | `200 {"id": int, "action": str, "target_time": datetime}`. Records (or updates) an override for the occurrence closest to `target_time`. |
+| `POST` | `/api/schedules/{name}/pause` | required | — | `200` — the schedule's summary, same shape as a `GET /api/schedules` item, now with `paused: true`. Pauses every firing of the schedule until resumed. Idempotent: pausing an already-paused schedule returns `200` with the *original* `paused_at`/`paused_by` and writes no audit row. `404` if `name` isn't a known schedule. |
+| `POST` | `/api/schedules/{name}/resume` | required | — | `200` — the schedule's summary with `paused: false`, `paused_at`/`paused_by` `null`. Idempotent: resuming a schedule that isn't paused is a `200` no-op with no audit row. `404` if `name` isn't a known schedule. |
+
+### Pausing a whole schedule
+
+`POST /api/schedules/{name}/pause` stops a schedule's task body from running
+until `POST /api/schedules/{name}/resume`. Like an occurrence skip, it is
+enforced by the [`@track` decorator](decorator.md#how-the-skipcancel-check-works)
+at run time, not by beat — celery-manager does not own your beat process:
+
+- **Beat keeps firing.** Each firing that reaches a `@track`ed task while the
+  schedule is paused is recorded as a `skipped` run and the body does not
+  run. Tasks without `@track` are **not** affected by a pause.
+- **Resume waits for the next regular beat firing.** It does not run the
+  task immediately, does not reset beat's interval clock, and does not
+  catch up firings missed while paused — those were recorded as `skipped`.
+- **Occurrence skips still apply.** A per-occurrence skip/cancel that falls
+  due while the schedule is paused is consumed by that firing (the firing
+  happened and was skipped either way); skips for occurrences after the
+  resume stay in place.
+- **Restarts don't undo it.** The pause lives in `periodic_schedules.paused_at`
+  / `paused_by` / `paused_until`, which the startup sync from `beat_schedule`
+  leaves alone.
+- **Pause until a time.** `pause` accepts an optional JSON body
+  `{"until": "<ISO 8601>"}` (a naive timestamp is UTC; no body pauses
+  indefinitely, as before). `until` must be in the future, otherwise `422`.
+  A schedule is paused while `paused_at` is set **and** `paused_until` is
+  null or still ahead; once it passes, firings run normally with no
+  background job. The next reader (a run reaching the decorator, or
+  `GET /api/schedules` / `.../occurrences`) clears the stale pause and writes
+  one `resume_schedule` audit row from user `system` with
+  `details.automatic: true` (exactly once, even with concurrent readers).
+  Pausing an already-paused schedule with a different `until` (or none, to
+  make it indefinite) moves only the end time and is audited as
+  `pause_schedule` with `details.updated: true` and `previous_until`; the
+  same `until` is a no-op.
+- **Payloads.** `GET /api/schedules` and the pause/resume responses include
+  `paused_until` (UTC, or `null`); `paused` is the effective state, so a
+  timed pause that has ended reports `false`. In `GET .../occurrences`, each
+  occurrence's `paused` is per occurrence: `true` only if the schedule is
+  paused and the occurrence falls before `paused_until` (or the pause is
+  indefinite).
+- Same protections as every other state-changing endpoint: a session is
+  required and a cross-origin `Origin` is refused with a `403`.
 
 ### Occurrence-matching nuances worth knowing
 
@@ -359,6 +459,61 @@ legitimate name like `Ops & Data`.
     [audit log](#audit-log), which is how you find out who turned the nav
     pink.
 
+## Analytics
+
+Computed on read from `task_runs`; all require a session. `range` is one of
+`1h`, `24h`, `7d`, `30d` (anything else is `422`). Timestamps are UTC ISO strings.
+See [Insights](insights.md) for definitions.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| `GET` | `/api/analytics/overview` | required | Query `range` (default `24h`), optional `task_name`. Returns `bucket_seconds`, `truncated`, `totals` (`runs`, `by_status`, `succeeded`, `failed`, `success_rate`, `runtime_p50`, `runtime_p95`, `throughput_per_hour`), `buckets[]` (`start`, `counts`, `total`, `success_rate`, `runtime_p50`, `runtime_p95`), `top_by_volume[]` and `top_by_failure_rate[]` (`task_name`, `runs`, `failed`, `failure_rate`; both empty when `task_name` is given). |
+| `GET` | `/api/analytics/failures` | required | Query `range`, optional `task_name`. Returns `groups[]` sorted by `count`: `signature`, `exception_type`, `message` (masked), `frame`, `example`, `count`, `task_names`, `first_seen`, `last_seen`, `example_task_ids`, `task_ids` (at most 100, newest first; feed to `retry-bulk`) and `task_ids_truncated`. |
+| `GET` | `/api/analytics/tasks/{task_name}` | required | Query `range` (default `30d`). Returns `totals`, `runtime` (`p50`, `p95`, `max`), `last_success_at`, `last_failure_at`, `recent_runs` (10, list shape) and `top_errors` (5 failure groups). `404` if the task has no runs. |
+
+## Workers
+
+Live worker state and remote control over Celery's broadcast API. Nothing
+here is stored by celery-manager, and every change lasts only until the
+worker restarts. See [Workers and rate limits](workers.md) for the dashboard
+page and the caveats.
+
+Every broadcast waits at most
+[`inspect_timeout_seconds`](configuration.md) (default `1.0`) for replies. If
+the broadcast itself fails (broker unreachable, wrong URL), these endpoints
+answer **`503 {"detail": "Couldn't reach the Celery broker (...). Check ..."}`**
+instead of a 500, and no audit row is written.
+
+Control endpoints return `{"acknowledged": [hostname, ...], "errors": {hostname: message}}`.
+A worker that is in neither list didn't reply in time; the command may still
+have reached it.
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| `GET` | `/api/workers` | required | — | `200 {"workers": [...], "timeout_seconds": float, "inspected_at": ISO 8601}`. One item per worker that answered `ping`: `{"name", "online", "pid", "uptime_seconds", "pool", "concurrency", "pool_processes", "processed_total", "processed_by_task", "active_count", "reserved_count", "scheduled_count", "active", "reserved", "scheduled", "queues"}`. `pool` is the short pool name (`"prefork"`, `"threads"`, ...). `active`/`reserved`/`scheduled` are lists of `{"id", "name", "time_start"}` (scheduled entries also carry `"eta"`). Fields a worker didn't report in time are `null` or empty. An empty `workers` list means nobody replied within the timeout. `503` on broker errors. |
+| `GET` | `/api/workers/rate-limits` | required | — | `200` — `[{"task_name": str, "rate_limit": str \| null}, ...]`, sorted by name: every task registered on the dashboard's `celery_app` except Celery's own `celery.*` tasks, with the rate limit declared in code (`null` = unlimited). This is the default, not what a worker is enforcing after a runtime change. |
+| `POST` | `/api/workers/{worker}/shutdown` | required | — | `200 {"ok": true}`. `control.shutdown(destination=[worker])`, a warm shutdown. Celery sends no reply, so there is nothing to acknowledge. Audit: `action="worker_shutdown"`, `target_type="worker"`, `target_id=worker`. |
+| `POST` | `/api/workers/{worker}/pool/grow` | required | Optional `{"n": int}` (`1..64`, default `1`) | `200` control result. `control.pool_grow(n, destination=[worker])`. Audit: `worker_pool_grow`, `details={"n", "acknowledged", "errors"}`. |
+| `POST` | `/api/workers/{worker}/pool/shrink` | required | Optional `{"n": int}` (`1..64`, default `1`) | `200` control result. `control.pool_shrink(n, ...)`. Pools that can't be resized reply with an error in `errors`. Audit: `worker_pool_shrink`. |
+| `POST` | `/api/workers/{worker}/queues/add` | required | `{"queue": str}` (1–255 chars) | `200` control result. `control.add_consumer(queue, destination=[worker])`. Audit: `worker_add_consumer`, `details={"queue", ...}`. |
+| `POST` | `/api/workers/{worker}/queues/cancel` | required | `{"queue": str}` | `200` control result. `control.cancel_consumer(queue, destination=[worker])`. Audit: `worker_cancel_consumer`. |
+| `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | `200` control result. `control.rate_limit(task_name, rate_limit)` to every worker, or only to `destination`. `rate_limit` is `"10/s"`, `"10/m"`, `"100/h"` or a bare number (per second); `""` removes the limit. Anything else answers `422 {"detail": "'10/day' is not a rate limit. ..."}` without broadcasting. **Not persisted**: workers go back to the declared limit when they restart. Audit: `action="rate_limit"`, `target_type="task"`, `target_id=task_name`, `details={"rate_limit", "destination", "acknowledged", "errors"}`. |
+
+The same operations are available from Python in
+`celery_manager.control.workers` (`inspect_workers`, `shutdown_worker`,
+`resize_pool`, `set_consumer`, `set_rate_limit`, `list_task_rate_limits`);
+broker failures raise `WorkerControlError`.
+
+## Queues
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| `GET` | `/api/queues` | required | Query param `workers` (bool, default `true`): set `false` to skip the worker `active_queues` inspect (1s timeout, cached 30s). | `200 {"broker": {"transport": str\|null, "error": str\|null, "unsupported": bool, "workers_replied": bool\|null}, "queues": [...], "recorded_queued_unassigned": int}`. Each queue is `{"name", "sources", "depth", "consumers", "exists", "reason", "recorded_queued"}`, default queue first, then by name. `depth` is the broker's message count (`null` if the broker couldn't be asked; `reason` says why), `consumers` is `null` on Redis and other kombu virtual transports, which can't report it. `recorded_queued` counts `task_runs` still `queued` in that queue. **Always `200`**: an unreachable, slow (3s deadline) or `memory://` broker is reported in `broker.error`, not as an HTTP error. |
+| `POST` | `/api/queues/{name}/purge` | required | — | `200 {"queue": str, "messages_removed": int, "runs_marked_revoked": int}`. Purges ready messages from that one queue, then — only if at least one message was removed — marks this queue's `queued` runs without an ETA as `revoked`. Writes a `purge` audit row. `404` if the broker reports no such queue (RabbitMQ), `503` if the broker is unreachable, timed out, or `memory://`; nothing is marked or audited on failure. |
+
+Why the two counts differ, what exactly gets marked on purge, and the
+timeouts are in [Queues, purge and bulk cancel](queues.md).
+
 ## Audit log
 
 | Method | Path | Auth | Request | Response |
@@ -386,6 +541,10 @@ of another action. Every control action is covered:
 | `cancel` | `task` | the task id being revoked | `POST /api/tasks/{task_id}/cancel` |
 | `retry` | `task` | the *original* task id | `POST /api/tasks/{task_id}/retry` and `/api/tasks/retry-bulk` (one row per task) |
 | `pause_occurrence` | `schedule` | the schedule name | `POST /api/schedules/{name}/occurrences/pause` |
+| `pause_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/pause` — only when it actually pauses (not on an idempotent repeat); `details` is `null` |
+| `resume_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/resume` — only when it actually resumes; `details={"paused_at", "paused_by"}` of the pause it ended |
+| `cancel_bulk` | `task` | `selection` (by ids) or `filter` | `POST /api/tasks/cancel-bulk` (not on `dry_run`, nor when nothing matched) — `details={"terminate", "revoked", "skipped_finished", "unknown", "filter", "task_ids"}` |
+| `purge` | `queue` | the queue name | `POST /api/queues/{name}/purge` — `details={"messages_removed", "runs_marked_revoked", "task_ids"}` (the runs marked `revoked`) |
 | `update` | `setting` | the setting key (`brand_name`, `brand_accent`, `brand_logo_url`) | `PUT /api/settings` — one row per *changed* key, `details={"old", "new"}` (each truncated to 200 characters, so a data-URI logo doesn't turn the audit log into an image store) |
 
 A retry records only `retry`, never an additional `start`, even though it
@@ -395,7 +554,7 @@ dispatches through the same `start_task` call underneath.
 
 | Method | Path | Auth | Response |
 |---|---|---|---|
-| `GET` | `/api/stream` | required | `text/event-stream`. Each event is `data: {"task_id": str, "type": str}\n\n` (default `message` event name, no custom `event:` field), one line per Celery task-lifecycle event forwarded from the events listener (`task-sent`, `task-received`, `task-started`, `task-succeeded`, `task-failed`, `task-retried`, `task-revoked`) plus any other event types the listener chooses to publish. Connection stays open indefinitely; the client (dashboard) reconnects with the browser's native `EventSource` retry behavior. |
+| `GET` | `/api/stream` | required | `text/event-stream`. Opens with a `: connected` comment frame, then sends one `data: {"type": "task-updated", "task_id": str, "status": str, "updated_at": str}\n\n` event (default `message` event name, no custom `event:` field) per changed `task_runs` row, and a `: keepalive` comment every 15 seconds while idle. Connection stays open indefinitely; the client (dashboard) reconnects with the browser's native `EventSource` retry behavior. |
 
 Like every other endpoint on this page, it returns `401` without a valid
 session cookie. (Development builds before 0.1.0a1 had no auth on it at all.) The browser's
@@ -403,26 +562,37 @@ session cookie. (Development builds before 0.1.0a1 had no auth on it at all.) Th
 which is what the dashboard does.
 
 The dashboard's task list subscribes to this stream and refetches
-`/api/tasks` on every event rather than applying the event to its local
-state directly — see [Dashboard](dashboard.md).
+`/api/tasks` when events arrive (coalesced to at most one refetch a second)
+rather than applying them to its local state directly; a task's detail page
+refetches that one run when an event names it — see
+[Dashboard](dashboard.md).
 
-### Known limitation: SSE does not currently work across processes
+### How changes reach the stream
 
-`EventBus` (`celery_manager.api.sse`) is an **in-memory** fan-out living
-inside the API process. The only thing that publishes to it is
-`EventListener`, which the documented deployment runs as a **separate OS
-process** (`celery-manager events`). A separate process cannot reach another
-process's in-memory queues, so in a standard deployment `/api/stream`
-connects successfully, stays open — and never delivers an event.
+Most writes worth announcing happen outside the API process: the events
+listener (`celery-manager events`) and the workers (`@track`,
+`report_progress()`) are separate OS processes. They don't publish anything
+themselves. Instead every write to a run bumps its `task_runs.updated_at`
+column, and each API process polls the database for rows whose
+`updated_at` moved on since it last looked, then pushes one event per row
+to its own connected browsers. So the stream works with the listener in its
+own process, with several API processes behind a load balancer, and without
+any broker or extra infrastructure. The database is the only shared piece.
 
-Because of that, the dashboard's task list **also polls `/api/tasks` every 5
-seconds**, which is what actually keeps it current today. Updates are
-therefore near-live (a few seconds) rather than push-instant. Nothing is
-silently broken from a user's point of view, but don't build on `/api/stream`
-as a reliable delivery mechanism yet.
-
-The fix — backing the bus with Redis pub/sub, or running the listener
-in-process as a background task of the API app — is a tracked backlog item
-(see `plan.md`, "Cross-process SSE delivery"). It is also what would make SSE
-work across more than one API worker behind a load balancer, which has the
-same root cause.
+- **Interval.** The poll runs every
+  [`live_poll_interval_seconds`](configuration.md) (default 1.0), so an
+  event reaches the browser up to about a second after the write commits.
+- **Only while someone is watching.** One poller thread per API process
+  starts with the first `/api/stream` connection and stops when the last
+  one closes. No lifespan hooks are involved, so this works the same when
+  the app is mounted inside a host application.
+- **Cost.** Each poll is one or two small queries on the indexed
+  `updated_at` column (a bounded batch, `(updated_at, id)` keyset paging).
+- **Ordering and duplicates.** A row written several times between two
+  polls produces one event carrying its latest status. Each poll also
+  re-reads the last few seconds, which catches transactions that commit
+  later than their timestamp and writers whose clocks are slightly skewed,
+  and drops anything it has already sent.
+- **No replay.** A connection gets changes from the moment it opens, not
+  the ones it missed while disconnected. Clients should refetch on
+  (re)connect, as the dashboard does.

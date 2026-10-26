@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class TaskRun(Base):
@@ -53,6 +57,30 @@ class TaskRun(Base):
     progress_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     progress_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Workflow lineage (chains, groups, chords), from Celery's own
+    # `parent_id` / `root_id` / `group`. Plain task_id strings, not
+    # ForeignKeys, for the same reason as `retried_from_id`: rows are created
+    # independently and in any order by the listener and the decorator.
+    parent_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    root_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    group_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # When anything on this row last changed — the dashboard's change feed.
+    # The API process polls `updated_at > cursor` (see `db/changefeed.py`) to
+    # tell connected browsers about writes made by *other* processes (the
+    # events listener, workers), which its in-memory EventBus cannot hear.
+    # Every writer gets this for free: `default` covers the Core
+    # insert-if-absent in `db.runs.lock_task_run`, `onupdate` covers the ORM
+    # flush of whatever each writer merges into the row afterwards. The
+    # server default only serves rows inserted from outside this library.
+    # Added by migration 0005.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+        server_default=func.now(),
+        index=True,
+    )
+
 
 class PeriodicSchedule(Base):
     __tablename__ = "periodic_schedules"
@@ -64,6 +92,21 @@ class PeriodicSchedule(Base):
     args: Mapped[str] = mapped_column(Text, default="[]")
     kwargs: Mapped[str] = mapped_column(Text, default="{}")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Whole-schedule pause. `paused_at IS NOT NULL` *is* the paused state —
+    # there is no separate flag to drift out of step with it. While paused,
+    # every firing of this schedule that reaches a `@track`ed task is
+    # recorded as `skipped` and the body does not run (see
+    # `celery_manager.decorator`). Deliberately separate from `enabled`,
+    # which `sync_periodic_schedules` owns and rewrites on every startup:
+    # an operator's pause must survive a restart. Added by migration 0002.
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Optional auto-resume time (migration 0003). With `paused_at` set, the
+    # schedule is paused only while `paused_until` is NULL (indefinite) or
+    # still in the future; no job clears it — readers compute it and lazily
+    # reset the stale pause (`control.schedules.expire_stale_pause`).
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ScheduleOverride(Base):
@@ -98,8 +141,7 @@ class AppSetting(Base):
     never reach this table.
 
     Key/value rather than a one-row typed table so adding a setting later is
-    a write, not a schema migration — which matters while `init_db()` is
-    still `create_all`-only (see the Backlog's Alembic item).
+    a write, not a schema migration.
     """
 
     __tablename__ = "app_settings"
