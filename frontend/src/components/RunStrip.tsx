@@ -146,7 +146,7 @@ export function RunStrip({ tasks, now, caption }: { tasks: TaskSummary[]; now: n
         ))}
       </div>
       {tipBar && (
-        <div className="cm-strip-tip" ref={tipRef} aria-hidden="true">
+        <div className="cm-tooltip cm-strip-tip" ref={tipRef} aria-hidden="true">
           <span className="cm-strip-tip-name">{tipBar.task.task_name}</span>
           <span className="cm-strip-tip-detail">{tipBar.detail}</span>
         </div>

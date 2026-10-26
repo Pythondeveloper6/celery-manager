@@ -39,27 +39,13 @@
   overflow-wrap: anywhere;
 }
 
+/* A small ghost button (tokens.css), in muted ink until hovered. */
 .cm-copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cm-space-1);
-  padding: 2px var(--cm-space-2);
   margin-left: calc(-1 * var(--cm-space-2));
-  font-size: var(--cm-text-sm);
-  font-weight: 500;
+}
+
+.cm-copy-btn:not(:hover) {
   color: var(--cm-color-text-muted);
-  border-radius: var(--cm-radius-sm);
-  transition: color var(--cm-duration-fast) var(--cm-ease), background-color var(--cm-duration-fast) var(--cm-ease);
-}
-
-.cm-copy-btn:hover {
-  color: var(--cm-color-text);
-  background-color: var(--cm-color-surface-sunken);
-}
-
-.cm-copy-btn svg {
-  width: 14px;
-  height: 14px;
 }
 
 /* Cancel, Terminate, Retry — right-aligned beside the title, wrapping under
@@ -118,10 +104,10 @@
   min-width: 0;
 }
 
-/* Failure is the loudest thing on the page, and still just a rule and a
-   colour: a vermilion edge and the exception line in vermilion. */
-.cm-panel.cm-failure-panel {
-  border-left: 2px solid var(--cm-color-status-failed);
+/* Failure is the loudest thing on the page, and still just a border and a
+   colour: a destructive-tinted card and the exception line in red. */
+.cm-card.cm-failure-panel {
+  border-color: var(--cm-color-danger-border);
 }
 
 .cm-failure-message {
@@ -144,7 +130,8 @@
   line-height: var(--cm-leading-code);
   color: var(--cm-color-text);
   white-space: pre;
-  background-color: var(--cm-color-surface-sunken);
+  background-color: var(--cm-color-muted-subtle);
+  border: 1px solid var(--cm-color-border);
   border-radius: var(--cm-radius-md);
   tab-size: 4;
 }
@@ -157,7 +144,7 @@
   padding: 1px 4px;
   font-size: 0.92em;
   color: var(--cm-color-text);
-  background-color: var(--cm-color-surface-sunken);
+  background-color: var(--cm-color-muted);
   border-radius: var(--cm-radius-sm);
   overflow-wrap: anywhere;
 }
@@ -235,7 +222,7 @@
 
 .cm-run-track {
   position: relative;
-  height: 6px;
+  height: 8px;
   overflow: hidden;
   background-color: var(--cm-color-status-started-soft);
   border-radius: var(--cm-radius-full);
@@ -254,7 +241,7 @@
 /* Gone quiet: drained to neutral, the same as the task list's lane, so one
    run never reads as healthy here and stalled one click away. */
 .cm-run-track[data-stalled="true"] {
-  background-color: var(--cm-color-surface-sunken);
+  background-color: var(--cm-color-muted);
 }
 
 .cm-run-track[data-stalled="true"] .cm-run-fill {
@@ -320,7 +307,7 @@
 
 .cm-run-note {
   font-size: var(--cm-text-sm);
-  color: var(--cm-color-text-faint);
+  color: var(--cm-color-text-muted);
 }
 
 /* ---- aside: execution facts and retry lineage -------------------------- */
@@ -333,7 +320,8 @@
   padding: var(--cm-space-5);
   background-color: var(--cm-color-surface);
   border: 1px solid var(--cm-color-border);
-  border-radius: var(--cm-radius-lg);
+  border-radius: var(--cm-radius-xl);
+  box-shadow: var(--cm-shadow-sm);
 }
 
 .cm-exec-list {
@@ -377,7 +365,7 @@
 /* A value the system genuinely doesn't have. The dash is for the eye; the
    visually-hidden reason beside it is what a screen reader announces. */
 .cm-detail-absent {
-  color: var(--cm-color-text-faint);
+  color: var(--cm-color-text-muted);
 }
 
 .cm-lineage {
@@ -413,7 +401,7 @@
   top: 0.6em;
   bottom: 0.6em;
   width: 1px;
-  background-color: var(--cm-color-border-strong);
+  background-color: var(--cm-color-border);
 }
 
 .cm-lineage-item {
@@ -433,7 +421,7 @@
   height: 9px;
   border-radius: var(--cm-radius-full);
   background-color: var(--cm-color-surface);
-  border: 1.5px solid var(--cm-color-border-strong);
+  border: 1.5px solid var(--cm-color-mark);
 }
 
 .cm-lineage-item[data-node="self"]::before {
@@ -461,12 +449,12 @@
    failed run into its retries and must stay readable under any brand. */
 .cm-lineage-link {
   align-self: flex-start;
-  color: var(--cm-color-accent-text);
+  color: var(--cm-color-primary-text);
   text-decoration: underline;
   text-underline-offset: 2px;
   border-radius: var(--cm-radius-sm);
 }
 
 .cm-lineage-link:hover {
-  color: var(--cm-color-accent-text-hover);
+  color: var(--cm-color-primary-text-hover);
 }

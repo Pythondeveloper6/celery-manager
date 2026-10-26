@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listOccurrences, pauseOccurrence, type Occurrence, type PauseAction } from "../api/schedules";
+import { IconChevronLeft } from "../components/icons";
 
 // Keyed by PauseAction rather than a bare string, so adding an action to the
 // API without giving it a label here is a compile error instead of a blank
@@ -106,10 +107,8 @@ export function ScheduleOccurrences() {
           at the time; now that /schedules is where a person actually arrives
           from, sending them to the task table instead is a dead end that
           costs a second navigation every time. */}
-      <Link to="/schedules" className="cm-back-link">
-        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-          <path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <Link to="/schedules" className="cm-btn cm-btn-ghost cm-btn-sm cm-back-link">
+        <IconChevronLeft />
         All schedules
       </Link>
 
@@ -131,7 +130,7 @@ export function ScheduleOccurrences() {
       {error ? (
         // Same error treatment as the other list screens: the server's own
         // message plus a retry, rather than a sentence with no way forward.
-        <div className="cm-panel-stack">
+        <div className="cm-stack">
           <p className="cm-error" role="alert">
             {error}
           </p>
@@ -145,11 +144,11 @@ export function ScheduleOccurrences() {
           Loading upcoming runs&hellip;
         </p>
       ) : occurrences.length === 0 ? (
-        <div className="cm-panel">
+        <div className="cm-card">
           <p className="cm-empty-state">No upcoming runs to show yet. Check that the schedule is enabled.</p>
         </div>
       ) : (
-        <ul className="cm-panel cm-panel-flush cm-occurrence-list">
+        <ul className="cm-card cm-card-flush cm-occurrence-list">
           {occurrences.map((o) => {
             const key = o.target_time;
             const state = occurrenceState(o);

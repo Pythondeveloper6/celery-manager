@@ -3,6 +3,7 @@ import "../styles/task-detail.css";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { cancelTask, getTask, retryTask, type TaskDetail as TaskDetailData } from "../api/tasks";
+import { IconCheck, IconChevronLeft, IconCopy } from "../components/icons";
 import { StatusBadge } from "../components/Status";
 import {
   elapsedSeconds,
@@ -117,7 +118,7 @@ function CopyButton({ value }: { value: string }) {
   return (
     <button
       type="button"
-      className="cm-copy-btn"
+      className="cm-btn cm-btn-ghost cm-btn-sm cm-copy-btn"
       onClick={() => {
         navigator.clipboard?.writeText(value).then(
           () => setCopied(true),
@@ -125,16 +126,7 @@ function CopyButton({ value }: { value: string }) {
         );
       }}
     >
-      <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-        {copied ? (
-          <path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        ) : (
-          <>
-            <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M10.75 3.25v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          </>
-        )}
-      </svg>
+      {copied ? <IconCheck /> : <IconCopy />}
       <span aria-live="polite">{copied ? "Copied" : "Copy ID"}</span>
     </button>
   );
@@ -318,10 +310,8 @@ export function TaskDetail() {
 
   return (
     <div className="cm-page">
-      <Link to="/" className="cm-back-link">
-        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-          <path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <Link to="/" className="cm-btn cm-btn-ghost cm-btn-sm cm-back-link">
+        <IconChevronLeft />
         All tasks
       </Link>
 
@@ -363,7 +353,7 @@ export function TaskDetail() {
                     </button>
                     <button
                       type="button"
-                      className="cm-btn cm-btn-danger"
+                      className="cm-btn cm-btn-destructive"
                       onClick={() => handleCancel(true)}
                       disabled={cancelBusy !== null}
                       aria-busy={cancelBusy === "terminate"}
@@ -387,7 +377,7 @@ export function TaskDetail() {
                     {canTerminate && (
                       <button
                         type="button"
-                        className="cm-btn cm-btn-danger-outline"
+                        className="cm-btn cm-btn-destructive-outline"
                         onClick={() => setConfirmTerminate(true)}
                         disabled={cancelBusy !== null}
                       >
@@ -399,7 +389,7 @@ export function TaskDetail() {
                 {task.status === "failed" && (
                   <button
                     type="button"
-                    className="cm-btn cm-btn-solid"
+                    className="cm-btn cm-btn-primary"
                     onClick={handleRetry}
                     disabled={retrying}
                     aria-busy={retrying}
@@ -447,8 +437,8 @@ export function TaskDetail() {
                   first": on a failed run the exception, ahead of every
                   timing; on a running one the progress. */}
               {task.exception && (
-                <section className="cm-panel cm-detail-section cm-failure-panel" aria-labelledby="cm-failure-heading">
-                  <h2 className="cm-section-title" id="cm-failure-heading">
+                <section className="cm-card cm-detail-section cm-failure-panel" aria-labelledby="cm-failure-heading">
+                  <h2 className="cm-card-title" id="cm-failure-heading">
                     Why it failed
                   </h2>
                   <p className="cm-failure-message">{task.exception}</p>
@@ -456,9 +446,9 @@ export function TaskDetail() {
                 </section>
               )}
 
-              <section className="cm-panel cm-detail-section" aria-labelledby="cm-run-heading">
+              <section className="cm-card cm-detail-section" aria-labelledby="cm-run-heading">
                 <div className="cm-run-head">
-                  <h2 className="cm-section-title" id="cm-run-heading">
+                  <h2 className="cm-card-title" id="cm-run-heading">
                     Run
                   </h2>
                   {live && (
@@ -617,8 +607,8 @@ export function TaskDetail() {
 
               {/* Logs before args: the log is what you read next after the
                   traceback; args/kwargs are the reproduction recipe. */}
-              <section className="cm-panel cm-detail-section" aria-labelledby="cm-log-heading">
-                <h2 className="cm-section-title" id="cm-log-heading">
+              <section className="cm-card cm-detail-section" aria-labelledby="cm-log-heading">
+                <h2 className="cm-card-title" id="cm-log-heading">
                   Log output
                 </h2>
                 {task.log_output ? (
@@ -628,8 +618,8 @@ export function TaskDetail() {
                 )}
               </section>
 
-              <section className="cm-panel cm-detail-section" aria-labelledby="cm-args-heading">
-                <h2 className="cm-section-title" id="cm-args-heading">
+              <section className="cm-card cm-detail-section" aria-labelledby="cm-args-heading">
+                <h2 className="cm-card-title" id="cm-args-heading">
                   Arguments
                 </h2>
                 <dl className="cm-args">
@@ -653,7 +643,7 @@ export function TaskDetail() {
                 correlate against infra graphs. Every value falls back to a
                 dash with a spoken reason. */}
             <aside className="cm-detail-aside" aria-labelledby="cm-exec-heading">
-              <h2 className="cm-section-title" id="cm-exec-heading">
+              <h2 className="cm-card-title" id="cm-exec-heading">
                 Execution
               </h2>
               <dl className="cm-exec-list">
