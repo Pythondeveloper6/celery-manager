@@ -25,10 +25,11 @@ export interface Occurrence {
   // `action` is "paused, not yet due"; `consumed` is a separate, later
   // state ("this occurrence has already passed").
   consumed: boolean;
-  // True while the whole schedule is paused (`pauseSchedule`): this
-  // occurrence will be recorded as skipped when beat fires it, whatever
-  // `action` says. Same value on every occurrence of the response — it is
-  // the schedule's state, repeated per row so the list stays a plain array.
+  // True when the whole schedule is paused (`pauseSchedule`) AND this
+  // occurrence falls before the pause ends: it will be recorded as skipped
+  // when beat fires it, whatever `action` says. Per occurrence: for a pause
+  // with a `paused_until`, occurrences at or after that time are false (they
+  // run normally); an indefinite pause makes every occurrence true.
   // `action` keeps reporting any per-occurrence override independently, so
   // resuming shows the per-occurrence skips that are still in place.
   paused: boolean;
@@ -65,6 +66,10 @@ export interface ScheduleSummary {
   paused: boolean;
   paused_at: string | null;
   paused_by: string | null;
+  // ISO 8601 UTC end of a timed pause (auto-resume); null for an indefinite
+  // pause or when not paused. A pause whose end has passed is reported as
+  // not paused.
+  paused_until: string | null;
 }
 
 export async function listSchedules(): Promise<ScheduleSummary[]> {
@@ -73,14 +78,19 @@ export async function listSchedules(): Promise<ScheduleSummary[]> {
   return response.json();
 }
 
-// Pause every firing of a schedule until resumed. Idempotent — pausing an
-// already-paused schedule keeps the original paused_at/paused_by. Resolves
-// to the schedule's updated summary.
-export async function pauseSchedule(name: string): Promise<ScheduleSummary> {
+// Pause every firing of a schedule until resumed, or until `until` (then it
+// resumes by itself). Repeating the pause keeps the original
+// paused_at/paused_by and only moves the end time. Resolves to the
+// schedule's updated summary.
+export async function pauseSchedule(name: string, until?: Date): Promise<ScheduleSummary> {
   const response = await fetch(`${BASE}/schedules/${encodeURIComponent(name)}/pause`, {
     method: "POST",
     credentials: "include",
+    ...(until
+      ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ until: until.toISOString() }) }
+      : {}),
   });
+  if (response.status === 422) throw new Error("Choose a time in the future.");
   if (!response.ok) throw new Error("Couldn't pause this schedule.");
   return response.json();
 }

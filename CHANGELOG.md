@@ -70,6 +70,14 @@ All notable changes to celery-manager are recorded here. The format follows
   optional `{"args", "kwargs"}` body (no body behaves as before); retry
   lineage is recorded as usual and the audit row notes the edit and the
   arguments sent. The task detail page gains **Retry with changes**.
+- **Pause a schedule until a set time.** `POST /api/schedules/{name}/pause`
+  takes an optional `{"until"}` (future, UTC; past is a `422`) and the
+  schedule resumes by itself afterwards, with no background job: readers
+  clear the stale pause lazily and write one automatic `resume_schedule`
+  audit row. Re-pausing with a new `until` updates it. `paused_until` joins
+  the schedule payloads, and each occurrence's `paused` is now per occurrence.
+  The dashboard's pause button becomes a menu (indefinitely, 1 hour, until
+  tomorrow 9:00, custom time). Schema revision `0003`.
 
 ### Changed
 
