@@ -14,6 +14,9 @@ from celery_manager.api.routes import (
     auth as auth_routes,
 )
 from celery_manager.api.routes import (
+    queues as queue_routes,
+)
+from celery_manager.api.routes import (
     schedules as schedule_routes,
 )
 from celery_manager.api.routes import (
@@ -71,6 +74,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(schedule_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(queue_routes.router)
 
     @app.get("/api/stream")
     def stream(request: Request, username: str = Depends(get_current_user)):
