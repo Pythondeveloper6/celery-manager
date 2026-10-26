@@ -458,3 +458,13 @@
 .cm-lineage-link:hover {
   color: var(--cm-color-primary-text-hover);
 }
+
+.cm-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cm-title-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
