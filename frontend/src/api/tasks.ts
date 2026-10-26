@@ -108,6 +108,50 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
   return response.json();
 }
 
+// Bulk cancel takes either explicit ids or the list's own filter fields, never
+// both. `dry_run` returns the counts without revoking — used to show "Cancel
+// 37 matching" before the operator confirms. Over the server's cap (1,000)
+// the whole request is refused and `detail` says why.
+export interface BulkCancelFilter {
+  status?: string;
+  task_name?: string;
+  q?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface BulkCancelResult {
+  revoked: number;
+  matched: number;
+  skipped_finished: number;
+  unknown: number;
+  limit: number;
+  dry_run: boolean;
+}
+
+export async function bulkCancelTasks(
+  selector: { task_ids: string[] } | { filter: BulkCancelFilter },
+  options: { terminate?: boolean; dry_run?: boolean } = {}
+): Promise<BulkCancelResult> {
+  const response = await fetch(`${BASE}/tasks/cancel-bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ ...selector, terminate: options.terminate ?? false, dry_run: options.dry_run ?? false }),
+  });
+  if (!response.ok) {
+    let message = "Bulk cancel failed.";
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === "string") message = body.detail;
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
 export interface TaskEvent {
   task_id: string;
   type: string;
