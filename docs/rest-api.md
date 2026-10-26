@@ -56,6 +56,7 @@ framed by another site.
 | `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Does not check that `task_id` exists in celery-manager's own storage. |
 | `POST` | `/api/tasks/{task_id}/retry` | required | — | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`). `404 {"detail": "not found"}` if no run exists for `task_id`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
 | `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. **Not partial-failure aware**: it stops at the first unknown id and returns `404 {"detail": "no task run found for <id>"}` for the whole batch — ids earlier in the list have already been dispatched and audited by then, and the response does not tell you which. Check the ids before sending them, or retry one at a time if that matters. |
+| `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | Changes a task's rate limit on running workers (not persisted). Documented with the other worker controls under [Workers](#workers). |
 
 !!! warning "Changed: `GET /api/tasks` no longer returns a bare array"
     This endpoint used to return a JSON **array** of runs, hard-capped at 50
@@ -382,6 +383,39 @@ legitimate name like `Ops & Data`.
     The blast radius is cosmetic and every change is attributed in the
     [audit log](#audit-log), which is how you find out who turned the nav
     pink.
+
+## Workers
+
+Live worker state and remote control over Celery's broadcast API. Nothing
+here is stored by celery-manager, and every change lasts only until the
+worker restarts. See [Workers and rate limits](workers.md) for the dashboard
+page and the caveats.
+
+Every broadcast waits at most
+[`inspect_timeout_seconds`](configuration.md) (default `1.0`) for replies. If
+the broadcast itself fails (broker unreachable, wrong URL), these endpoints
+answer **`503 {"detail": "Couldn't reach the Celery broker (...). Check ..."}`**
+instead of a 500, and no audit row is written.
+
+Control endpoints return `{"acknowledged": [hostname, ...], "errors": {hostname: message}}`.
+A worker that is in neither list didn't reply in time; the command may still
+have reached it.
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| `GET` | `/api/workers` | required | — | `200 {"workers": [...], "timeout_seconds": float, "inspected_at": ISO 8601}`. One item per worker that answered `ping`: `{"name", "online", "pid", "uptime_seconds", "pool", "concurrency", "pool_processes", "processed_total", "processed_by_task", "active_count", "reserved_count", "scheduled_count", "active", "reserved", "scheduled", "queues"}`. `pool` is the short pool name (`"prefork"`, `"threads"`, ...). `active`/`reserved`/`scheduled` are lists of `{"id", "name", "time_start"}` (scheduled entries also carry `"eta"`). Fields a worker didn't report in time are `null` or empty. An empty `workers` list means nobody replied within the timeout. `503` on broker errors. |
+| `GET` | `/api/workers/rate-limits` | required | — | `200` — `[{"task_name": str, "rate_limit": str \| null}, ...]`, sorted by name: every task registered on the dashboard's `celery_app` except Celery's own `celery.*` tasks, with the rate limit declared in code (`null` = unlimited). This is the default, not what a worker is enforcing after a runtime change. |
+| `POST` | `/api/workers/{worker}/shutdown` | required | — | `200 {"ok": true}`. `control.shutdown(destination=[worker])`, a warm shutdown. Celery sends no reply, so there is nothing to acknowledge. Audit: `action="worker_shutdown"`, `target_type="worker"`, `target_id=worker`. |
+| `POST` | `/api/workers/{worker}/pool/grow` | required | Optional `{"n": int}` (`1..64`, default `1`) | `200` control result. `control.pool_grow(n, destination=[worker])`. Audit: `worker_pool_grow`, `details={"n", "acknowledged", "errors"}`. |
+| `POST` | `/api/workers/{worker}/pool/shrink` | required | Optional `{"n": int}` (`1..64`, default `1`) | `200` control result. `control.pool_shrink(n, ...)`. Pools that can't be resized reply with an error in `errors`. Audit: `worker_pool_shrink`. |
+| `POST` | `/api/workers/{worker}/queues/add` | required | `{"queue": str}` (1–255 chars) | `200` control result. `control.add_consumer(queue, destination=[worker])`. Audit: `worker_add_consumer`, `details={"queue", ...}`. |
+| `POST` | `/api/workers/{worker}/queues/cancel` | required | `{"queue": str}` | `200` control result. `control.cancel_consumer(queue, destination=[worker])`. Audit: `worker_cancel_consumer`. |
+| `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | `200` control result. `control.rate_limit(task_name, rate_limit)` to every worker, or only to `destination`. `rate_limit` is `"10/s"`, `"10/m"`, `"100/h"` or a bare number (per second); `""` removes the limit. Anything else answers `422 {"detail": "'10/day' is not a rate limit. ..."}` without broadcasting. **Not persisted**: workers go back to the declared limit when they restart. Audit: `action="rate_limit"`, `target_type="task"`, `target_id=task_name`, `details={"rate_limit", "destination", "acknowledged", "errors"}`. |
+
+The same operations are available from Python in
+`celery_manager.control.workers` (`inspect_workers`, `shutdown_worker`,
+`resize_pool`, `set_consumer`, `set_rate_limit`, `list_task_rate_limits`);
+broker failures raise `WorkerControlError`.
 
 ## Audit log
 

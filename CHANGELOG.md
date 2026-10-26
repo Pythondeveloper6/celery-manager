@@ -32,6 +32,29 @@ All notable changes to celery-manager are recorded here. The format follows
   A paused schedule's page shows who paused it and when, and marks upcoming
   runs as "Will be skipped".
 
+- **Workers page.** A new Workers page lists every worker that answers the
+  broker: status, PID, uptime, pool, processed count, active/reserved/
+  scheduled counts (active tasks link to their run), and consumed queues. It
+  refreshes every 10 seconds while the tab is visible. From each worker card
+  you can shut the worker down (with a confirm step), add or remove a pool
+  process, and start or stop consuming a queue. Backed by `GET /api/workers`
+  and `POST /api/workers/{worker}/shutdown`, `.../pool/grow`,
+  `.../pool/shrink`, `.../queues/add` and `.../queues/cancel` (also
+  `celery_manager.control.workers`). Every control is audited. If the broker
+  can't be reached the endpoints answer `503` with a readable message, not a
+  500. New config field `inspect_timeout_seconds` (default `1.0`) caps how
+  long each broadcast waits for replies. See [Workers](docs/workers.md).
+
+- **Runtime rate limits.** `POST /api/tasks/rate-limit` changes a task's rate
+  limit on running workers (all, or a `destination` list) through
+  `control.rate_limit`. The rate format (`10/s`, `10/m`, `100/h`, or `""` to
+  remove the limit) is checked before anything is sent, and the change is
+  audited. `GET /api/workers/rate-limits` lists registered tasks with the
+  limit declared in code. On the Workers page a Rate limits table lets you
+  edit a limit inline and shows which workers confirmed it. These limits are
+  **not persisted**: a worker that restarts goes back to the limit declared
+  in code.
+
 ### Changed
 
 - **Dashboard redesign.** shadcn/ui-style look (zinc theme, Geist fonts) in
