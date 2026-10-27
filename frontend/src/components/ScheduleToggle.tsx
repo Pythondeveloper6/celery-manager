@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { pauseSchedule, resumeSchedule, type ScheduleSummary } from "../api/schedules";
 import "../styles/schedule-pause.css";
+import { useCan } from "../lib/role";
 
 interface Props {
   name: string;
@@ -29,7 +30,13 @@ function tomorrowNine(): Date {
 // Pause / Resume for a whole schedule. Choosing how long to pause in the menu
 // is itself the deliberate step (indefinitely, for an hour, until tomorrow
 // morning, or until a chosen time); resuming is harmless and fires at once.
-export function ScheduleToggle({ name, paused, size = "sm", onChange, onError }: Props) {
+// Hidden for viewers: pausing and resuming needs the operator role, and the
+// server would refuse it (403) anyway.
+export function ScheduleToggle(props: Props) {
+  return useCan("operator") ? <ScheduleToggleControl {...props} /> : null;
+}
+
+function ScheduleToggleControl({ name, paused, size = "sm", onChange, onError }: Props) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
   const [customValue, setCustomValue] = useState("");

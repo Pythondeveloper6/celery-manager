@@ -4,6 +4,7 @@ import { listOccurrences, listSchedules, pauseOccurrence, type Occurrence, type 
 import { IconChevronLeft } from "../components/icons";
 import { ScheduleToggle } from "../components/ScheduleToggle";
 import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
+import { useCan } from "../lib/role";
 
 // Keyed by PauseAction rather than a bare string, so adding an action to the
 // API without giving it a label here is a compile error instead of a blank
@@ -43,6 +44,7 @@ function occurrenceState(o: Occurrence): "pending" | "paused" | "resolved" {
 }
 
 export function ScheduleOccurrences() {
+  const canOperate = useCan("operator");
   const { name } = useParams<{ name: string }>();
   const [occurrences, setOccurrences] = useState<Occurrence[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -220,7 +222,7 @@ export function ScheduleOccurrences() {
                   {state === "resolved" && <span className="cm-occurrence-badge cm-occurrence-badge-resolved">Already resolved</span>}
                 </div>
 
-                {state !== "resolved" && (
+                {canOperate && state !== "resolved" && (
                   <div className="cm-occurrence-actions">
                     <button
                       type="button"
