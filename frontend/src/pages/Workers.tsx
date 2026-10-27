@@ -18,6 +18,7 @@ import {
 } from "../api/workers";
 import { IconX } from "../components/icons";
 import "../styles/workers.css";
+import { useCan } from "../lib/role";
 
 // Each refresh is a broadcast that can take up to the server's inspect
 // timeout (1 s by default) per round, so polling faster than this mostly
@@ -73,6 +74,10 @@ function WorkerCard({
   timeout: number | undefined;
   onChanged: () => void;
 }) {
+  // Pool, queue and rate-limit controls are operator; shutdown is admin
+  // (it can't be undone from here). Cosmetic: the server enforces both.
+  const canOperate = useCan("operator");
+  const canShutdown = useCan("admin");
   const [note, setNote] = useState<Note | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [armed, setArmed] = useState(false);
@@ -204,44 +209,48 @@ function WorkerCard({
             {worker.queues.map((q) => (
               <li key={q} className="cm-worker-queue">
                 <span>{q}</span>
-                <button
-                  type="button"
-                  className="cm-worker-queue-remove"
-                  aria-label={`Stop consuming from ${q}`}
-                  title={`Stop consuming from ${q}`}
-                  disabled={busy !== null}
-                  onClick={() =>
-                    run(`queue-cancel-${q}`, async () =>
-                      describeResult(
-                        await cancelConsumer(worker.name, q),
-                        `Stopped consuming from ${q}. Restarting the worker restores its -Q queues.`,
-                        timeout,
-                      ),
-                    )
-                  }
-                >
-                  <IconX className="cm-worker-queue-icon" />
-                </button>
+                {canOperate && (
+                  <button
+                    type="button"
+                    className="cm-worker-queue-remove"
+                    aria-label={`Stop consuming from ${q}`}
+                    title={`Stop consuming from ${q}`}
+                    disabled={busy !== null}
+                    onClick={() =>
+                      run(`queue-cancel-${q}`, async () =>
+                        describeResult(
+                          await cancelConsumer(worker.name, q),
+                          `Stopped consuming from ${q}. Restarting the worker restores its -Q queues.`,
+                          timeout,
+                        ),
+                      )
+                    }
+                  >
+                    <IconX className="cm-worker-queue-icon" />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         )}
-        <form className="cm-worker-queue-form" onSubmit={submitQueue}>
-          <label className="cm-visually-hidden" htmlFor={`queue-${worker.name}`}>
-            Queue to consume from
-          </label>
-          <input
-            id={`queue-${worker.name}`}
-            className="cm-input cm-worker-queue-input"
-            placeholder="Queue name"
-            value={queue}
-            maxLength={255}
-            onChange={(e) => setQueue(e.target.value)}
-          />
-          <button type="submit" className="cm-btn cm-btn-outline cm-btn-sm" disabled={!queue.trim() || busy !== null}>
-            {busy === "queue-add" ? "Adding…" : "Consume queue"}
-          </button>
-        </form>
+        {canOperate && (
+          <form className="cm-worker-queue-form" onSubmit={submitQueue}>
+            <label className="cm-visually-hidden" htmlFor={`queue-${worker.name}`}>
+              Queue to consume from
+            </label>
+            <input
+              id={`queue-${worker.name}`}
+              className="cm-input cm-worker-queue-input"
+              placeholder="Queue name"
+              value={queue}
+              maxLength={255}
+              onChange={(e) => setQueue(e.target.value)}
+            />
+            <button type="submit" className="cm-btn cm-btn-outline cm-btn-sm" disabled={!queue.trim() || busy !== null}>
+              {busy === "queue-add" ? "Adding…" : "Consume queue"}
+            </button>
+          </form>
+        )}
       </section>
 
       {note && (
@@ -250,49 +259,51 @@ function WorkerCard({
         </p>
       )}
 
-      <footer className="cm-worker-actions">
-        <button
-          type="button"
-          className="cm-btn cm-btn-outline cm-btn-sm"
-          disabled={busy !== null}
-          onClick={() =>
-            run("grow", async () => describeResult(await growPool(worker.name), "Pool will grow by one process.", timeout))
-          }
-        >
-          {busy === "grow" ? "Growing…" : "Add process"}
-        </button>
-        <button
-          type="button"
-          className="cm-btn cm-btn-outline cm-btn-sm"
-          disabled={busy !== null}
-          onClick={() =>
-            run("shrink", async () =>
-              describeResult(await shrinkPool(worker.name), "Pool will shrink by one process.", timeout),
-            )
-          }
-        >
-          {busy === "shrink" ? "Shrinking…" : "Remove process"}
-        </button>
-        <span className="cm-worker-actions-spacer" />
-        {busy === "shutdown" ? (
-          <button type="button" className="cm-btn cm-btn-outline cm-btn-sm" disabled>
-            Shutting down…
+      {canOperate && (
+        <footer className="cm-worker-actions">
+          <button
+            type="button"
+            className="cm-btn cm-btn-outline cm-btn-sm"
+            disabled={busy !== null}
+            onClick={() =>
+              run("grow", async () => describeResult(await growPool(worker.name), "Pool will grow by one process.", timeout))
+            }
+          >
+            {busy === "grow" ? "Growing…" : "Add process"}
           </button>
-        ) : armed ? (
-          <span className="cm-worker-confirm" role="group" aria-label={`Confirm shutting down ${worker.name}`}>
-            <button type="button" className="cm-btn cm-btn-destructive cm-btn-sm" onClick={shutdown}>
-              Confirm shutdown
-            </button>
-            <button type="button" className="cm-btn cm-btn-ghost cm-btn-sm" onClick={disarm}>
-              Keep running
-            </button>
-          </span>
-        ) : (
-          <button type="button" className="cm-btn cm-btn-destructive-outline cm-btn-sm" disabled={busy !== null} onClick={arm}>
-            Shut down
+          <button
+            type="button"
+            className="cm-btn cm-btn-outline cm-btn-sm"
+            disabled={busy !== null}
+            onClick={() =>
+              run("shrink", async () =>
+                describeResult(await shrinkPool(worker.name), "Pool will shrink by one process.", timeout),
+              )
+            }
+          >
+            {busy === "shrink" ? "Shrinking…" : "Remove process"}
           </button>
-        )}
-      </footer>
+          <span className="cm-worker-actions-spacer" />
+          {!canShutdown ? null : busy === "shutdown" ? (
+            <button type="button" className="cm-btn cm-btn-outline cm-btn-sm" disabled>
+              Shutting down…
+            </button>
+          ) : armed ? (
+            <span className="cm-worker-confirm" role="group" aria-label={`Confirm shutting down ${worker.name}`}>
+              <button type="button" className="cm-btn cm-btn-destructive cm-btn-sm" onClick={shutdown}>
+                Confirm shutdown
+              </button>
+              <button type="button" className="cm-btn cm-btn-ghost cm-btn-sm" onClick={disarm}>
+                Keep running
+              </button>
+            </span>
+          ) : (
+            <button type="button" className="cm-btn cm-btn-destructive-outline cm-btn-sm" disabled={busy !== null} onClick={arm}>
+              Shut down
+            </button>
+          )}
+        </footer>
+      )}
     </article>
   );
 }
@@ -310,6 +321,7 @@ function RateLimitRow({
   timeout: number | undefined;
   workerCount: number | null;
 }) {
+  const canOperate = useCan("operator");
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(row.rate_limit ?? "");
   const [busy, setBusy] = useState(false);
@@ -360,7 +372,7 @@ function RateLimitRow({
           {applied && <span className="cm-rate-applied">Runtime: {applied === "none" ? "unlimited" : applied}</span>}
         </td>
         <td className="cm-rate-edit">
-          {!editing && (
+          {canOperate && !editing && (
             <button
               type="button"
               className="cm-btn cm-btn-outline cm-btn-sm"

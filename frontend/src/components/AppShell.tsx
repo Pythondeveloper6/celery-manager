@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { logout } from "../api/client";
+import { logout, type Role } from "../api/client";
 import { BrandMark, ThemeSwitch, useBranding } from "../branding";
 import {
   IconCalendarClock,
@@ -82,10 +82,12 @@ function sectionLabel(pathname: string): string {
 
 export function AppShell({
   username,
+  role,
   onSignedOut,
   children,
 }: {
   username: string;
+  role: Role;
   onSignedOut: () => void;
   children: ReactNode;
 }) {
@@ -224,10 +226,10 @@ export function AppShell({
             </span>
             <span className="cm-sidebar-label cm-sidebar-user-text">
               <span className="cm-sidebar-user-name">{username}</span>
-              <span className="cm-sidebar-user-note">Signed in</span>
+              <span className="cm-sidebar-user-note">Signed in &middot; {role}</span>
             </span>
             <span className="cm-tooltip" aria-hidden="true">
-              Signed in as {username}
+              Signed in as {username} ({role})
             </span>
           </div>
         </div>

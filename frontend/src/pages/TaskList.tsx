@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { bulkRetryTasks, listTasks, subscribeToUpdates, type BulkCancelResult, type StreamState, type TaskSummary } from "../api/tasks";
 import { TaskCallDialog } from "../components/TaskCallDialog";
 import { CancelMatching, CancelSelected } from "../components/BulkCancel";
+import { useCan } from "../lib/role";
 import { describeCancel } from "../lib/bulkCancel";
 import { RunStrip } from "../components/RunStrip";
 import { IconCalendar, IconCheck, IconSearch, IconX } from "../components/icons";
@@ -339,6 +340,9 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
 }
 
 export function TaskList() {
+  // Viewers get no selection column, bulk bar or Start button; the server
+  // would refuse those actions anyway (403).
+  const canOperate = useCan("operator");
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [total, setTotal] = useState(0);
 
@@ -755,7 +759,7 @@ export function TaskList() {
   // Selection serves two bulk actions: retry on the Failed tab, cancel on
   // the tabs whose runs can still be stopped.
   const cancellableTab = status === "queued" || status === "started" || status === "retried";
-  const showSelectColumn = status === "failed" || cancellableTab;
+  const showSelectColumn = canOperate && (status === "failed" || cancellableTab);
   const columnCount = showSelectColumn ? 5 : 4;
   // Two different reasons the live view stops: more rows exist and can still
   // be fetched, or more rows exist and the API's single-page ceiling is in
@@ -864,9 +868,11 @@ export function TaskList() {
               {stream === "connecting" ? "Connecting" : "Reconnecting"}
             </div>
           )}
-          <button type="button" className="cm-btn cm-btn-primary cm-btn-sm" onClick={() => setStartOpen(true)}>
-            Start task
-          </button>
+          {canOperate && (
+            <button type="button" className="cm-btn cm-btn-primary cm-btn-sm" onClick={() => setStartOpen(true)}>
+              Start task
+            </button>
+          )}
         </div>
       </header>
 
@@ -1049,7 +1055,7 @@ export function TaskList() {
             )}
           </div>
         )}
-        {(status === "all" || cancellableTab) && tasks.length > 0 && (
+        {canOperate && (status === "all" || cancellableTab) && tasks.length > 0 && (
           <div className="cm-bulk-matching-row">
             <CancelMatching
               filter={{

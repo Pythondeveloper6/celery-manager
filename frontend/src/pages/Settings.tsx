@@ -5,6 +5,7 @@ import type { BrandSettings } from "../api/settings";
 import { BrandGlyph, ThemeSwitch, deriveAccent, parseHexColour, useBranding } from "../branding";
 import { IconListChecks } from "../components/icons";
 import { useResolvedTheme, useThemePreference } from "../theme";
+import { useCan } from "../lib/role";
 
 const BRAND_KEYS = ["brand_name", "brand_accent", "brand_logo_url"] as const;
 
@@ -44,6 +45,9 @@ export function Settings() {
   const resolvedTheme = useResolvedTheme();
   const themePreference = useThemePreference();
 
+  // Branding is deployment-wide, so changing it is admin-only (the server
+  // refuses anyone else with a 403). Others see the form read-only.
+  const canEdit = useCan("admin");
   const [draft, setDraft] = useState<BrandSettings>(settings);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -161,7 +165,10 @@ export function Settings() {
             {/* Disabled as a set while a save is in flight: the button alone
                 would leave three editable inputs whose values are no longer
                 the ones being written. */}
-            <fieldset className="cm-fieldset" disabled={saving}>
+            {!canEdit && (
+              <p className="cm-field-hint">Only an admin can change branding. You can still pick your own theme below.</p>
+            )}
+            <fieldset className="cm-fieldset" disabled={saving || !canEdit}>
               <legend className="cm-visually-hidden">Branding</legend>
 
               <div className="cm-field">
@@ -312,28 +319,30 @@ export function Settings() {
               </p>
             )}
 
-            <div className="cm-settings-actions">
-              <button type="submit" className="cm-btn cm-btn-primary" disabled={saving || !dirty}>
-                Save branding
-              </button>
-              <button
-                type="button"
-                className="cm-btn cm-btn-secondary"
-                onClick={handleReset}
-                disabled={saving || isDefault}
-              >
-                Reset to defaults
-              </button>
-              {saving && (
-                <span className="cm-loading">
-                  <span className="cm-live-dot" aria-hidden="true" />
-                  Saving&hellip;
-                </span>
-              )}
-              {!saving && !dirty && !saved && (
-                <span className="cm-field-hint">No unsaved changes.</span>
-              )}
-            </div>
+            {canEdit && (
+              <div className="cm-settings-actions">
+                <button type="submit" className="cm-btn cm-btn-primary" disabled={saving || !dirty}>
+                  Save branding
+                </button>
+                <button
+                  type="button"
+                  className="cm-btn cm-btn-secondary"
+                  onClick={handleReset}
+                  disabled={saving || isDefault}
+                >
+                  Reset to defaults
+                </button>
+                {saving && (
+                  <span className="cm-loading">
+                    <span className="cm-live-dot" aria-hidden="true" />
+                    Saving&hellip;
+                  </span>
+                )}
+                {!saving && !dirty && !saved && (
+                  <span className="cm-field-hint">No unsaved changes.</span>
+                )}
+              </div>
+            )}
           </form>
         )}
       </section>

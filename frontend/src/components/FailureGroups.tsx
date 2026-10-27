@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getFailures, type FailureGroup, type RangeKey } from "../api/analytics";
 import { bulkRetryTasks } from "../api/tasks";
 import { formatWhen } from "../lib/insights";
+import { useCan } from "../lib/role";
 
 function taskTypeHref(name: string): string {
   return `/task-types/${encodeURIComponent(name)}`;
@@ -16,6 +17,7 @@ function runsHref(group: FailureGroup): string {
 }
 
 function GroupCard({ group, showTasks }: { group: FailureGroup; showTasks: boolean }) {
+  const canOperate = useCan("operator");
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -86,7 +88,7 @@ function GroupCard({ group, showTasks }: { group: FailureGroup; showTasks: boole
         <Link to={runsHref(group)} className="cm-btn cm-btn-outline cm-btn-sm">
           Show runs
         </Link>
-        {confirming ? (
+        {!canOperate ? null : confirming ? (
           <span className="cm-fail-confirm" role="group" aria-label="Confirm retry">
             <span>
               Retry {retryCount.toLocaleString()} run{retryCount === 1 ? "" : "s"}
