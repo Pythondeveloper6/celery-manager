@@ -6,6 +6,34 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Explicit occurrence identity for skips.** New beat scheduler
+  `celery_manager.beat:Scheduler` (and `StampOccurrencesMixin` for custom
+  schedulers) stamps each beat message with `cm_schedule` and
+  `cm_occurrence` (the scheduled time of the firing, the same value the
+  dashboard lists). New `task_runs.occurrence_at` and `beat_sent_at`
+  columns (migration `0006`).
+
+### Fixed
+
+- A skip or cancel no longer misses a firing that starts more than
+  `eta_tolerance_seconds` late, and a manual `.delay()` near the target
+  time no longer consumes it. `@track` matches the override to the stamped
+  occurrence: exactly for crontab/solar, within `eta_tolerance_seconds`
+  (capped at half the interval) for interval schedules. Messages without
+  the headers never consume an override.
+- Interval-schedule occurrences are anchored to beat's own send time when
+  available, not the last run's start time, so queue delay and manual calls
+  no longer shift them.
+
+### Changed
+
+- `eta_tolerance_seconds` is no longer compared with the task's start time,
+  except as a fallback for messages without occurrence headers while beat
+  has never stamped any (an older beat during a rolling upgrade). The
+  worker logs a warning once when it uses that fallback.
+
 ## [0.1.0a4] — 2026-10-26
 
 ### Added

@@ -335,6 +335,12 @@ at run time, not by beat — celery-manager does not own your beat process:
 
 ### Occurrence-matching nuances worth knowing
 
+This section is about the dashboard's read side. When the task actually
+runs, `@track` matches the override against the occurrence that beat
+stamped on the message (see
+[How the skip/cancel check works](decorator.md#how-the-skipcancel-check-works)),
+so a late start or a manual call of the same task cannot skip the wrong run.
+
 `GET .../occurrences` recomputes the schedule's next 10 run times **relative
 to "now" on every call** rather than reading them from storage — so a
 `target_time` returned a minute ago will not be byte-identical to the
