@@ -385,12 +385,13 @@ are enforced. See [REST API: pausing a whole schedule](rest-api.md#pausing-a-who
 
 ### Interval schedules
 
-**Interval schedules (`schedule(run_every=…)` / bare seconds / `timedelta`).** Celery beat fires these at "previous fire + interval", and beat's own record of the previous fire isn't visible to the dashboard. celery-manager therefore anchors upcoming occurrences to the schedule's most recent observed run: the newest `task_runs` row with that `schedule_name`, including skipped runs and excluding dashboard retries. It then projects forward by the interval. Once the schedule has run at least once while celery-manager was recording, the times shown are stable and match beat's real fire times to within queue latency, and a skip or cancel matches the real run.
+**Interval schedules (`schedule(run_every=…)` / bare seconds / `timedelta`).** Celery beat fires these at "previous fire + interval", and beat's own record of the previous fire isn't visible to the dashboard. celery-manager therefore anchors upcoming occurrences to the schedule's most recent observed run and projects forward by the interval. With beat running `celery_manager.beat:Scheduler`, the anchor is beat's own send time for the last firing (`task_runs.beat_sent_at`), so the next occurrence shown is the one beat will stamp. Without it, the anchor is the newest `task_runs.started_at` with that `schedule_name` (including skipped runs, excluding dashboard retries), which is off by queue latency. Once the schedule has run at least once while celery-manager was recording, the times shown are stable and a skip or cancel matches the real run.
 
 Limitations:
 - Before the first observed run, occurrences are only estimates ("now + interval") and shift on every page load. A skip saved then may not match the real fire. Wait for one run before pausing interval schedules.
-- Ad-hoc calls (`.delay()`/`apply_async` of the same `@track`ed task outside beat) are recorded under the same schedule name and will re-anchor the projection. A task that calls `self.retry()` also re-stamps the run's start time.
-- Beat restarts: beat may fire an overdue entry immediately when it comes back up after downtime, which is off the projected grid until the next observed run re-anchors it.
+- Without the stamping scheduler only: ad-hoc calls (`.delay()`/`apply_async` of the same `@track`ed task outside beat) are recorded under the same schedule name and re-anchor the projection, and a task that calls `self.retry()` re-stamps the run's start time.
+- Beat restarts: beat may fire an overdue entry immediately when it comes back up after downtime, which is off the projected grid until that run re-anchors it. The stamped occurrence of such a firing is the latest scheduled time that had passed.
+- Each firing moves the following interval occurrences by beat's scheduling jitter (milliseconds), so occurrences further ahead are matched within `eta_tolerance_seconds`, not exactly. crontab occurrences match exactly.
 - `relative=True` interval schedules aren't modelled.
 - The `@track(schedule_name=…)` value must equal the `beat_schedule` key. This was already required for skips to work.
 

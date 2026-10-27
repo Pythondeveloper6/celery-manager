@@ -6,6 +6,67 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a5] — 2026-10-27
+
+Run the migrations after upgrading (`0006` and `0007`; automatic unless
+`auto_migrate=False`). To get exact skip matching, run beat with
+`-S celery_manager.beat:Scheduler`.
+
+### Added
+
+- **Explicit occurrence identity for skips.** New beat scheduler
+  `celery_manager.beat:Scheduler` (and `StampOccurrencesMixin` for custom
+  schedulers) stamps each beat message with `cm_schedule` and
+  `cm_occurrence` (the scheduled time of the firing, the same value the
+  dashboard lists). New `task_runs.occurrence_at` and `beat_sent_at`
+  columns (migration `0006`).
+- **Roles: `viewer`, `operator`, `admin`.** Each account has a role, and
+  every state-changing route declares the minimum it needs, checked on the
+  server (`403` below it). Viewers can read everything (including task
+  arguments, logs and export) and change nothing. Operators can retry,
+  cancel, terminate and start tasks, pause and resume schedules and single
+  runs, and use the reversible worker controls (pool grow/shrink, queue
+  consume/cancel, rate limits). Admins can also purge queues, shut down
+  workers and change branding. See `docs/roles.md`.
+- `GET /api/whoami` and `POST /api/auth/login` return `role`. The dashboard
+  hides controls the role can't use, shows the role next to the username,
+  and shows the server's message when an action is refused.
+- CLI: `celery-manager create-user NAME [--role ROLE] [--password-stdin]`,
+  `celery-manager set-role NAME ROLE` and `celery-manager list-users`, all
+  with `--db-url`. `create-user` defaults to `viewer`.
+- `celery_manager.auth.users.create_user(..., role="admin")` (the default
+  stays `admin` so existing setup scripts keep working),
+  `set_user_role()` and `get_user_role()`; `celery_manager.api.deps`
+  gains `require_role()`, `require_operator` and `require_admin`.
+- `create_app()` refuses to start if a `POST`/`PUT`/`PATCH`/`DELETE`
+  route doesn't declare a role, so a new route can't be left open to
+  viewers by accident.
+
+### Fixed
+
+- A skip or cancel no longer misses a firing that starts more than
+  `eta_tolerance_seconds` late, and a manual `.delay()` near the target
+  time no longer consumes it. `@track` matches the override to the stamped
+  occurrence: exactly for crontab/solar, within `eta_tolerance_seconds`
+  (capped at half the interval) for interval schedules. Messages without
+  the headers never consume an override.
+- Interval-schedule occurrences are anchored to beat's own send time when
+  available, not the last run's start time, so queue delay and manual calls
+  no longer shift them.
+
+### Changed
+
+- `eta_tolerance_seconds` is no longer compared with the task's start time,
+  except as a fallback for messages without occurrence headers while beat
+  has never stamped any (an older beat during a rolling upgrade). The
+  worker logs a warning once when it uses that fallback.
+
+- Migration `0007` adds `users.role`. **Every existing account becomes
+  `admin`**, so nobody loses access on upgrade; demote with `set-role`.
+  Rows inserted without a role get `viewer`.
+- A role change or account deletion applies on the next request; the role is
+  read from the database on every request, not stored in the cookie.
+
 ## [0.1.0a4] — 2026-10-26
 
 ### Added
@@ -524,6 +585,7 @@ because anyone who pinned a git SHA during development *will* hit them.
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
 
+[0.1.0a5]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a5
 [0.1.0a4]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a4
 [0.1.0a3]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a3
 [0.1.0a2]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a2

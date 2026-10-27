@@ -1,6 +1,15 @@
 import { API_BASE as BASE } from "./base";
 
-export async function login(username: string, password: string): Promise<{ username: string }> {
+// Roles, least to most privileged. See docs/roles.md; the server enforces
+// them, the dashboard only hides what the role can't use.
+export type Role = "viewer" | "operator" | "admin";
+
+export interface CurrentUser {
+  username: string;
+  role: Role;
+}
+
+export async function login(username: string, password: string): Promise<CurrentUser> {
   const response = await fetch(`${BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -13,7 +22,7 @@ export async function login(username: string, password: string): Promise<{ usern
   return response.json();
 }
 
-export async function whoami(): Promise<{ username: string } | null> {
+export async function whoami(): Promise<CurrentUser | null> {
   // A clean non-OK response (401) means "confirmed not authenticated" and
   // resolves to null. A network-level failure (server unreachable, DNS,
   // CORS) means "couldn't determine" and is a distinct, thrown error —

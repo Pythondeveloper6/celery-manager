@@ -19,11 +19,11 @@ Alternatively, install a tagged release straight from git (`v0.1.0a1` is a
 GitHub-only pre-release; PyPI starts at `0.1.0a2`):
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a5"
 ```
 
 (Extras with git: `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"`.)
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a5"`.)
 
 `uvicorn` is **not** a core dependency — celery-manager is an ASGI app, and
 mounting it into a server you already run needs no server of its own. If you
@@ -135,12 +135,23 @@ next to the worker and beat.
 
 ## Create your first dashboard user
 
+```bash
+celery-manager create-user admin --role admin --db-url sqlite:///celery_manager.db
+```
+
+It asks for the password twice. Use the same `--db-url` as your config.
+Make the first account an `admin`: `create-user` makes `viewer` (read-only)
+accounts unless you pass `--role`. See [Roles](roles.md) for what `viewer`,
+`operator` and `admin` can each do.
+
+Or from Python, with your `config` in scope:
+
 ```python
 from celery_manager.auth.users import create_user
 from celery_manager.db.session import init_db, get_session_factory
 
 Session = get_session_factory(init_db(config))
-create_user(Session(), "admin", "a-real-password")
+create_user(Session(), "admin", "a-real-password")  # role defaults to "admin" here
 ```
 
 Passwords are hashed with bcrypt before being stored; there's no
@@ -150,8 +161,8 @@ an empty one or a longer one rather than silently truncating it.
 
 There is no default account and no first-run setup screen, so **the
 dashboard is unusable until you run this** — it is the second thing that
-stops people on a first run. Run it once, in a shell with your `config` in
-scope; the users table lives in the same `db_url` as everything else.
+stops people on a first run. The users table lives in the same `db_url` as
+everything else.
 
 Then sign in at the dashboard URL.
 

@@ -28,7 +28,7 @@ Then, in separate terminals (each in this directory):
 ```bash
 redis-server
 celery -A celery_app worker -l info
-celery -A celery_app beat -l info
+celery -A celery_app beat -S celery_manager.beat:Scheduler -l info
 celery-manager events --celery-app celery_app:app --db-url sqlite:///celery_manager_demo.db
 flask --app app run --port 8000
 ```

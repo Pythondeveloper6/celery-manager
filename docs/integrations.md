@@ -112,7 +112,7 @@ and each process must use the **same `db_url`**:
 |---|---|---|
 | Web | `uvicorn main:app` / `flask run` | Calls `create_app()`; needs the real `secret_key`. |
 | Worker | `celery -A yourapp worker` | Must call `celery_manager.setup(config)` at import time of the module that defines your tasks, or `@track` silently does nothing. Needs no `secret_key`. |
-| Beat | `celery -A yourapp beat` | Only if you have periodic tasks. |
+| Beat | `celery -A yourapp beat -S celery_manager.beat:Scheduler` | Only if you have periodic tasks. The scheduler stamps each firing so a skip applies to exactly that run; see [How the skip/cancel check works](decorator.md#how-the-skipcancel-check-works). |
 | Events listener | `celery-manager events --celery-app yourapp:app --db-url sqlite:///celery_manager.db` | Records every task, including undecorated ones, and the queued/started transitions. |
 
 ```python
@@ -126,8 +126,10 @@ celery_manager.setup(CeleryManagerConfig(celery_app=app, db_url=DB_URL))
 The events listener needs Celery task events switched on; see
 [Required Celery settings](quickstart.md#required-celery-settings).
 
-Create a dashboard user with `celery_manager.auth.users.create_user`; both demos
-include a `create_user.py` script.
+Create a dashboard user with `celery-manager create-user NAME --role admin --db-url ...`
+or `celery_manager.auth.users.create_user`; both demos include a `create_user.py`
+script. The embedded dashboard keeps its own accounts and [roles](roles.md); there
+is no hook to reuse your app's login.
 
 ## Cookies, `cookie_secure` and the mount prefix
 

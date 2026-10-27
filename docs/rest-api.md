@@ -15,9 +15,14 @@ All auth is cookie-based: `POST /api/auth/login` sets an `httponly`,
 set to the app's mount point — `/` unless it is mounted under a prefix);
 every other endpoint below reads that cookie via the `get_current_user`
 dependency and returns **`401`** if it's missing, invalid, expired, or names
-a user that no longer exists. There are no API keys, bearer tokens, or
-scopes — one authenticated user can do everything (see the
-[security model](configuration.md#security-model)).
+a user that no longer exists. There are no API keys or bearer tokens.
+
+**Roles.** Every `POST`/`PUT` below except login and logout also needs a
+minimum [role](roles.md): `operator` for day-to-day controls, `admin` for
+queue purge, worker shutdown and branding. Every `GET` works for any role.
+A signed-in account below the needed role gets
+**`403 {"detail": "Not allowed: this action needs the admin role (you are operator)."}`**
+and nothing happens. The full table is on the [Roles](roles.md) page.
 
 Besides login and logout, only [`GET /api/settings`](#settings-branding) is
 not behind that dependency, and **on purpose** — the login screen has to
@@ -42,9 +47,9 @@ framed by another site.
 
 | Method | Path | Auth | Request body | Response |
 |---|---|---|---|---|
-| `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str}` on success; `401 {"detail": "invalid credentials"}` on bad username/password. Sets the `cm_session` cookie. |
+| `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str, "role": str}` on success; `401 {"detail": "invalid credentials"}` on bad username/password. Sets the `cm_session` cookie. |
 | `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires; see the [security model](configuration.md#security-model). |
-| `GET` | `/api/whoami` | required | — | `200 {"username": str}` if authenticated; `401` otherwise. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
+| `GET` | `/api/whoami` | required | — | `200 {"username": str, "role": "viewer" \| "operator" \| "admin"}` if authenticated; `401` otherwise. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
 
 ## Tasks
 
@@ -335,6 +340,12 @@ at run time, not by beat — celery-manager does not own your beat process:
 
 ### Occurrence-matching nuances worth knowing
 
+This section is about the dashboard's read side. When the task actually
+runs, `@track` matches the override against the occurrence that beat
+stamped on the message (see
+[How the skip/cancel check works](decorator.md#how-the-skipcancel-check-works)),
+so a late start or a manual call of the same task cannot skip the wrong run.
+
 `GET .../occurrences` recomputes the schedule's next 10 run times **relative
 to "now" on every call** rather than reading them from storage — so a
 `target_time` returned a minute ago will not be byte-identical to the
@@ -452,12 +463,10 @@ Values are stored raw, not HTML-escaped: escaping belongs at the point of
 rendering, and escaping on write would double-escape the ampersand in a
 legitimate name like `Ops & Data`.
 
-!!! note "Accepted v1 limitation: any authenticated user can rebrand"
-    There is no role system in this app — `get_current_user` yields a
-    username and nothing else — so "admin only" is not expressible today.
-    The blast radius is cosmetic and every change is attributed in the
-    [audit log](#audit-log), which is how you find out who turned the nav
-    pink.
+!!! note "Admin only"
+    `PUT /api/settings` needs the `admin` [role](roles.md): branding changes
+    the dashboard for everyone. Every change is still attributed in the
+    [audit log](#audit-log).
 
 ## Analytics
 

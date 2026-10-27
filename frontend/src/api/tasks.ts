@@ -1,4 +1,4 @@
-import { API_BASE as BASE } from "./base";
+import { API_BASE as BASE, forbiddenMessage } from "./base";
 
 // Every datetime below arrives as an ISO string carrying an explicit UTC
 // offset. That is load-bearing, not incidental: SQLite drops tzinfo on
@@ -166,6 +166,7 @@ export async function cancelTask(taskId: string, terminate = false): Promise<voi
     method: "POST",
     credentials: "include",
   });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (!response.ok) throw new Error(terminate ? "Terminate failed." : "Cancel failed.");
 }
 
@@ -176,6 +177,7 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
     credentials: "include",
     body: JSON.stringify({ task_ids: taskIds }),
   });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (!response.ok) throw new Error("Bulk retry failed.");
   return response.json();
 }

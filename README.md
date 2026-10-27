@@ -11,6 +11,7 @@
 A dashboard and control API for Celery background tasks — for any
 Django, Flask, or FastAPI project that already uses Celery.
 
+[![PyPI](https://img.shields.io/pypi/v/celery-manager?include_prereleases&label=pypi&logo=pypi&logoColor=white)](https://pypi.org/project/celery-manager/)
 [![CI](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml)
 ![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
@@ -142,6 +143,8 @@ without touching your beat schedule or restarting anything.
 - **Brandable** — set the product name, accent colour, and logo from a
   settings screen; it applies for everyone on the deployment.
 - **Built-in auth** — bcrypt-hashed users and signed session cookies.
+- **Roles** — `viewer` (read-only), `operator` (day-to-day controls) and
+  `admin` (purge, worker shutdown, settings), enforced on the server.
 - **No Node toolchain required** — the React dashboard ships prebuilt inside
   the Python package.
 
@@ -163,11 +166,11 @@ pip install --pre "celery-manager[flask]"        # adds Flask and a2wsgi
 Alternatively, install a tagged release straight from git:
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a5"
 ```
 
 (Extras with git: `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"`.)
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a5"`.)
 
 Optional extras:
 
@@ -213,6 +216,14 @@ def send_report(self):
     ...
 ```
 
+For per-occurrence skips, run beat with celery-manager's scheduler. It tags
+each firing with its scheduled time, so a skip hits exactly that run, however
+late it starts, and never a manual `.delay()`:
+
+```bash
+celery -A your_module beat -S celery_manager.beat:Scheduler
+```
+
 Then run the events listener alongside your worker and beat, so the dashboard
 sees every task rather than only the decorated ones:
 
@@ -227,7 +238,7 @@ and `task_send_sent_event = True` (or run the worker with `-E`). See
 
 **Two things that stop people on a first run**, both covered in the
 [Quickstart](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md): there is no default account, so you have to
-create one (`celery_manager.auth.users.create_user`); and on plain HTTP you
+create one (`celery-manager create-user admin --role admin --db-url ...`); and on plain HTTP you
 need `cookie_secure=False`, or you will log in successfully and then
 immediately appear logged out.
 
@@ -263,7 +274,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is an alpha, **0.1.0a4**. It is feature-complete for the v1 scope,
+This is an alpha, **0.1.0a5**. It is feature-complete for the v1 scope,
 but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
 backlog of known gaps and planned follow-ups.
 

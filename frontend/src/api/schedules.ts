@@ -1,4 +1,4 @@
-import { API_BASE as BASE } from "./base";
+import { API_BASE as BASE, forbiddenMessage } from "./base";
 
 // The only actions POST /api/schedules/{name}/occurrences/pause accepts.
 // Kept as one named type so the request body and the response shape can't
@@ -48,6 +48,7 @@ export async function pauseOccurrence(name: string, targetTime: string, action: 
     credentials: "include",
     body: JSON.stringify({ target_time: targetTime, action }),
   });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (!response.ok) throw new Error("Couldn't update this occurrence.");
 }
 
@@ -90,6 +91,7 @@ export async function pauseSchedule(name: string, until?: Date): Promise<Schedul
       ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ until: until.toISOString() }) }
       : {}),
   });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (response.status === 422) throw new Error("Choose a time in the future.");
   if (!response.ok) throw new Error("Couldn't pause this schedule.");
   return response.json();
@@ -103,6 +105,7 @@ export async function resumeSchedule(name: string): Promise<ScheduleSummary> {
     method: "POST",
     credentials: "include",
   });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (!response.ok) throw new Error("Couldn't resume this schedule.");
   return response.json();
 }

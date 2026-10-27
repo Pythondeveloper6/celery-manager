@@ -64,7 +64,9 @@ you confirm. [Read more](queues.md#bulk-cancel)
 ## Control periodic tasks (beat schedules)
 
 All of these need `@track` on the task. celery-manager doesn't change your
-beat schedule: beat still sends the task, and `@track` makes it skip.
+beat schedule: beat still sends the task, and `@track` makes it skip. Run
+beat with `-S celery_manager.beat:Scheduler` so each firing carries its
+scheduled time and a skip applies only to that firing.
 
 **Skip one upcoming run.** Open a schedule to see its next runs, and skip or
 cancel just one of them. The rest of the schedule carries on as normal.
@@ -147,6 +149,12 @@ step, run `celery-manager migrate`.
 **Sign-in.** Dashboard users with hashed passwords and session cookies.
 There is no default account: you create the first one yourself.
 [Read more](quickstart.md#create-your-first-dashboard-user)
+
+**Roles.** Give each account `viewer` (look, don't touch), `operator`
+(retry, cancel, pause, worker controls) or `admin` (also purge queues,
+shut down workers, change branding). The server enforces it; the dashboard
+hides what you can't use.
+[Read more](roles.md)
 
 **Themes and branding.** Light, dark or follow the system, chosen per
 browser. Set the product name, accent colour and logo once for everyone.

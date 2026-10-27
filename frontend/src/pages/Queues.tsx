@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listQueues, purgeQueue, type QueueInfo, type QueueListing } from "../api/queues";
 import "../styles/queues.css";
+import { useCan } from "../lib/role";
 
 const REFRESH_MS = 5000;
 
@@ -146,6 +147,8 @@ function PurgeConfirm({
 }
 
 export function Queues() {
+  // Purge deletes messages for good, so it is admin-only (server-enforced).
+  const canPurge = useCan("admin");
   const [listing, setListing] = useState<QueueListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(() => document.visibilityState === "visible");
@@ -330,7 +333,7 @@ export function Queues() {
                         {q.recorded_queued.toLocaleString()}
                       </td>
                       <td className="cm-col-fit cm-queue-actions">
-                        {purging !== q.name && (
+                        {canPurge && purging !== q.name && (
                           <button
                             type="button"
                             className="cm-btn cm-btn-destructive-outline cm-btn-sm"

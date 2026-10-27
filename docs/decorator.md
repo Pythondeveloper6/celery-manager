@@ -238,15 +238,52 @@ log it: `logger.info(...)` rather than `print(...)`.
 
 ## How the skip/cancel check works
 
-On every call, the wrapper looks for an unconsumed `ScheduleOverride` row
-for `effective_schedule_name` (either the given `schedule_name` or the
-task's registered name) whose `target_time` is within
-`eta_tolerance_seconds` (default 60, configurable via
-[`CeleryManagerConfig.eta_tolerance_seconds`](configuration.md)) of *now*.
-This tolerance-window match — not exact timestamp equality — is
-deliberate: a periodic task's actual fire time and the `target_time` a user
-paused from the dashboard's occurrence list are computed independently and
-will rarely line up to the microsecond.
+Each skip or cancel targets one **occurrence**: a scheduled time of one
+beat entry. To know which occurrence a message is, run beat with
+celery-manager's scheduler:
+
+```bash
+celery -A yourapp beat -S celery_manager.beat:Scheduler
+```
+
+(or `app.conf.beat_scheduler = "celery_manager.beat:Scheduler"`). If you
+already use a custom scheduler, put the mixin in front of it:
+
+```python
+from django_celery_beat.schedulers import DatabaseScheduler
+from celery_manager.beat import StampOccurrencesMixin
+
+class Scheduler(StampOccurrencesMixin, DatabaseScheduler):
+    pass
+```
+
+Beat then adds headers to every message it sends: `cm_schedule` (the entry
+name) and `cm_occurrence` (the scheduled time of this firing, computed from
+the schedule, the same value the dashboard lists), `cm_sent_at`, and
+`cm_interval` for interval schedules. Beat needs no database access for this.
+
+On every call, the wrapper reads those headers and looks for an unconsumed
+`ScheduleOverride` row for that entry and that occurrence:
+
+- **crontab / solar**: the override's `target_time` must equal the
+  occurrence (within 1 second, for browser rounding).
+- **interval schedules**: within `eta_tolerance_seconds` (default 60, capped
+  at half the interval), because beat's real firing times move by a few
+  milliseconds each firing.
+
+How late the task starts does not matter: a firing that waited an hour in
+the queue is still matched to its occurrence. A message **without** the
+headers (`.delay()`, `apply_async`, a dashboard retry, Celery's own retry of
+a run) never consumes an override.
+
+**Older beats (rolling upgrades).** Until the worker has seen any stamped run
+(a stamped message, or a `task_runs` row with `occurrence_at` set), a message
+without headers falls back to the old rule: an override whose `target_time`
+is within `eta_tolerance_seconds` of *now*. This keeps skips working while
+an old beat is still running. It also keeps the old weaknesses (a late
+start is missed, a manual call near the target consumes the skip), and the
+worker logs a warning once when it uses it. Once stamped runs exist, the
+fallback switches off by itself.
 
 - If a matching override exists and its `action` is `skip` or `cancel`,
   the decorator marks it `consumed`, records a `TaskRun` with
@@ -256,7 +293,8 @@ will rarely line up to the microsecond.
   is set, via `POST /api/schedules/{name}/pause` or
   `celery_manager.control.schedules.pause_schedule`), the run is recorded
   as `skipped` in the same way and the body does not run. The paused check
-  uses the same `effective_schedule_name`; a name that isn't a known
+  uses the stamped entry name if there is one, otherwise
+  `effective_schedule_name`; a name that isn't a known
   schedule is never paused. The override check runs first, so an override
   aimed at this firing is consumed even while the schedule is paused — the
   firing it targeted has happened. After a resume, the next firing beat
