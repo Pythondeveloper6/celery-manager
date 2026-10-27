@@ -226,13 +226,17 @@ events listener, which doesn't serve HTTP; its CLI takes no `--secret-key`.
 Know what celery-manager does and doesn't defend against before you expose
 it:
 
-- **Every dashboard account is a full administrator.** There are no roles
-  or scopes. Any signed-in user can dispatch *any* task name with *any*
-  args and kwargs (`POST /api/tasks/start` does not check the name against
-  registered tasks), cancel or terminate any task, retry runs, pause
-  schedule occurrences, and rebrand the dashboard. Only create accounts for
-  people you'd trust with that, and treat the dashboard as an admin
-  surface — ideally reachable only from a private network or VPN.
+- **Operators are powerful.** Accounts have a [role](roles.md): `viewer`
+  (read-only), `operator` or `admin`. An `operator` can dispatch *any* task
+  name with *any* args and kwargs (`POST /api/tasks/start` does not check
+  the name against registered tasks), cancel or terminate any task, retry
+  runs and pause schedules. Give `operator` and `admin` only to people you'd
+  trust with that, use `viewer` for everyone else, and treat the dashboard
+  as an admin surface, ideally reachable only from a private network or VPN.
+  Viewers can see task arguments, logs and tracebacks.
+- **Upgrading makes every existing account `admin`**, because before roles
+  every account could do everything. Demote accounts afterwards with
+  `celery-manager set-role`.
 - **There is no login rate limiting or lockout.** Put a rate limit on
   `POST /api/auth/login` at your reverse proxy (e.g. nginx `limit_req`,
   Traefik `RateLimit`, a cloud WAF rule). bcrypt makes each guess cost
@@ -241,8 +245,9 @@ it:
   `cm_session` cookie *is* the session; nothing is stored server-side.
   Logging out deletes the cookie from that browser but does **not** revoke
   a copy someone else already has — a stolen cookie keeps working until it
-  expires. Deleting the user does stop their cookie working (every request
-  checks the user still exists). To revoke *every* session at once, rotate
+  expires. Deleting the user, or changing their role, takes effect on their
+  next request (every request reads the account and its role from the
+  database). To revoke *every* session at once, rotate
   `secret_key`.
 - **`brand_logo_url` may point at an external host.** It lands in an
   `<img src>` on every page, including the login screen, so whoever controls

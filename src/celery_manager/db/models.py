@@ -136,6 +136,12 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    # viewer | operator | admin (see celery_manager.auth.roles). The server
+    # default is the least privileged role, so a row inserted from outside
+    # this library can read but not act; `create_user()` passes its own
+    # value. Accounts that existed before roles were upgraded to `admin` by
+    # migration 0006, since that is what every account could do then.
+    role: Mapped[str] = mapped_column(String(16), default="viewer", server_default="viewer")
 
 
 class AppSetting(Base):

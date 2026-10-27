@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { HashRouter, Link, Route, Routes } from "react-router-dom";
-import { whoami } from "./api/client";
+import { whoami, type CurrentUser } from "./api/client";
+import { RoleContext } from "./lib/role";
 import { BrandMark, useBranding } from "./branding";
 import { AppShell } from "./components/AppShell";
 import { Login } from "./pages/Login";
@@ -38,7 +39,7 @@ function NotFound() {
 
 export function App() {
   const { settings } = useBranding();
-  const [username, setUsername] = useState<string | null>(null);
+  const [user, setUser] = useState<CurrentUser | null>(null);
   const [checked, setChecked] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
 
@@ -47,7 +48,7 @@ export function App() {
     setCheckError(null);
     whoami()
       .then((user) => {
-        setUsername(user?.username ?? null);
+        setUser(user);
         setChecked(true);
       })
       .catch((err) => {
@@ -89,7 +90,7 @@ export function App() {
     );
   }
 
-  if (!username) return <Login onSuccess={setUsername} />;
+  if (!user) return <Login onSuccess={setUser} />;
 
   // HashRouter, not BrowserRouter: the backend serves the built SPA via a
   // plain StaticFiles(html=True) mount with no catch-all fallback route, so
@@ -100,21 +101,23 @@ export function App() {
   // the "#".
   return (
     <HashRouter>
-      <AppShell username={username} onSignedOut={() => setUsername(null)}>
-        <Routes>
-          <Route path="/" element={<TaskList />} />
-          <Route path="/tasks/:taskId" element={<TaskDetail />} />
-          <Route path="/schedules" element={<ScheduleList />} />
-          <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
-          <Route path="/audit" element={<AuditLog />} />
-          <Route path="/insights" element={<Insights />} />
-          <Route path="/task-types/:taskName" element={<TaskOverview />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/workers" element={<Workers />} />
-          <Route path="/queues" element={<Queues />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </AppShell>
+      <RoleContext.Provider value={user.role}>
+        <AppShell username={user.username} role={user.role} onSignedOut={() => setUser(null)}>
+          <Routes>
+            <Route path="/" element={<TaskList />} />
+            <Route path="/tasks/:taskId" element={<TaskDetail />} />
+            <Route path="/schedules" element={<ScheduleList />} />
+            <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
+            <Route path="/audit" element={<AuditLog />} />
+            <Route path="/insights" element={<Insights />} />
+            <Route path="/task-types/:taskName" element={<TaskOverview />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/workers" element={<Workers />} />
+            <Route path="/queues" element={<Queues />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AppShell>
+      </RoleContext.Provider>
     </HashRouter>
   );
 }

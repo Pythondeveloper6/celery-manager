@@ -143,6 +143,8 @@ without touching your beat schedule or restarting anything.
 - **Brandable** — set the product name, accent colour, and logo from a
   settings screen; it applies for everyone on the deployment.
 - **Built-in auth** — bcrypt-hashed users and signed session cookies.
+- **Roles** — `viewer` (read-only), `operator` (day-to-day controls) and
+  `admin` (purge, worker shutdown, settings), enforced on the server.
 - **No Node toolchain required** — the React dashboard ships prebuilt inside
   the Python package.
 
@@ -236,7 +238,7 @@ and `task_send_sent_event = True` (or run the worker with `-E`). See
 
 **Two things that stop people on a first run**, both covered in the
 [Quickstart](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md): there is no default account, so you have to
-create one (`celery_manager.auth.users.create_user`); and on plain HTTP you
+create one (`celery-manager create-user admin --role admin --db-url ...`); and on plain HTTP you
 need `cookie_secure=False`, or you will log in successfully and then
 immediately appear logged out.
 

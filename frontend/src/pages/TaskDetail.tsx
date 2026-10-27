@@ -13,6 +13,7 @@ import { IconCheck, IconChevronLeft, IconCopy } from "../components/icons";
 import { WorkflowCard } from "../components/WorkflowCard";
 import { TaskCallDialog } from "../components/TaskCallDialog";
 import { StatusBadge } from "../components/Status";
+import { useCan } from "../lib/role";
 import {
   elapsedSeconds,
   formatDuration,
@@ -142,6 +143,8 @@ function CopyButton({ value }: { value: string }) {
 }
 
 export function TaskDetail() {
+  // Viewers see everything here but no action buttons (server returns 403).
+  const canOperate = useCan("operator");
   const { taskId } = useParams<{ taskId: string }>();
   const [task, setTask] = useState<TaskDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -402,7 +405,7 @@ export function TaskDetail() {
               </div>
             </div>
 
-            {(canCancel || task.status === "failed") && (
+            {canOperate && (canCancel || task.status === "failed") && (
               <div className="cm-task-actions" role="group" aria-label="Task actions">
                 {confirmTerminate && canTerminate ? (
                   <>

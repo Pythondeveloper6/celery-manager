@@ -76,7 +76,7 @@ def _exercise(client, prefix: str, origin: str) -> None:
     whoami = client.get(f"{prefix}/api/whoami")
     assert whoami.status_code == 200
     body = whoami.get_json() if hasattr(whoami, "get_json") else whoami.json()  # Flask vs httpx
-    assert body == {"username": "admin"}
+    assert body == {"username": "admin", "role": "admin"}
 
     assert client.post(f"{prefix}/api/auth/logout", headers={"Origin": "https://evil.example"}).status_code == 403
     assert client.get(f"{prefix}/api/whoami").status_code == 200  # the refused logout changed nothing

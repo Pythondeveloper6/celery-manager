@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from celery_manager.api.deps import get_current_user
+from celery_manager.api.deps import get_current_user, require_operator
 from celery_manager.api.serialization import utc, utc_bound
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
@@ -161,7 +161,7 @@ class StartRequest(BaseModel):
 
 
 @router.post("/start")
-def start(payload: StartRequest, request: Request, username: str = Depends(get_current_user)):
+def start(payload: StartRequest, request: Request, username: str = Depends(require_operator)):
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     # session + username are what make this action land in the audit log,
@@ -176,7 +176,7 @@ def start(payload: StartRequest, request: Request, username: str = Depends(get_c
 
 
 @router.post("/{task_id}/cancel")
-def cancel(task_id: str, request: Request, terminate: bool = False, username: str = Depends(get_current_user)):
+def cancel(task_id: str, request: Request, terminate: bool = False, username: str = Depends(require_operator)):
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
@@ -196,7 +196,7 @@ def retry(
     task_id: str,
     request: Request,
     payload: RetryRequest | None = None,
-    username: str = Depends(get_current_user),
+    username: str = Depends(require_operator),
 ):
     """Re-dispatch a stored run. 404 if there is no such run.
 
@@ -228,7 +228,7 @@ class BulkRetryRequest(BaseModel):
 
 
 @router.post("/retry-bulk")
-def retry_bulk(payload: BulkRetryRequest, request: Request, username: str = Depends(get_current_user)):
+def retry_bulk(payload: BulkRetryRequest, request: Request, username: str = Depends(require_operator)):
     """Re-dispatch several stored runs. 404 if any of them is unknown.
 
     `bulk_retry` stops at the first unknown id (documented limitation — it is
@@ -261,7 +261,7 @@ class BulkCancelRequest(BaseModel):
 
 
 @router.post("/cancel-bulk")
-def cancel_bulk(payload: BulkCancelRequest, request: Request, username: str = Depends(get_current_user)):
+def cancel_bulk(payload: BulkCancelRequest, request: Request, username: str = Depends(require_operator)):
     """Revoke a selection of runs, or every cancellable run matching a filter.
 
     Exactly one of `task_ids` / `filter` is required — an empty body must not

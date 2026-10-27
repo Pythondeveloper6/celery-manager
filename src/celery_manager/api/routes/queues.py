@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from celery_manager.api.deps import get_current_user
+from celery_manager.api.deps import get_current_user, require_admin
 from celery_manager.control.queues import (
     QueueBrokerError,
     QueueNotFound,
@@ -34,7 +34,7 @@ def get_queues(request: Request, workers: bool = True, username: str = Depends(g
 
 
 @router.post("/{name}/purge")
-def purge(name: str, request: Request, username: str = Depends(get_current_user)):
+def purge(name: str, request: Request, username: str = Depends(require_admin)):
     """Remove every ready message from one queue. Destructive; audited.
 
     404 if the broker says the queue doesn't exist (RabbitMQ), 503 if the
