@@ -6,6 +6,12 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0a5] — 2026-10-27
+
+Run the migrations after upgrading (`0006` and `0007`; automatic unless
+`auto_migrate=False`). To get exact skip matching, run beat with
+`-S celery_manager.beat:Scheduler`.
+
 ### Added
 
 - **Explicit occurrence identity for skips.** New beat scheduler
@@ -579,6 +585,7 @@ because anyone who pinned a git SHA during development *will* hit them.
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
 
+[0.1.0a5]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a5
 [0.1.0a4]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a4
 [0.1.0a3]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a3
 [0.1.0a2]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a2
