@@ -112,7 +112,7 @@ and each process must use the **same `db_url`**:
 |---|---|---|
 | Web | `uvicorn main:app` / `flask run` | Calls `create_app()`; needs the real `secret_key`. |
 | Worker | `celery -A yourapp worker` | Must call `celery_manager.setup(config)` at import time of the module that defines your tasks, or `@track` silently does nothing. Needs no `secret_key`. |
-| Beat | `celery -A yourapp beat` | Only if you have periodic tasks. |
+| Beat | `celery -A yourapp beat -S celery_manager.beat:Scheduler` | Only if you have periodic tasks. The scheduler stamps each firing so a skip applies to exactly that run; see [How the skip/cancel check works](decorator.md#how-the-skipcancel-check-works). |
 | Events listener | `celery-manager events --celery-app yourapp:app --db-url sqlite:///celery_manager.db` | Records every task, including undecorated ones, and the queued/started transitions. |
 
 ```python

@@ -33,7 +33,7 @@ as you'd run celery-manager against a production Django app.
    the key, and every process must use the same value):
    - `python manage.py runserver` (the Django app)
    - `celery -A demo worker -l info` (the worker)
-   - `celery -A demo beat -l info` (the periodic scheduler)
+   - `celery -A demo beat -S celery_manager.beat:Scheduler -l info` (the periodic scheduler)
    - `celery-manager events --celery-app demo.celery:app --db-url sqlite:///celery_manager_demo.db` (the events listener)
    - `python run_dashboard.py` (the celery-manager dashboard, at http://localhost:8001)
 6. Create a dashboard user (in a terminal where you ran `source .env`):

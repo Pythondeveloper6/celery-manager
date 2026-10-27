@@ -64,7 +64,9 @@ you confirm. [Read more](queues.md#bulk-cancel)
 ## Control periodic tasks (beat schedules)
 
 All of these need `@track` on the task. celery-manager doesn't change your
-beat schedule: beat still sends the task, and `@track` makes it skip.
+beat schedule: beat still sends the task, and `@track` makes it skip. Run
+beat with `-S celery_manager.beat:Scheduler` so each firing carries its
+scheduled time and a skip applies only to that firing.
 
 **Skip one upcoming run.** Open a schedule to see its next runs, and skip or
 cancel just one of them. The rest of the schedule carries on as normal.

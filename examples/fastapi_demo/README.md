@@ -32,7 +32,7 @@ Then, in separate terminals (each in this directory):
 ```bash
 redis-server
 celery -A celery_app worker -l info                  # runs the tasks
-celery -A celery_app beat -l info                    # fires send_report every 2 hours
+celery -A celery_app beat -S celery_manager.beat:Scheduler -l info   # fires send_report every 2 hours
 celery-manager events --celery-app celery_app:app --db-url sqlite:///celery_manager_demo.db
 uvicorn main:app --port 8000                         # your app + the dashboard
 ```
