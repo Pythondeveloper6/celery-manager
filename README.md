@@ -166,11 +166,11 @@ pip install --pre "celery-manager[flask]"        # adds Flask and a2wsgi
 Alternatively, install a tagged release straight from git:
 
 ```bash
-pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"
+pip install "git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a5"
 ```
 
 (Extras with git: `"celery-manager[standalone] @
-git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a4"`.)
+git+https://github.com/Pythondeveloper6/celery-manager.git@v0.1.0a5"`.)
 
 Optional extras:
 
@@ -274,7 +274,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is an alpha, **0.1.0a4**. It is feature-complete for the v1 scope,
+This is an alpha, **0.1.0a5**. It is feature-complete for the v1 scope,
 but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
 backlog of known gaps and planned follow-ups.
 
