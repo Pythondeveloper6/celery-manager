@@ -148,6 +148,12 @@ step, run `celery-manager migrate`.
 There is no default account: you create the first one yourself.
 [Read more](quickstart.md#create-your-first-dashboard-user)
 
+**Roles.** Give each account `viewer` (look, don't touch), `operator`
+(retry, cancel, pause, worker controls) or `admin` (also purge queues,
+shut down workers, change branding). The server enforces it; the dashboard
+hides what you can't use.
+[Read more](roles.md)
+
 **Themes and branding.** Light, dark or follow the system, chosen per
 browser. Set the product name, accent colour and logo once for everyone.
 In the dashboard: **Settings**.
