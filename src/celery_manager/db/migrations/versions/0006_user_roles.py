@@ -1,0 +1,42 @@
+"""users.role: viewer / operator / admin
+
+Revision ID: 0006
+Revises: 0005
+Create Date: 2026-10-27 09:00:00.000000
+
+"""
+
+from __future__ import annotations
+
+import sqlalchemy as sa
+from alembic import op
+
+revision = "0006"
+down_revision = "0005"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    # Before this revision every account could do everything, so every
+    # existing account becomes `admin`: an upgrade must never lock anyone out
+    # of a control they had yesterday. Added nullable, backfilled, then
+    # tightened, so the backfill value (admin) can differ from the default
+    # for new rows (viewer, the least privileged role).
+    with op.batch_alter_table("users", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("role", sa.String(length=16), nullable=True))
+
+    op.execute("UPDATE users SET role = 'admin'")
+
+    with op.batch_alter_table("users", schema=None) as batch_op:
+        batch_op.alter_column(
+            "role",
+            existing_type=sa.String(length=16),
+            nullable=False,
+            server_default="viewer",
+        )
+
+
+def downgrade() -> None:
+    with op.batch_alter_table("users", schema=None) as batch_op:
+        batch_op.drop_column("role")

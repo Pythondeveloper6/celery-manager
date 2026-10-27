@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from celery_manager.api.deps import get_current_user
+from celery_manager.api.deps import get_current_user, require_operator
 from celery_manager.api.serialization import utc
 from celery_manager.control.schedules import (
     is_paused,
@@ -33,7 +33,7 @@ class PauseRequest(BaseModel):
 
 
 @router.post("/{name}/occurrences/pause")
-def pause(name: str, payload: PauseRequest, request: Request, username: str = Depends(get_current_user)):
+def pause(name: str, payload: PauseRequest, request: Request, username: str = Depends(require_operator)):
     session_factory = request.app.state.cm_session_factory
     eta_tolerance_seconds = request.app.state.cm_config.eta_tolerance_seconds
     with session_factory() as session:
@@ -90,7 +90,7 @@ def pause_whole_schedule(
     name: str,
     request: Request,
     payload: PauseScheduleRequest | None = None,
-    username: str = Depends(get_current_user),
+    username: str = Depends(require_operator),
 ):
     """Pause every firing of this schedule until resumed, or until the
     optional body `{"until": <iso>}`. Idempotent: repeating the pause keeps
@@ -108,7 +108,7 @@ def pause_whole_schedule(
 
 
 @router.post("/{name}/resume")
-def resume_whole_schedule(name: str, request: Request, username: str = Depends(get_current_user)):
+def resume_whole_schedule(name: str, request: Request, username: str = Depends(require_operator)):
     """Resume a paused schedule. The next regular beat firing runs; nothing
     runs immediately and missed firings are not caught up. Idempotent."""
     session_factory = request.app.state.cm_session_factory

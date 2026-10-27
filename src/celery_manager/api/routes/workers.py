@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from celery_manager.api.deps import get_current_user
+from celery_manager.api.deps import get_current_user, require_admin, require_operator
 from celery_manager.control.workers import (
     MAX_NAME_LENGTH,
     WorkerControlError,
@@ -82,33 +82,33 @@ def _check_worker_name(worker: str) -> None:
 
 
 @router.post("/api/workers/{worker}/shutdown")
-def shutdown(worker: str, request: Request, username: str = Depends(get_current_user)):
+def shutdown(worker: str, request: Request, username: str = Depends(require_admin)):
     _check_worker_name(worker)
     return _run(request, shutdown_worker, username, worker)
 
 
 @router.post("/api/workers/{worker}/pool/grow")
-def pool_grow(worker: str, request: Request, payload: PoolRequest | None = None, username: str = Depends(get_current_user)):
+def pool_grow(worker: str, request: Request, payload: PoolRequest | None = None, username: str = Depends(require_operator)):
     _check_worker_name(worker)
     n = payload.n if payload else 1
     return _run(request, resize_pool, username, worker, n, _timeout(request))
 
 
 @router.post("/api/workers/{worker}/pool/shrink")
-def pool_shrink(worker: str, request: Request, payload: PoolRequest | None = None, username: str = Depends(get_current_user)):
+def pool_shrink(worker: str, request: Request, payload: PoolRequest | None = None, username: str = Depends(require_operator)):
     _check_worker_name(worker)
     n = payload.n if payload else 1
     return _run(request, resize_pool, username, worker, -n, _timeout(request))
 
 
 @router.post("/api/workers/{worker}/queues/add")
-def add_consumer(worker: str, payload: QueueRequest, request: Request, username: str = Depends(get_current_user)):
+def add_consumer(worker: str, payload: QueueRequest, request: Request, username: str = Depends(require_operator)):
     _check_worker_name(worker)
     return _run(request, set_consumer, username, worker, payload.queue, True, _timeout(request))
 
 
 @router.post("/api/workers/{worker}/queues/cancel")
-def cancel_consumer(worker: str, payload: QueueRequest, request: Request, username: str = Depends(get_current_user)):
+def cancel_consumer(worker: str, payload: QueueRequest, request: Request, username: str = Depends(require_operator)):
     _check_worker_name(worker)
     return _run(request, set_consumer, username, worker, payload.queue, False, _timeout(request))
 
@@ -122,7 +122,7 @@ class RateLimitRequest(BaseModel):
 
 
 @router.post("/api/tasks/rate-limit")
-def rate_limit(payload: RateLimitRequest, request: Request, username: str = Depends(get_current_user)):
+def rate_limit(payload: RateLimitRequest, request: Request, username: str = Depends(require_operator)):
     destination = [d for d in payload.destination or [] if d] or None
     if destination and any(len(d) > MAX_NAME_LENGTH for d in destination):
         raise HTTPException(status_code=422, detail="Invalid worker name.")

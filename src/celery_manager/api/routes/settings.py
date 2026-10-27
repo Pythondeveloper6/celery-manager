@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from celery_manager.api.deps import get_current_user
+from celery_manager.api.deps import require_admin
 from celery_manager.control.settings import get_settings, update_settings
 
 router = APIRouter(prefix="/api/settings")
@@ -54,15 +54,12 @@ class SettingsUpdate(BaseModel):
 
 
 @router.put("")
-def write_settings(payload: SettingsUpdate, request: Request, username: str = Depends(get_current_user)):
-    """Update branding. Requires a session; returns the new effective settings.
+def write_settings(payload: SettingsUpdate, request: Request, username: str = Depends(require_admin)):
+    """Update branding. Admin only; returns the new effective settings.
 
-    Any authenticated user may rebrand the dashboard. There is no role system
-    in this app — `get_current_user` yields a username and nothing else — so
-    "admin only" is not expressible today without inventing one. That is an
-    accepted v1 limitation, not an oversight: the blast radius is cosmetic and
-    every change is attributed in the audit log, which is how you find out who
-    turned the nav pink.
+    Admin rather than operator: branding is deployment-wide, so one account
+    changing it changes the dashboard for everyone. Every change is still
+    attributed in the audit log.
     """
     # `exclude_unset` is what makes a partial update possible: it keeps the
     # difference between "brand_accent was not in the JSON" (leave it alone)
