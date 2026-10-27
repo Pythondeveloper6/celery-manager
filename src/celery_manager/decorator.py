@@ -4,6 +4,7 @@ import functools
 import json
 import logging
 import traceback as tb_module
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from celery import Task
@@ -11,12 +12,25 @@ from celery.exceptions import Retry
 
 from celery_manager import progress as progress_module
 from celery_manager.logcapture import capture_logs
+from celery_manager.occurrences import (
+    CALENDAR_MATCH_WINDOW,
+    INTERVAL_HEADER,
+    OCCURRENCE_HEADER,
+    SCHEDULE_HEADER,
+    SENT_AT_HEADER,
+    parse_occurrence,
+)
 
 logger = logging.getLogger(__name__)
 
 _session_factory = None
 _eta_tolerance_seconds = 60
 _warned_unconfigured = False
+_warned_legacy_match = False
+# Set once this process has seen evidence that beat stamps occurrence
+# headers (a stamped message, or a stamped `task_runs` row). From then on a
+# message without headers never consumes an override.
+_beat_stamps = False
 
 
 def configure(session_factory, eta_tolerance_seconds: int = 60) -> None:
@@ -27,10 +41,12 @@ def configure(session_factory, eta_tolerance_seconds: int = 60) -> None:
     `celery_manager.setup(config)` does this for you (and is idempotent),
     so prefer that over calling this directly.
     """
-    global _session_factory, _eta_tolerance_seconds, _warned_unconfigured
+    global _session_factory, _eta_tolerance_seconds, _warned_unconfigured, _warned_legacy_match, _beat_stamps
     _session_factory = session_factory
     _eta_tolerance_seconds = eta_tolerance_seconds
     _warned_unconfigured = False
+    _warned_legacy_match = False
+    _beat_stamps = False
 
 
 def _warn_unconfigured_once(task_name: str) -> None:
@@ -53,25 +69,149 @@ def _warn_unconfigured_once(task_name: str) -> None:
     )
 
 
-def _find_matching_override(session, schedule_name: str):
-    from celery_manager.db.models import ScheduleOverride
+@dataclass(frozen=True)
+class BeatOccurrence:
+    """The occurrence identity beat stamped on this message (see
+    `celery_manager.beat`)."""
 
-    now = datetime.now(timezone.utc)
-    window = timedelta(seconds=_eta_tolerance_seconds)
-    candidates = (
-        session.query(ScheduleOverride)
-        .filter_by(schedule_name=schedule_name, consumed=False)
-        .all()
+    schedule_name: str
+    occurrence: datetime
+    interval_seconds: float | None = None
+    sent_at: datetime | None = None
+
+
+def _header(request, name: str):
+    """A custom message header from the task request. A real worker exposes
+    message headers as request attributes; eager `apply(headers=...)` puts
+    them in `request.headers`."""
+    value = getattr(request, name, None)
+    if value is None:
+        headers = getattr(request, "headers", None)
+        if isinstance(headers, dict):
+            value = headers.get(name)
+    return value
+
+
+def _beat_occurrence(task_self) -> BeatOccurrence | None:
+    """Read the beat occurrence headers off the running task, or None if the
+    message has none (a manual call, a retry, or a non-stamping beat).
+    Never raises."""
+    try:
+        request = getattr(task_self, "request", None)
+        if request is None:
+            from celery import current_task
+
+            request = getattr(current_task, "request", None)
+        if request is None:
+            return None
+        schedule_name = _header(request, SCHEDULE_HEADER)
+        occurrence = parse_occurrence(_header(request, OCCURRENCE_HEADER))
+        if not isinstance(schedule_name, str) or not schedule_name or occurrence is None:
+            return None
+        interval = _header(request, INTERVAL_HEADER)
+        try:
+            interval = float(interval) if interval is not None else None
+        except (TypeError, ValueError):
+            interval = None
+        _mark_beat_stamping()
+        return BeatOccurrence(
+            schedule_name=schedule_name,
+            occurrence=occurrence,
+            interval_seconds=interval if interval and interval > 0 else None,
+            sent_at=parse_occurrence(_header(request, SENT_AT_HEADER)),
+        )
+    except Exception:  # noqa: BLE001 — a malformed header must not fail the task
+        return None
+
+
+def _mark_beat_stamping() -> None:
+    global _beat_stamps
+    _beat_stamps = True
+
+
+def _beat_is_stamping(session) -> bool:
+    """True once any run in storage carries a beat occurrence stamp. Cached
+    per process once true (a beat that stamps keeps stamping)."""
+    global _beat_stamps
+    if _beat_stamps:
+        return True
+    from celery_manager.db.models import TaskRun
+
+    if session.query(TaskRun.id).filter(TaskRun.occurrence_at.isnot(None)).first() is not None:
+        _beat_stamps = True
+    return _beat_stamps
+
+
+def _warn_legacy_match_once(schedule_name: str) -> None:
+    global _warned_legacy_match
+    if _warned_legacy_match:
+        return
+    _warned_legacy_match = True
+    logger.warning(
+        "celery-manager: matched a schedule override for %r by wall-clock time "
+        "because the message carries no occurrence headers. Run beat with "
+        "`-S celery_manager.beat:Scheduler` (or the StampOccurrencesMixin) so a "
+        "late start or a manual call near the target time cannot skip the "
+        "wrong run. (Logged once per process.)",
+        schedule_name,
     )
+
+
+def _closest(candidates, t: datetime, window: timedelta):
+    best = None
+    best_diff = None
     for override in candidates:
         target_time = override.target_time
         if target_time.tzinfo is None:
             # SQLite drops tzinfo on round-trip even for DateTime(timezone=True)
             # columns; values are always written as UTC, so treat naive as UTC.
             target_time = target_time.replace(tzinfo=timezone.utc)
-        if abs(target_time - now) <= window:
-            return override
-    return None
+        diff = abs(target_time - t)
+        if diff <= window and (best is None or diff < best_diff):
+            best, best_diff = override, diff
+    return best
+
+
+def _find_matching_override(session, schedule_name: str, occurrence: BeatOccurrence | None = None):
+    """The unconsumed override this run should apply, or None.
+
+    With beat occurrence headers (the normal case once beat runs the
+    stamping scheduler) the override must target that occurrence: exactly
+    for crontab/solar (`CALENDAR_MATCH_WINDOW` only absorbs millisecond
+    rounding), and within `eta_tolerance_seconds` (capped at half the
+    period) for interval schedules, whose real firing times move by beat's
+    scheduling jitter from one firing to the next. How late the task starts
+    does not matter.
+
+    Without headers: if beat is known to stamp (`_beat_is_stamping`), the
+    message is a manual call or a retry and never consumes an override.
+    Otherwise (an older beat, or beat without the scheduler) we keep the
+    previous behaviour: an override within `eta_tolerance_seconds` of *now*.
+    """
+    from celery_manager.db.models import ScheduleOverride
+
+    candidates = (
+        session.query(ScheduleOverride)
+        .filter_by(schedule_name=schedule_name, consumed=False)
+        .all()
+    )
+    if not candidates:
+        return None
+
+    tolerance = timedelta(seconds=_eta_tolerance_seconds)
+    if occurrence is not None:
+        if occurrence.interval_seconds is not None:
+            window = min(tolerance, timedelta(seconds=occurrence.interval_seconds / 2))
+        else:
+            window = CALENDAR_MATCH_WINDOW
+        return _closest(candidates, occurrence.occurrence, window)
+
+    if _beat_is_stamping(session):
+        return None
+    match = _closest(candidates, datetime.now(timezone.utc), tolerance)
+    if match is not None:
+        _warn_legacy_match_once(schedule_name)
+    return match
 
 
 def _schedule_is_paused(session, schedule_name: str) -> bool:
@@ -340,6 +480,16 @@ def track(schedule_name: str | None = None):
             run_args = _safe_json(args[1:] if task_self else args)
             run_kwargs = _safe_json(kwargs)
 
+            # Which beat firing this is, if beat stamped it. The stamped
+            # entry name is what overrides and pauses are keyed by, so it
+            # wins over `schedule_name` for those checks.
+            beat_occurrence = _beat_occurrence(task_self)
+            control_schedule_name = beat_occurrence.schedule_name if beat_occurrence else effective_schedule_name
+            occurrence_fields = {
+                "occurrence_at": beat_occurrence.occurrence if beat_occurrence else None,
+                "beat_sent_at": beat_occurrence.sent_at if beat_occurrence else None,
+            }
+
             # Skip-check. Guarded for the same reason as _persist_run: if
             # storage is unreachable we fail *open* (run the task normally),
             # matching the documented degrade-gracefully behaviour above,
@@ -348,7 +498,7 @@ def track(schedule_name: str | None = None):
             skipped = False
             try:
                 with _session_factory() as session:
-                    override = _find_matching_override(session, effective_schedule_name)
+                    override = _find_matching_override(session, control_schedule_name, beat_occurrence)
                     if override is not None and override.action in ("skip", "cancel"):
                         # Commit the "this occurrence is consumed" decision on
                         # its own, before writing the task_runs row. The two
@@ -368,7 +518,7 @@ def track(schedule_name: str | None = None):
                     # stale row in the pool that `pause_occurrence`'s
                     # tolerance matching and the occurrences view would have
                     # to keep stepping around.
-                    if not skipped and _schedule_is_paused(session, effective_schedule_name):
+                    if not skipped and _schedule_is_paused(session, control_schedule_name):
                         skipped = True
             except Exception:  # deliberate fail-open: see _persist_run's docstring
                 logger.exception(
@@ -388,6 +538,7 @@ def track(schedule_name: str | None = None):
                     schedule_name=effective_schedule_name,
                     started_at=now,
                     finished_at=now,
+                    **occurrence_fields,
                 )
                 return None
 
@@ -441,6 +592,7 @@ def track(schedule_name: str | None = None):
                 kwargs=run_kwargs,
                 schedule_name=effective_schedule_name,
                 started_at=started_at,
+                **occurrence_fields,
                 **_workflow_lineage(task_self),
                 clear=(
                     "exception", "traceback", "finished_at", "runtime_seconds",

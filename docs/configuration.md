@@ -25,7 +25,7 @@ config = CeleryManagerConfig(
 | `celery_app` | `celery.Celery` | *required* | Your application's Celery instance. Used for task introspection (dispatching tasks via `send_task`, reading `beat_schedule` to compute upcoming occurrences) and control calls (`revoke`/`terminate`). The API app and the events listener must both be given the *same* Celery app configuration (same broker, same `beat_schedule`) or their views of the world will disagree. |
 | `db_url` | `str` | `"sqlite:///celery_manager.db"` | SQLAlchemy connection URL for celery-manager's own storage (task runs, schedules, overrides, users, audit log — see `celery_manager.db.models`). Any SQLAlchemy-supported backend works; swap to Postgres/MySQL/etc. for production. For `sqlite:///:memory:` specifically, the engine is built with `StaticPool` so every connection shares one in-memory database — needed for it to behave sensibly under FastAPI's threadpool (as used in the test suite); other SQLite URLs use `check_same_thread=False` instead. Every process that needs to see the same data (API app + events listener) must point at the same `db_url`. |
 | `secret_key` | `str` | `"change-me"` (a placeholder) | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for 7 days). Anyone who knows the key can forge a valid session cookie for any username, so **`create_app()` raises `ValueError` and refuses to start if it is empty or still `"change-me"`** — set a private random value in every process that serves the dashboard, local development included. Processes that don't serve HTTP (Celery workers calling `celery_manager.setup()`, the events listener) never sign sessions and may leave the default. Rotating it invalidates every existing session (users are signed out). See [`secret_key` in production](#secret_key-in-production). |
-| `eta_tolerance_seconds` | `int` | `60` | How close a stored `ScheduleOverride.target_time` must be to "now" (in the `@track` decorator, at task-run time) or to a freshly recomputed occurrence timestamp (in `GET /api/schedules/{name}/occurrences`, at read time) for them to be treated as the same logical occurrence. See the trade-off below. |
+| `eta_tolerance_seconds` | `int` | `60` | How far apart two timestamps of the same occurrence may be: an interval-schedule occurrence stamped by beat vs. a saved `target_time` (in `@track`, capped at half the interval), and a saved `target_time` vs. a recomputed occurrence (in `GET /api/schedules/{name}/occurrences`). It is compared with "now" only for messages without occurrence headers while beat has never stamped any (see [How the skip/cancel check works](decorator.md#how-the-skipcancel-check-works)). See the trade-off below. |
 | `cookie_secure` | `bool` | `True` | Sets the `Secure` flag on the session cookie, so browsers only ever send it back over HTTPS. See below for why the default is `True` and when to change it. |
 | `export_max_rows` | `int` | `50000` | Hard cap on rows in one `GET /api/tasks/export` download. Larger results are cut to the newest rows and flagged with `X-Export-Truncated: true`. |
 | `live_poll_interval_seconds` | `float` | `1.0` | How often each API process polls `task_runs` for changes to push down `/api/stream` while at least one dashboard has it open. Each poll is a small query on an indexed column; nothing is polled while nobody is connected. Lower means quicker live updates and more queries. See [REST API: how changes reach the stream](rest-api.md#how-changes-reach-the-stream). |
@@ -73,10 +73,12 @@ occurrence timestamps are computed independently each time rather than
 stored once. That means the tolerance window is a genuine trade-off, not
 just a fudge factor:
 
-- **Too small** (e.g. a few seconds) risks the decorator's check missing a
-  match at actual run time if the worker picks up the task even slightly
-  outside the window — the task would run instead of being skipped, silently
-  defeating the pause.
+- **Too small** (e.g. under a second) risks an interval-schedule skip not
+  matching beat's real firing. With beat running
+  `celery_manager.beat:Scheduler`, queue delay no longer matters: the
+  decorator compares the occurrence beat stamped, not the start time.
+  Without it (old beat), the window is still compared with "now", and a
+  task picked up outside it runs instead of being skipped.
 - **Too large** (e.g. tens of minutes) on a tightly-spaced periodic
   schedule (interval shorter than `2 * eta_tolerance_seconds`) makes a
   single override ambiguous between two neighboring occurrences. The

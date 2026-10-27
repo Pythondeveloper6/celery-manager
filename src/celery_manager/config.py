@@ -20,8 +20,16 @@ class CeleryManagerConfig:
         with it (or an empty key), since anyone could forge a session from
         it. Processes that don't serve HTTP (workers, the events listener)
         never sign sessions and may leave it as-is.
-    eta_tolerance_seconds: how close "now" must be to a schedule
-        override's target time for the decorator to treat it as a match.
+    eta_tolerance_seconds: how far apart two timestamps of the same
+        interval-schedule occurrence may be and still match. With beat
+        running the stamping scheduler (`celery_manager.beat:Scheduler`) the
+        decorator matches a skip/cancel by the occurrence beat stamped on the
+        message: crontab/solar exactly, interval schedules within this
+        window (capped at half the interval). The dashboard also uses it to
+        match saved overrides to listed occurrences. Only for messages with
+        no occurrence headers from a beat that has never stamped one (an
+        older beat during an upgrade) is it still compared with "now", the
+        previous behaviour.
     export_max_rows: hard cap on rows in one `GET /api/tasks/export` download.
         Larger results are cut off (newest first) and flagged with an
         `X-Export-Truncated: true` header.
