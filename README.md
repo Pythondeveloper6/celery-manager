@@ -213,6 +213,14 @@ def send_report(self):
     ...
 ```
 
+For per-occurrence skips, run beat with celery-manager's scheduler. It tags
+each firing with its scheduled time, so a skip hits exactly that run, however
+late it starts, and never a manual `.delay()`:
+
+```bash
+celery -A your_module beat -S celery_manager.beat:Scheduler
+```
+
 Then run the events listener alongside your worker and beat, so the dashboard
 sees every task rather than only the decorated ones:
 
