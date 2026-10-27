@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from celery_manager.api.deps import SESSION_COOKIE, cookie_path, get_current_user
+from celery_manager.api.deps import SESSION_COOKIE, Principal, cookie_path
 from celery_manager.auth.sessions import sign_session
 from celery_manager.auth.users import verify_password
 
@@ -32,7 +32,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
         samesite="lax",
         secure=config.cookie_secure,
     )
-    return {"username": user.username}
+    return {"username": user.username, "role": user.role}
 
 
 @router.post("/auth/logout")
@@ -51,5 +51,8 @@ def logout(request: Request, response: Response):
 
 
 @router.get("/whoami")
-def whoami(username: str = Depends(get_current_user)):
-    return {"username": username}
+def whoami(principal: Principal):
+    """The signed-in account and its role. The dashboard uses the role only
+    to hide controls the account can't use; the server checks it again on
+    every state-changing request."""
+    return {"username": principal.username, "role": principal.role}
