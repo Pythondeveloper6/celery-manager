@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import copy
 from datetime import datetime, timedelta, timezone
 
-from celery.schedules import crontab, maybe_schedule, solar
-from celery.schedules import schedule as interval_schedule
+from celery.schedules import maybe_schedule
 
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride, TaskRun
+from celery_manager.occurrences import is_interval_schedule, next_occurrence_after
 
 
 def _entry_schedule(entry: dict):
@@ -37,7 +36,7 @@ def _is_interval_schedule(celery_schedule) -> bool:
     crontab/solar are not subclasses of `schedule` today; they are excluded
     explicitly anyway so a future Celery reshuffle can't silently route them
     through interval projection."""
-    return isinstance(celery_schedule, interval_schedule) and not isinstance(celery_schedule, (crontab, solar))
+    return is_interval_schedule(celery_schedule)
 
 
 def _last_observed_run_at(session, schedule_name: str) -> datetime | None:
@@ -58,7 +57,20 @@ def _last_observed_run_at(session, schedule_name: str) -> datetime | None:
     cannot be told apart from beat fires (the decorator records the same
     `schedule_name` for both) — a known limitation, see
     `upcoming_occurrences`.
+
+    When beat runs with the stamping scheduler (`celery_manager.beat`), runs
+    carry `beat_sent_at` — beat's own `last_run_at` for that firing — and the
+    newest one is used instead. It is exact: no queue latency, and manual
+    calls (which carry no stamp) cannot move it.
     """
+    stamped = (
+        session.query(TaskRun.beat_sent_at)
+        .filter(TaskRun.schedule_name == schedule_name, TaskRun.beat_sent_at.isnot(None))
+        .order_by(TaskRun.beat_sent_at.desc())
+        .first()
+    )
+    if stamped is not None:
+        return _as_aware_utc(stamped[0])
     row = (
         session.query(TaskRun.started_at)
         .filter(
@@ -129,15 +141,14 @@ def upcoming_occurrences(
     if anchor is not None and _is_interval_schedule(celery_schedule):
         return _project_interval(_as_aware_utc(anchor), celery_schedule.run_every, count, from_time)
 
+    # `next_occurrence_after` is the same step the beat scheduler mixin uses
+    # to stamp `cm_occurrence` (celery_manager.occurrences), so a calendar
+    # occurrence listed here is the exact value beat will stamp for it.
     occurrences: list[datetime] = []
-    last_run_at = from_time
-    local_schedule = copy.copy(celery_schedule)
+    cursor = from_time
     for _ in range(count):
-        local_schedule.nowfun = lambda cursor=last_run_at: cursor
-        remaining = local_schedule.remaining_estimate(last_run_at)
-        next_run = last_run_at + remaining
-        occurrences.append(next_run)
-        last_run_at = next_run
+        cursor = next_occurrence_after(celery_schedule, cursor)
+        occurrences.append(cursor)
     return occurrences
 
 

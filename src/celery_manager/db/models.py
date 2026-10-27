@@ -64,6 +64,14 @@ class TaskRun(Base):
     parent_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     root_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     group_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Occurrence identity, from the headers the beat scheduler mixin stamps
+    # (`celery_manager.beat`). `occurrence_at` is the scheduled time of the
+    # firing this run belongs to; `beat_sent_at` is when beat sent it, the
+    # anchor for projecting an interval schedule's next occurrences. Both
+    # NULL for runs not sent by a stamping beat (manual calls, old beats).
+    # Added by migration 0006.
+    occurrence_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    beat_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When anything on this row last changed — the dashboard's change feed.
     # The API process polls `updated_at > cursor` (see `db/changefeed.py`) to
     # tell connected browsers about writes made by *other* processes (the
