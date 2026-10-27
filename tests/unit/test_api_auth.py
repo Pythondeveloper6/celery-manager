@@ -57,7 +57,7 @@ def test_protected_route_succeeds_after_login():
     client.post("/api/auth/login", json={"username": "alice", "password": "correct-horse-battery-staple"})
     response = client.get("/api/whoami")
     assert response.status_code == 200
-    assert response.json() == {"username": "alice"}
+    assert response.json() == {"username": "alice", "role": "admin"}
 
 
 # --- I7: the session cookie is a bearer credential for the whole dashboard

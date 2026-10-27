@@ -113,6 +113,7 @@ nav:
       - Insights: insights.md
       - Workers and rate limits: workers.md
       - Queues, purge and bulk cancel: queues.md
+      - Roles: roles.md
   - Reference:
       - REST API: rest-api.md
       - Configuration: configuration.md

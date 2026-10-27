@@ -126,8 +126,10 @@ celery_manager.setup(CeleryManagerConfig(celery_app=app, db_url=DB_URL))
 The events listener needs Celery task events switched on; see
 [Required Celery settings](quickstart.md#required-celery-settings).
 
-Create a dashboard user with `celery_manager.auth.users.create_user`; both demos
-include a `create_user.py` script.
+Create a dashboard user with `celery-manager create-user NAME --role admin --db-url ...`
+or `celery_manager.auth.users.create_user`; both demos include a `create_user.py`
+script. The embedded dashboard keeps its own accounts and [roles](roles.md); there
+is no hook to reuse your app's login.
 
 ## Cookies, `cookie_secure` and the mount prefix
 

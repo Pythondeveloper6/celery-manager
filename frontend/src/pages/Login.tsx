@@ -1,8 +1,8 @@
 import { useId, useState } from "react";
-import { login } from "../api/client";
+import { login, type CurrentUser } from "../api/client";
 import { BrandMark, useBranding } from "../branding";
 
-export function Login({ onSuccess }: { onSuccess: (username: string) => void }) {
+export function Login({ onSuccess }: { onSuccess: (user: CurrentUser) => void }) {
   // Branding is already in context by the time this renders (BrandingProvider
   // wraps App in main.tsx, above the authentication check) — that is the whole
   // reason GET /api/settings is unauthenticated. If it never arrives, this
@@ -23,7 +23,7 @@ export function Login({ onSuccess }: { onSuccess: (username: string) => void }) 
     setLoading(true);
     try {
       const user = await login(username, password);
-      onSuccess(user.username);
+      onSuccess(user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

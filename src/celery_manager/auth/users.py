@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import bcrypt
 
+from celery_manager.auth.roles import ADMIN, validate_role
 from celery_manager.db.models import User
 
 # bcrypt only ever looks at the first 72 bytes of its input, and bcrypt>=5
@@ -18,7 +19,16 @@ MAX_PASSWORD_BYTES = 72
 _DUMMY_HASH = b"$2b$12$ysd1eu9/3zS5P2WLJmNh0uTcSzFBUvlXuzcNVUY/x6F/VoRhuJA72"
 
 
-def create_user(session, username: str, password: str) -> User:
+def create_user(session, username: str, password: str, role: str = ADMIN) -> User:
+    """Create a dashboard account.
+
+    ``role`` defaults to ``admin`` so code written before roles existed
+    (``create_user(session, name, pw)`` in setup scripts and examples) keeps
+    creating accounts that can do what every account could do then. The
+    ``celery-manager create-user`` CLI defaults to ``viewer`` instead; see
+    docs/roles.md.
+    """
+    validate_role(role)
     encoded = password.encode("utf-8")
     if not encoded:
         raise ValueError("password must not be empty")
@@ -27,7 +37,7 @@ def create_user(session, username: str, password: str) -> User:
         # would otherwise be able to log in with only its first 72 bytes.
         raise ValueError(f"password must be at most {MAX_PASSWORD_BYTES} bytes when UTF-8 encoded")
     password_hash = bcrypt.hashpw(encoded, bcrypt.gensalt()).decode("utf-8")
-    user = User(username=username, password_hash=password_hash)
+    user = User(username=username, password_hash=password_hash, role=role)
     session.add(user)
     session.commit()
     return user
@@ -35,6 +45,25 @@ def create_user(session, username: str, password: str) -> User:
 
 def user_exists(session, username: str) -> bool:
     return session.query(User.id).filter_by(username=username).first() is not None
+
+
+def get_user_role(session, username: str) -> str | None:
+    """The account's role, or None if there is no such account."""
+    row = session.query(User.role).filter_by(username=username).one_or_none()
+    return None if row is None else row[0]
+
+
+def set_user_role(session, username: str, role: str) -> User:
+    """Change an existing account's role. Takes effect on the account's next
+    request: the role is read from the database every time, not baked into
+    the session cookie. Raises LookupError if there is no such account."""
+    validate_role(role)
+    user = session.query(User).filter_by(username=username).one_or_none()
+    if user is None:
+        raise LookupError(f"no dashboard user named {username!r}")
+    user.role = role
+    session.commit()
+    return user
 
 
 def verify_password(session, username: str, password: str) -> User | None:
