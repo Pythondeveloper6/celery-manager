@@ -96,6 +96,7 @@ packages = ["src/celery_manager"]
 include = [
     "/src",
     "/tests",
+    "/.github/scripts/publish_status.py",
     "/docs",
     "/examples",
     "/frontend",
