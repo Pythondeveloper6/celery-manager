@@ -7,7 +7,9 @@ export type RuleKind =
   | "worker_offline"
   | "missed_run"
   | "broker_unreachable"
-  | "broker_memory";
+  | "broker_memory"
+  | "queue_wait"
+  | "queue_growing";
 export type ChannelKind = "slack" | "webhook" | "email";
 
 export interface AlertRule {

@@ -141,7 +141,7 @@ def test_list_queues_reports_depth_consumers_and_recorded_counts():
     assert by_name["reports"]["recorded_queued"] == 1  # the started run is not queued
     assert by_name["live"] == {
         "name": "live", "sources": ["workers"], "depth": 4, "consumers": 3,
-        "exists": True, "reason": None, "recorded_queued": 0,
+        "exists": True, "reason": None, "recorded_queued": 0, "wait": None,
     }
     # Runs with no queue are counted, not dropped or guessed into "celery".
     assert body["recorded_queued_unassigned"] == 1

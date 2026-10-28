@@ -13,12 +13,6 @@ dead-letter view and data retention) shipped in 0.1.0a5. See the
 
 These use Redis or RabbitMQ directly, beyond the queue depth celery-manager reads today.
 
-**Queue wait time.** How long tasks wait in the queue before a worker starts them, as
-p50/p95 per queue, a metric, and a "tasks are waiting too long" alert.
-
-**Queue depth history.** Depth over time for each queue, as small charts, and an alert
-when a queue keeps growing for a number of minutes.
-
 **Delayed tasks.** Tasks held by workers with an ETA or countdown, in one list, with
 cancel.
 

@@ -44,6 +44,7 @@ from sqlalchemy import and_, delete, exists, func, or_
 from sqlalchemy.orm import aliased
 
 from celery_manager.control.audit import record as record_audit
+from celery_manager.control.depth_history import DEFAULT_RETENTION_DAYS, prune_samples
 from celery_manager.db.models import AppSetting, AuditLog, TaskRun
 
 RETENTION_KEY = "retention"
@@ -325,8 +326,15 @@ def run_prune(
     batch_size: int = DEFAULT_BATCH_SIZE,
     dry_run: bool = False,
     rules: RetentionRules | None = None,
+    sample_retention_days: int | None = DEFAULT_RETENTION_DAYS,
 ) -> dict:
-    """Prune runs and the audit log, then record what happened.
+    """Prune runs, the audit log and queue depth samples, then record what
+    happened.
+
+    Depth samples are not governed by the retention rules (they have no task
+    name and are tiny); `sample_retention_days` comes from
+    `CeleryManagerConfig.queue_sample_retention_days`, 14 by default, and
+    None/0 keeps them.
 
     A real prune stores a "last prune" record (shown on the Settings page) and
     writes one audit row *when something was deleted*: a prune scheduled hourly
@@ -336,11 +344,15 @@ def run_prune(
     now = now or datetime.now(timezone.utc)
     by_task = prune_runs(session, now=now, batch_size=batch_size, dry_run=dry_run, rules=rules)
     audit_deleted = prune_audit_log(session, now=now, batch_size=batch_size, dry_run=dry_run, rules=rules)
+    samples_deleted = prune_samples(
+        session, sample_retention_days, now=now, dry_run=dry_run, batch_size=max(batch_size, 5000)
+    )
     summary = {
         "dry_run": dry_run,
         "at": now.isoformat(),
         "runs_deleted": sum(by_task.values()),
         "audit_deleted": audit_deleted,
+        "samples_deleted": samples_deleted,
         "by_task": by_task,
     }
     if dry_run:
@@ -359,6 +371,7 @@ def run_prune(
     if summary["runs_deleted"] or audit_deleted:
         record_audit(
             session, username, "prune", "retention", "task_runs",
-            {"runs_deleted": summary["runs_deleted"], "audit_deleted": audit_deleted, "by_task": top},
+            {"runs_deleted": summary["runs_deleted"], "audit_deleted": audit_deleted,
+             "samples_deleted": samples_deleted, "by_task": top},
         )
     return summary

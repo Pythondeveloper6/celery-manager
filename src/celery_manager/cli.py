@@ -141,8 +141,11 @@ def prune_command(db_url: str, *, dry_run: bool = False, batch_size: int = 1000)
         verb = "Would delete" if dry_run else "Deleted"
         for task_name, count in sorted(summary["by_task"].items()):
             print(f"{task_name}\t{count}")
-        print(f"{verb} {summary['runs_deleted']} run(s) and {summary['audit_deleted']} audit log row(s).")
-        if summary["runs_deleted"] == 0 and summary["audit_deleted"] == 0 and not dry_run:
+        print(
+            f"{verb} {summary['runs_deleted']} run(s), {summary['audit_deleted']} audit log row(s) "
+            f"and {summary['samples_deleted']} queue depth sample(s)."
+        )
+        if summary["runs_deleted"] == 0 and summary["audit_deleted"] == 0 and summary["samples_deleted"] == 0 and not dry_run:
             print("Nothing to prune. (Retention is off until you set days in Settings or update_retention().)")
         return 0
     finally:
@@ -295,6 +298,11 @@ def main() -> None:
             from celery_manager.alerts import start_in_background
 
             start_in_background(session_factory, config.celery_app, config, args.alerts_interval)
+        # Queue depth history: its own thread and sessions, for the same
+        # reason. A no-op when queue_sample_interval_seconds is 0.
+        from celery_manager.control.depth_history import start_in_background as start_sampler
+
+        start_sampler(session_factory, config.celery_app, config)
         EventListener(config, session_factory).run()
 
 

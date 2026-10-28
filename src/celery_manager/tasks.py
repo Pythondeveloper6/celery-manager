@@ -42,7 +42,10 @@ def register_prune_task(
     def prune() -> dict:
         session_factory = setup_runtime(config)
         with session_factory() as session:
-            return run_prune(session, username="system", batch_size=batch_size)
+            return run_prune(
+                session, username="system", batch_size=batch_size,
+                sample_retention_days=config.queue_sample_retention_days,
+            )
 
     if schedule is not None:
         entries = dict(celery_app.conf.beat_schedule or {})

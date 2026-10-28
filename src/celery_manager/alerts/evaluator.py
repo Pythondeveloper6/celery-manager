@@ -48,6 +48,9 @@ from celery_manager.config import CeleryManagerConfig
 from celery_manager.control import alerts as control
 from celery_manager.control.audit import record as record_audit
 from celery_manager.control.broker import broker_health as _broker_health
+from celery_manager.control.depth_history import growth as depth_growth
+from celery_manager.control.depth_history import window_samples
+from celery_manager.control.latency import percentile, wait_samples
 from celery_manager.control.missed import list_missed_runs
 from celery_manager.control.queues import list_queues as _list_queues
 from celery_manager.control.workers import inspect_workers as _inspect_workers
@@ -56,6 +59,7 @@ from celery_manager.db.models import (
     AlertIncident,
     AlertRule,
     AlertWorkerSighting,
+    QueueDepthSample,
     TaskRun,
 )
 
@@ -293,6 +297,59 @@ def _check_broker_memory(rule: AlertRule, params: dict, probe: _Probe) -> Observ
     return observation
 
 
+# --- queue wait / depth history block ---------------------------------------------
+
+
+def _check_queue_wait(rule: AlertRule, params: dict, probe: _Probe) -> Observation:
+    window = timedelta(minutes=params["window_minutes"])
+    samples = wait_samples(probe.session, now=probe.now, window=window)
+    observation = Observation()
+    for queue, waits in samples.by_queue.items():
+        if not _matches(rule.target, queue) or len(waits) < params["min_runs"]:
+            continue
+        value = percentile(sorted(waits), params["quantile"])
+        if value >= params["seconds"]:
+            observation.firing[queue] = {
+                "wait_seconds": round(value, 3),
+                "quantile": params["quantile"],
+                "runs": len(waits),
+                "threshold": params["seconds"],
+                "window_minutes": params["window_minutes"],
+            }
+    return observation
+
+
+def _check_queue_growing(rule: AlertRule, params: dict, probe: _Probe) -> Observation:
+    window = timedelta(minutes=params["minutes"])
+    since = probe.now - window
+    known = probe.session.query(QueueDepthSample.queue).filter(
+        QueueDepthSample.sampled_at >= probe.now - timedelta(hours=24)
+    ).distinct().all()
+    names = [q for (q,) in known if _matches(rule.target, q)]
+    if not known:
+        raise CheckUnavailable(
+            "no queue depth samples yet (needs the events listener running with queue_sample_interval_seconds above 0)"
+        )
+    observation = Observation()
+    for name in names:
+        series = window_samples(probe.session, name, since, probe.now)
+        # Too little data to judge (the sampler stopped, or just started) is
+        # unknown, so an open incident isn't resolved by a gap in sampling.
+        # Needs 3 readings spanning at least half the window, the newest of
+        # them no older than half the window.
+        if (
+            len(series) < 3
+            or series[-1][0] - series[0][0] < window / 2
+            or probe.now - series[-1][0] > window / 2
+        ):
+            observation.unknown.add(name)
+            continue
+        found = depth_growth([depth for _, depth in series], params["min_increase"])
+        if found:
+            observation.firing[name] = {**found, "minutes": params["minutes"], "threshold": params["min_increase"]}
+    return observation
+
+
 _CHECKS = {
     "failure_rate": _check_failure_rate,
     "queue_backlog": _check_queue_backlog,
@@ -300,6 +357,8 @@ _CHECKS = {
     "missed_run": _check_missed_run,
     "broker_unreachable": _check_broker_unreachable,
     "broker_memory": _check_broker_memory,
+    "queue_wait": _check_queue_wait,
+    "queue_growing": _check_queue_growing,
 }
 
 
@@ -335,6 +394,16 @@ def _summary(rule: AlertRule, key: str, details: dict, event: str) -> str:
             return f"Broker memory is back under {details.get('threshold', 0):.0%} of maxmemory"
         return (f"Broker memory is at {details['ratio']:.0%} of maxmemory "
                 f"({details['used_memory']:,} of {details['maxmemory']:,} bytes; threshold {details['threshold']:.0%})")
+    if kind == "queue_wait":
+        if event == "resolved":
+            return f"Queue {key} wait time is back under {details.get('threshold'):g}s"
+        return (f"Queue {key}: p{details['quantile']} wait is {details['wait_seconds']:g}s over the last "
+                f"{details['window_minutes']} min (threshold {details['threshold']:g}s, {details['runs']} runs)")
+    if kind == "queue_growing":
+        if event == "resolved":
+            return f"Queue {key} is no longer growing"
+        return (f"Queue {key} grew from {details['from']} to {details['to']} waiting messages in the last "
+                f"{details['minutes']} min")
     return f"{rule.name}: {key}"
 
 
@@ -347,7 +416,7 @@ def dashboard_link(config: CeleryManagerConfig, kind: str | None, key: str | Non
         return base + "task-types/" + quote(key, safe="")
     if kind == "missed_run" and key:
         return base + "schedules/" + quote(key, safe="")
-    if kind in ("queue_backlog", "broker_unreachable", "broker_memory"):
+    if kind in ("queue_backlog", "broker_unreachable", "broker_memory", "queue_wait", "queue_growing"):
         return base + "queues"
     if kind == "worker_offline":
         return base + "workers"

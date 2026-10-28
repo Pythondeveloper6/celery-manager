@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -26,6 +26,11 @@ class TaskRun(Base):
     args: Mapped[str] = mapped_column(Text, default="[]")
     kwargs: Mapped[str] = mapped_column(Text, default="{}")
     eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Queue wait inputs (migration 0011), from the task-sent / task-received
+    # event timestamps. Earliest value wins; see events/listener.py and
+    # control/latency.py. NULL when the event was never seen.
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     runtime_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -171,6 +176,20 @@ class MaintenanceWindow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class QueueDepthSample(Base):
+    """One reading of a queue's broker depth (migration 0011), taken by the
+    sampler thread of the events listener (`control.depth_history`). Only
+    depths the broker actually reported are stored, never guesses."""
+
+    __tablename__ = "queue_depth_samples"
+    __table_args__ = (Index("ix_queue_depth_samples_queue_sampled_at", "queue", "sampled_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    queue: Mapped[str] = mapped_column(String(255))
+    depth: Mapped[int] = mapped_column(Integer)
 
 
 class User(Base):

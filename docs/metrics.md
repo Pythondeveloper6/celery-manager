@@ -58,6 +58,7 @@ scrape time, and every metric is a gauge.
 | `celery_manager_task_runtime_window_seconds_sum` / `_count` | `task` | Total runtime and number of runs behind those buckets. |
 | `celery_manager_queue_depth` | `queue` | Messages waiting in the broker. Omitted when the broker cannot say (a down broker, or `memory://`). |
 | `celery_manager_queue_recorded_queued` | `queue` | Runs recorded as `queued` (from the database). |
+| `celery_manager_queue_wait_seconds` | `queue`, `quantile` | How long runs that started in the last 15 minutes waited in the queue, excluding ETA/countdown time ([how](queues.md#wait-time)). `quantile` is `0.5`, `0.95` or `1` (the maximum). A windowed gauge, like the runtime buckets; absent for a queue with no run that has a recorded send time. |
 | `celery_manager_workers_online` | none | Workers that answered a ping within `inspect_timeout_seconds`. Omitted if the broker cannot be reached. |
 | `celery_manager_schedule_missed_runs_24h` | `schedule` | Scheduled firings that never arrived in the last 24 hours (needs the [stamping beat scheduler](decorator.md#missed-run-detection)). |
 | `celery_manager_broker_up` | `transport` | `1` if the broker accepted a connection, `0` if not. An outage shows here, not in `collector_up`. |
@@ -67,7 +68,7 @@ scrape time, and every metric is a gauge.
 | `celery_manager_broker_evicted_keys` | `transport` | Keys Redis has evicted since it started. Redis only. Above zero can mean queued tasks were lost (see [Broker health](queues.md#broker-health)). |
 | `celery_manager_broker_connected_clients` | `transport` | Clients connected to Redis. Redis only. |
 | `celery_manager_window_seconds` | none | The length of the window above: 900. |
-| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `workers`, `missed`, `broker`. `0` means that part failed and its metrics are left out of the response. |
+| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `queue_wait`, `workers`, `missed`, `broker`. `0` means that part failed and its metrics are left out of the response. |
 
 The "histogram" is windowed, so it is exposed as gauges named
 `_bucket`/`_sum`/`_count`, not as a Prometheus histogram. Use

@@ -73,6 +73,8 @@ export interface TaskStats {
   truncated: boolean;
   totals: { runs: number; by_status: Record<string, number>; succeeded: number; failed: number; success_rate: number | null };
   runtime: { p50: number | null; p95: number | null; max: number | null };
+  // Queue wait of runs that started in the range; null without recorded send times.
+  wait: { runs: number; p50: number; p95: number; max: number } | null;
   last_success_at: string | null;
   last_failure_at: string | null;
   recent_runs: TaskSummary[];

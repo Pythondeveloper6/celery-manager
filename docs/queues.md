@@ -48,9 +48,102 @@ They routinely differ, and neither is wrong:
 kombu *virtual* transports always report zero, so on those it is shown as
 unknown (`null`), not `0`.
 
-The sparkline is the depth over this browser session only, scaled to the
-session's own low and high. It starts empty every time the page opens, and
-nothing is stored.
+The sparkline is the depth recorded over the last 24 hours (see
+[Depth history](#depth-history)); select it for a larger chart. Until two
+samples exist (the sampler is off, or just started) it falls back to the
+depth over this browser session, which is scaled to the session's own low
+and high and starts empty every time the page opens.
+
+## Wait time
+
+The **Wait p50 / p95** column is how long runs sat in the queue before a
+worker started them, over the last 15 minutes:
+
+    wait = started_at - max(sent_at, eta)
+
+- `sent_at` is the timestamp of the `task-sent` event, which the events
+  listener stores on the run (`received_at`, from `task-received`, is stored
+  beside it). The earliest value seen wins: a duplicate or late event can
+  never push it later and shrink the wait. A run that never had a send time
+  recorded (the client doesn't emit `task-sent`, the listener was down) is
+  left out, not guessed at. The producer must emit `task-sent`
+  (`task_send_sent_event = True`, see the [quickstart](quickstart.md)).
+- **ETA and countdown time is not waiting.** A task sent with
+  `countdown=300` is meant to sit for five minutes; its wait is measured from
+  the moment it was due. The listener stores `eta` from the same events.
+- A retry reuses the task id, so a retried run forgets its first attempt's
+  `sent_at`/`eta` and is left out of wait statistics unless the new attempt's
+  events refill them.
+- Negative results (the producer's clock ahead of the worker's) count as 0.
+- Only runs that *started* inside the window count, and a queue with none
+  shows `—`.
+
+The worker-side decorator does not write `received_at`: Celery does not hand
+the receive time to the task, and approximating it would be wrong more often
+than it is right. The listener's event is the one source.
+
+**How the percentiles are computed.** Not in SQL: `percentile_cont` exists
+on PostgreSQL only, and celery-manager also runs on SQLite and MySQL. The
+window's raw send/ETA/start values are read (newest 50,000 runs at most) and
+p50, p95 and the maximum are computed in Python with linear interpolation.
+Under the cap the numbers are exact; above it they describe the newest runs
+(the API says so with `truncated`). The cost is that one request reads up to
+that many narrow rows; the window is short, and the same figure feeds
+[metrics](metrics.md), the [task Insights page](insights.md) (over its
+chosen range), the task's detail page ("waited 2.3s before starting") and the
+`queue_wait` [alert](alerts.md#rule-kinds).
+
+## Depth history
+
+The events listener (`celery-manager events`) runs a small sampler thread
+that, every `queue_sample_interval_seconds` (60 by default, `0` turns it
+off), lists every known queue exactly as the Queues page does (same
+connection timeout and 3 s deadline, so a dead broker costs a skipped tick,
+never a hang) and stores one row per queue in `queue_depth_samples(sampled_at,
+queue, depth)`, indexed by `(queue, sampled_at)`.
+
+- **Only depths the broker reported are stored.** An unreachable broker, a
+  transport that can't report depth (`memory://`) and a RabbitMQ queue nobody
+  has declared are skipped, not stored as `0`: a `0` would read as "empty" and
+  hide the outage. A Redis queue that is simply empty is a true `0` and is
+  stored.
+- **Several listener processes.** The sampler dedupes per interval on a
+  best-effort basis: before sampling it looks at the newest sample row, and if
+  that is younger than 60% of the interval another process just sampled and
+  it skips the tick. It is a read, not a lock, so two processes ticking in the
+  same instant can both write. That costs one extra point per queue, which the
+  chart and the growth rule tolerate, so correctness never depends on
+  exactly-once.
+- **Retention.** Samples older than `queue_sample_retention_days` (14 by
+  default, `0` keeps them) are deleted by the [retention](retention.md) prune
+  (`celery-manager prune`, the `prune` Celery task) and, at most once an hour,
+  by the sampler itself, so a deployment that never schedules the prune still
+  stays bounded. A prune's summary reports `samples_deleted`.
+  `celery-manager prune` has no config, so it uses the 14-day default.
+- **The chart.** `GET /api/queues/{name}/history?hours=24` returns the window
+  cut into at most 240 buckets (never narrower than a minute), each holding
+  the *highest* depth sampled in it so a spike is not averaged away. Gaps in
+  sampling are gaps in the line. The dashboard offers 1 hour, 6 hours, 24
+  hours and 7 days.
+
+### The `queue_growing` alert
+
+It fires per queue when the samples of the last `minutes` (default 15) show
+the queue **rising monotonically-ish**. All of these must hold:
+
+1. at least three samples, spanning at least half the window, the newest not
+   older than half the window;
+2. the depth rose by at least `min_increase` (default 50) from the first
+   sample to the last;
+3. at most 20% of the steps between consecutive samples go down (flat steps
+   are neutral);
+4. no single step down is larger than half the net rise.
+
+So noise and a short dip are tolerated, a sawtooth or a queue that climbs and
+then drains is not, and a queue that jumped once and then stays high still
+counts (nothing is draining it). With too few or too old samples the queue is
+*unknown*: an open incident stays open instead of being resolved by a gap in
+sampling. If no sample exists at all the rule says so ("couldn't check").
 
 ## When the broker can't be asked
 

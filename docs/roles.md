@@ -23,6 +23,7 @@ The server check is the real one.
 | Action | Endpoint | Role needed |
 |---|---|---|
 | Look at anything: task lists and details, schedules, workers, queues, broker health, Insights, the audit log, the live stream | every `GET` | `viewer` |
+| See a queue's depth history | `GET /api/queues/{name}/history` | `viewer` |
 | Export tasks to CSV or JSON | `GET /api/tasks/export` | `viewer` |
 | Start a task | `POST /api/tasks/start` | `operator` |
 | Cancel or terminate a task | `POST /api/tasks/{id}/cancel` | `operator` |

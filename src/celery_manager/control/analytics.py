@@ -25,6 +25,7 @@ from typing import Any
 
 from sqlalchemy import DateTime, func
 
+from celery_manager.control.latency import wait_stats
 from celery_manager.db.models import TaskRun
 
 # Range -> (window, bucket size). Sized so every chart has 12-60 buckets.
@@ -368,6 +369,9 @@ def task_stats(session, task_name: str, range_key: str = "30d", now: datetime | 
             "success_rate": _success_rate(totals["succeeded"], totals["failed"]),
         },
         "runtime": _runtime_stats(runtimes),
+        # Queue wait of this task's runs that started in the range, or None
+        # when none has a recorded send time (see control.latency).
+        "wait": wait_stats(session, now=until, window=until - since, task_name=task_name)["overall"],
         "last_success_at": last("succeeded"),
         "last_failure_at": last("failed"),
         "recent_runs": list_task_runs(session, task_name=task_name, limit=10),

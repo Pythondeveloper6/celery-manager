@@ -113,6 +113,16 @@ class CeleryManagerConfig:
         rule. Each check costs one worker ping (only with worker_offline
         rules), one broker queue listing (only with queue_backlog rules)
         and a few indexed `task_runs` queries.
+    queue_sample_interval_seconds: how often the events listener
+        (`celery-manager events`) records every queue's broker depth for the
+        depth history charts and the `queue_growing` alert. 0 turns sampling
+        off. Each sample is one queue listing (the same deadline-bounded
+        broker call the Queues page makes) and one small insert per queue.
+        With several listener processes only one samples per interval
+        (best-effort; see docs/queues.md).
+    queue_sample_retention_days: how long depth samples are kept. Older ones
+        are deleted by the retention prune and, hourly, by the sampler
+        itself. 0 keeps them forever.
     authenticate_request: sign in with the host application's own users
         instead of (or as well as) celery-manager's accounts. A callable
         taking the Starlette ``Request`` and returning
@@ -168,6 +178,8 @@ class CeleryManagerConfig:
     alert_email_from: str | None = None
     alert_send_timeout_seconds: float = 10.0
     alert_interval_seconds: float = 60.0
+    queue_sample_interval_seconds: float = 60.0
+    queue_sample_retention_days: int = 14
     authenticate_request: Callable[[Request], ExternalUser | None | Awaitable[ExternalUser | None]] | None = None
     local_login_enabled: bool = True
     login_url: str | None = None

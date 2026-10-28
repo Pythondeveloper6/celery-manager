@@ -37,6 +37,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import case, func
 
 from celery_manager.control.broker import broker_health
+from celery_manager.control.latency import wait_samples
 from celery_manager.control.missed import missed_run_counts
 from celery_manager.control.queues import _run_with_deadline, list_queues
 from celery_manager.control.tasks import list_registered_tasks
@@ -65,6 +66,7 @@ METRIC_NAMES = (
     "celery_manager_task_runtime_window_seconds_count",
     "celery_manager_queue_depth",
     "celery_manager_queue_recorded_queued",
+    "celery_manager_queue_wait_seconds",
     "celery_manager_workers_online",
     "celery_manager_schedule_missed_runs_24h",
     "celery_manager_broker_up",
@@ -257,6 +259,23 @@ def _queue_families(session, celery_app) -> tuple[list[Family], bool]:
     return [depth, recorded], broker_ok
 
 
+def _queue_wait_family(session, now: datetime) -> Family:
+    """Queue wait (started_at - max(sent_at, eta)) quantiles per queue over the
+    last window. Gauges, like the runtime histogram: a windowed snapshot, so
+    they move up and down and `rate()` over them is meaningless. Queues with no
+    qualifying run in the window have no sample."""
+    family = Family(
+        "celery_manager_queue_wait_seconds",
+        "Seconds runs waited in the queue before starting (ETA/countdown time excluded), over the last window. "
+        "quantile is 0.5, 0.95 or 1 (the maximum). Absent for a queue with no timed run in the window.",
+    )
+    stats = wait_samples(session, now=now, window=timedelta(seconds=WINDOW_SECONDS)).stats()
+    for queue, entry in list(stats["by_queue"].items())[:MAX_QUEUE_LABELS]:
+        for quantile, key in (("0.5", "p50"), ("0.95", "p95"), ("1", "max")):
+            family.samples.append(({"queue": queue, "quantile": quantile}, entry[key]))
+    return family
+
+
 def _workers_family(celery_app, timeout: float) -> Family:
     # An unreachable broker makes kombu retry for several seconds, far past
     # the inspect timeout; bound it the way the queue probe is bounded so a
@@ -334,6 +353,10 @@ def compute_snapshot(config, session_factory, now: datetime | None = None) -> li
         # and stay either way.
         up.samples.append(({"collector": "queues"}, 1 if broker_ok else 0))
         families.extend(queue_families)
+
+        queue_wait = attempt("queue_wait", lambda: _queue_wait_family(session, now))
+        if queue_wait is not None:
+            families.append(queue_wait)
 
         workers = attempt("workers", lambda: _workers_family(celery_app, config.inspect_timeout_seconds))
         if workers is not None:

@@ -754,7 +754,15 @@ export function TaskDetail() {
                 </div>
                 <div>
                   <dt>Started</dt>
-                  <dd>{task.started_at ? formatTimestamp(task.started_at) : <Absent reason="Hasn't started yet" />}</dd>
+                  <dd>
+                    {task.started_at ? formatTimestamp(task.started_at) : <Absent reason="Hasn't started yet" />}
+                    {task.wait_seconds !== null && (
+                      <span className="cm-detail-wait">
+                        {" "}
+                        (waited {formatDuration(task.wait_seconds)} before starting)
+                      </span>
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>Finished</dt>
