@@ -43,6 +43,11 @@ The server check is the real one.
 | Set a task rate limit | `POST /api/tasks/rate-limit` | `operator` |
 | Shut down a worker | `POST /api/workers/{worker}/shutdown` | `admin` |
 | Purge a queue | `POST /api/queues/{name}/purge` | `admin` |
+| See delayed (ETA/countdown) tasks, arguments masked | `GET /api/delayed` | `viewer` |
+| See delayed tasks' argument values | `GET /api/delayed?reveal_args=true` | `operator` |
+| Cancel delayed tasks | `POST /api/delayed/cancel` | `operator` |
+| See stuck and lost (unacknowledged) messages (Redis) | `GET /api/queues/unacked` | `viewer` |
+| Put unacknowledged messages back on their queue (Redis) | `POST /api/queues/unacked/restore` | `operator` |
 | Browse the messages waiting in a queue | `GET /api/queues/{name}/messages` | `viewer` |
 | Delete one waiting message (Redis) | `DELETE /api/queues/{name}/messages/{task_id}` | `admin` |
 | Move one waiting message to another queue (Redis) | `POST /api/queues/{name}/messages/{task_id}/move` | `admin` |
@@ -66,7 +71,12 @@ Why the line falls where it does:
   A paused schedule can be resumed, an edited schedule reverted to the
   code's, a pool can grow back, a rate limit can be cleared. Cancel and
   terminate are here too, because stopping a runaway task is a normal
-  on-call job. Previewing a schedule change is a `POST` only because it
+  on-call job, and so is cancelling a delayed task. Putting a stuck Redis
+  message back on its queue is here too: it deletes nothing and does what
+  kombu itself does after the visibility timeout, and the server refuses it
+  for anything a live worker reports holding. Seeing a delayed task's
+  argument values also needs operator; viewers see their types only.
+  Previewing a schedule change is a `POST` only because it
   sends a body; it changes nothing, so viewers may do it.
 - **Admin** controls either lose data (a purge deletes messages for good,
   and so does deleting one waiting message; moving one changes where and
