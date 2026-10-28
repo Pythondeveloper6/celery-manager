@@ -179,15 +179,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "tasks_app.tasks.sync_inventory",
         "schedule": _interval_schedule(run_every=timedelta(minutes=5)),
     },
-    # The retention prune (celery_manager.tasks.prune, registered in
-    # tasks_app/tasks.py). Listed here rather than passed as
-    # register_prune_task(schedule=...) because, with Django settings loaded
-    # under the CELERY_ namespace, assigning `app.conf.beat_schedule` at
-    # runtime is shadowed by CELERY_BEAT_SCHEDULE and the entry is lost.
-    "celery-manager-prune": {
-        "task": "celery_manager.tasks.prune",
-        "schedule": crontab(hour=3, minute=0),
-    },
 }
 
 # celery-manager

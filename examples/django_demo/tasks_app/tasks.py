@@ -3,7 +3,7 @@ import random
 import time
 
 from celery import shared_task
-from celery.signals import worker_process_init
+from celery.schedules import crontab
 from demo.celery import app as celery_app
 from demo.cm import config as cm_config
 
@@ -26,20 +26,10 @@ from celery_manager.tasks import register_prune_task
 session_factory = celery_manager.setup(cm_config)
 
 
-# The worker imports this module in its parent process, which already opened
-# database connections (setup() creates the tables and migrates). Prefork
-# children inherit those sockets, and two processes sharing one PostgreSQL
-# connection corrupt each other's results ("This result object does not
-# return rows"). Each child drops the inherited pool and opens its own.
-# SQLite hides this, which is why it only shows up with a real database.
-@worker_process_init.connect
-def _fresh_database_connections(**kwargs):
-    session_factory.kw["bind"].dispose(close=False)
-
-# Opt-in retention: a daily beat entry that deletes runs older than the
-# retention rules (see `demo_setup`, which sets 30 days, failed runs 90).
-# Its beat entry ("celery-manager-prune", daily at 03:00) is in settings.py.
-register_prune_task(celery_app, cm_config)
+# Opt-in retention: a daily beat entry ("celery-manager-prune", 03:00) that
+# deletes runs older than the retention rules (see `demo_setup`, which sets
+# 30 days, failed runs 90).
+register_prune_task(celery_app, cm_config, schedule=crontab(hour=3, minute=0))
 
 logger = logging.getLogger(__name__)
 

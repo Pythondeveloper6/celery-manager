@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import threading
+
+from sqlalchemy.pool import StaticPool
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.session import get_session_factory, init_db
@@ -8,6 +11,24 @@ from celery_manager.decorator import configure as _configure_decorator
 
 _lock = threading.Lock()
 _current: tuple[CeleryManagerConfig, object, object] | None = None
+
+
+def _drop_inherited_connections() -> None:
+    """In a forked child (a prefork Celery worker process), forget the pooled
+    connections inherited from the parent. Parent and child would otherwise
+    share one database socket, which on Postgres shows up as
+    `ResourceClosedError`, wrong rows and slow tasks. `close=False` leaves the
+    parent's connections alone; the child opens its own on first use. A
+    StaticPool (in-memory SQLite) is the database itself, so it is kept."""
+    if _current is None:
+        return
+    engine = _current[1]
+    if not isinstance(engine.pool, StaticPool):
+        engine.dispose(close=False)
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_drop_inherited_connections)
 
 
 def setup(config: CeleryManagerConfig):
