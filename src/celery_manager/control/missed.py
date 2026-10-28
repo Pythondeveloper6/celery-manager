@@ -32,6 +32,10 @@ Rules, shared by both public functions:
   run_every` (k > 1 after downtime, when it fires once for the latest point).
   The `k - 1` slots in between were never sent. After the last stamped run,
   every slot up to `now - grace` is missing.
+- **Schedule edits.** While an operator's edit is in force
+  (`control.schedules.edit_schedule`, `apply_edits`), the edited schedule
+  is what beat fires, so it is what is judged, and only from `edited_at`
+  on: firings before the edit followed a schedule that is no longer known.
 - **Bounded work.** The lookback defaults to `DEFAULT_LOOKBACK` and the walk
   over expected firings stops after `MAX_EXPECTED_STEPS`; at most
   `max_results` of the newest missed firings are returned.
@@ -45,7 +49,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 
 from celery_manager.control.schedules import _entry_schedule
-from celery_manager.db.models import TaskRun
+from celery_manager.db.models import PeriodicSchedule, TaskRun
 from celery_manager.occurrences import (
     CALENDAR_MATCH_WINDOW,
     as_aware_utc,
@@ -87,6 +91,7 @@ def list_missed_runs(
     grace_seconds: int = DEFAULT_GRACE_SECONDS,
     now: datetime | None = None,
     max_results: int = DEFAULT_MAX_RESULTS,
+    apply_edits: bool = True,
 ) -> list[dict]:
     """Firings of `schedule_name` that were due in `[since, until]` and never
     arrived, oldest first, as `{"due_at": datetime}` (aware UTC).
@@ -95,6 +100,7 @@ def list_missed_runs(
     stamped occurrence; `until` defaults to `now` and is clamped to
     `now - grace_seconds`. Returns `[]` for a schedule that is not in the
     host app's `beat_schedule` or has no stamped run yet. Pure read.
+    `apply_edits` is as for `control.schedules.effective_schedule`.
     """
     now = as_aware_utc(now) if now is not None else datetime.now(timezone.utc)
     entry = (celery_app.conf.beat_schedule or {}).get(schedule_name)
@@ -106,13 +112,24 @@ def list_missed_runs(
 
     since = as_aware_utc(since) if since is not None else now - DEFAULT_LOOKBACK
     since = max(since, first)
+    override, edited_at = None, None
+    if apply_edits:
+        row = (
+            session.query(PeriodicSchedule.schedule_override, PeriodicSchedule.edited_at)
+            .filter_by(name=schedule_name)
+            .one_or_none()
+        )
+        if row is not None and row.schedule_override:
+            override, edited_at = row.schedule_override, row.edited_at
+    if edited_at is not None:
+        since = max(since, as_aware_utc(edited_at))
     upper = now - timedelta(seconds=grace_seconds)
     if until is not None:
         upper = min(upper, as_aware_utc(until))
     if upper < since:
         return []
 
-    celery_schedule = _entry_schedule(entry)
+    celery_schedule = _entry_schedule(entry, override, app=celery_app)
     if is_interval_schedule(celery_schedule):
         missed = _missed_interval(
             session, schedule_name, celery_schedule.run_every, since, upper, grace_seconds, max_results
@@ -131,6 +148,7 @@ def missed_run_counts(
     *,
     grace_seconds: int = DEFAULT_GRACE_SECONDS,
     now: datetime | None = None,
+    apply_edits: bool = True,
 ) -> dict[str, int]:
     """`{schedule name: missed firings since `since`}` for every schedule in
     `beat_schedule` that has at least one missed firing (zero counts are
@@ -139,7 +157,8 @@ def missed_run_counts(
     counts: dict[str, int] = {}
     for name in (celery_app.conf.beat_schedule or {}):
         missed = list_missed_runs(
-            session, celery_app, name, since=since, grace_seconds=grace_seconds, now=now
+            session, celery_app, name, since=since, grace_seconds=grace_seconds, now=now,
+            apply_edits=apply_edits,
         )
         if missed:
             counts[name] = len(missed)

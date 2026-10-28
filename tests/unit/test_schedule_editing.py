@@ -24,6 +24,7 @@ from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
 from celery_manager.beat import DatabaseScheduler, occurrence_headers
 from celery_manager.config import CeleryManagerConfig
+from celery_manager.control.missed import list_missed_runs
 from celery_manager.control.schedules import (
     edit_schedule,
     effective_schedule,
@@ -450,3 +451,31 @@ def test_migration_0008_adds_and_drops_the_edit_columns(tmp_path):
     assert not {"schedule_override", "edited_by", "edited_at"} & columns
     assert {"paused_at", "paused_until"} <= columns
     engine.dispose()
+
+
+# --- missed-run detection ------------------------------------------------------
+
+
+def test_missed_runs_judge_the_edited_schedule_from_the_edit_on(db):
+    """Hourly at :00 in the code, edited at 09:30 to every two hours at :30.
+    The 12:30 firing of the edit never arrived; the code's 10:00-12:00
+    slots are not missed, because beat was not firing them."""
+    app, Session, _ = db
+    app.conf.beat_schedule = {NAME: {"task": "demo.echo", "schedule": crontab(minute=0)}}
+
+    def at(h, m=0):
+        return datetime(2026, 10, 28, h, m, tzinfo=timezone.utc)
+
+    with Session() as s:
+        for t in (at(8), at(9), at(10, 30)):
+            s.add(TaskRun(task_id=t.isoformat(), task_name="demo.echo", status="succeeded",
+                          schedule_name=NAME, started_at=t, occurrence_at=t, beat_sent_at=t))
+        row = s.query(PeriodicSchedule).filter_by(name=NAME).one()
+        row.schedule_override = json.dumps({"type": "crontab", "minute": "30", "hour": "*/2"})
+        row.edited_at = at(9, 30)
+        s.commit()
+
+        now = at(13)
+        assert [r["due_at"] for r in list_missed_runs(s, app, NAME, now=now)] == [at(12, 30)]
+        code = list_missed_runs(s, app, NAME, now=now, apply_edits=False)
+        assert [r["due_at"] for r in code] == [at(10), at(11), at(12)]

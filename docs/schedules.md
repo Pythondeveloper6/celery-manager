@@ -120,6 +120,15 @@ that time, the skip is **kept, not deleted**:
 Deleting them would quietly undo another operator's decision, so they are
 kept.
 
+## Missed runs after an edit
+
+[Missed-run detection](decorator.md#missed-run-detection) checks the
+edited schedule, and only from the time it was saved. Runs before that
+followed the old timing, which is no longer stored, so they aren't
+checked. Revert to code removes that saved time, so the window the edit
+covered is checked again against the code's schedule. It may then report
+runs that beat never meant to send.
+
 ## Python API
 
 The same operations are in `celery_manager.control`:
