@@ -1,5 +1,53 @@
 # celery-manager Django demo
 
+## Run everything with Docker
+
+```bash
+cd examples/django_demo
+docker compose up --build        # first build ~1.5 min, later starts ~20 s
+```
+
+Postgres, Redis, Mailpit, an alert sink, Django, the dashboard, a worker, beat
+(`DatabaseScheduler`), the events/alerts process and a traffic generator all
+start together. A one-shot `setup` service migrates and seeds everything.
+
+| What | URL |
+|---|---|
+| Django (admin at `/admin/`) | http://localhost:8000 |
+| celery-manager dashboard | http://localhost:8001 |
+| Mailpit (alert emails) | http://localhost:8025 |
+| Alert sink (webhook alerts) | http://localhost:9000 |
+| RabbitMQ UI (profile `rabbitmq`) | http://localhost:15672 (guest / guest) |
+| Prometheus (profile `metrics`) | http://localhost:9090 |
+
+**Sign in** to the dashboard as `admin / admin-demo`, `operator / operator-demo`
+or `viewer / viewer-demo`, or sign in to http://localhost:8000/admin/ as the
+Django superuser `admin / admin-demo` and then open :8001. All credentials are
+demo-only.
+
+**RabbitMQ instead of Redis:**
+`CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672// docker compose --profile rabbitmq up --build`
+**Prometheus:** add `--profile metrics`. Metrics token: `demo-metrics-token`
+(`curl -H 'Authorization: Bearer demo-metrics-token' localhost:8001/metrics`).
+
+### What to try
+
+- **Missed runs:** `docker compose stop beat`, wait 3 minutes, open Schedules ->
+  heartbeat-every-minute; start it again with `docker compose start beat`.
+- **Worker offline alert:** `docker compose stop worker`; after about 2 minutes
+  the alert reaches the alert sink and Mailpit.
+- **Dead letters:** `charge_card` fails for amounts over 500. Open Dead letters,
+  choose "edit arguments and run again", use a smaller amount.
+- **Schedule edit:** change heartbeat-every-minute to `*/2` on its Schedules
+  page; beat picks it up within ~10 s, no restart.
+- **Maintenance window:** see Settings -> Maintenance windows (nightly 03:00).
+- **Queue backlog:** `docker compose exec web python manage.py demo_traffic --burst`
+  floods the `reports` queue (rule: depth 20).
+- **Retention:** `docker compose exec dashboard celery-manager prune --db-url "$CELERY_MANAGER_DB_URL" --dry-run`
+- **Stop everything:** `docker compose down -v`
+
+---
+
 A minimal Django project that wires up `celery-manager` against four demo
 Celery tasks in `tasks_app/tasks.py`:
 
