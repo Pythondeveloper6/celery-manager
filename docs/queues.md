@@ -278,6 +278,75 @@ ran. A message that isn't waiting there at all is a `404`.
 These need Redis. On RabbitMQ a single message can't be taken out of the
 middle of a queue, so delete and move answer `409`.
 
+## Stuck and lost tasks (Redis)
+
+Redis has no acknowledgements of its own, so kombu emulates them. When a worker
+takes a message off a queue, kombu copies it into a hash (`unacked`) and records
+the time in a sorted set (`unacked_index`). Acknowledging the message deletes
+both. If the worker dies first (`kill -9`, the OOM killer, a lost host), the
+message stays there. It is no longer on the queue and no worker has it, so it
+isn't in the queue depth or the worker list.
+
+kombu puts such messages back on their queue once they are older than the
+**visibility timeout** (`visibility_timeout` in `broker_transport_options`,
+3600 seconds by default), but only while some worker on that broker is running
+to do it. Until then the task is lost from view.
+
+**Held tasks → Stuck (Redis)** lists every unacknowledged message, oldest first
+(at most 500, with the total), each with its task, queue, how long it has been
+held, its ETA if it has one, and the status recorded for the run. Each message
+is checked against what live workers report (`inspect` active, reserved and
+scheduled):
+
+| State | Meaning |
+|---|---|
+| **Running** | A live worker is executing it. That is normal for `acks_late` tasks, which are acknowledged when they finish. |
+| **Held by a worker** | A live worker has it prefetched or is holding it until its ETA. Normal. |
+| **Orphaned** | No worker that answered has it: its worker most likely died. |
+| **Unknown** | The workers couldn't be asked, so nothing can be classified. |
+
+The **Redelivery** column says when kombu will put an orphaned message back
+(the visibility timeout minus its age), or that it is already past it. A
+*held* ETA task whose countdown is longer than the visibility timeout is a
+known Celery pitfall: kombu redelivers it while the first worker still holds
+it, and the task runs twice.
+
+celery-manager reads the key names, the `global_keyprefix` and the visibility
+timeout from kombu's own Redis channel, so custom settings are picked up.
+
+### Restoring a message
+
+Operators can put chosen messages back at the front of their queue now instead
+of waiting for the visibility timeout. Restore does exactly what kombu does
+after the timeout: in one `WATCH`/`MULTI` transaction it removes the entry from
+`unacked` and `unacked_index` and pushes the stored message back with kombu's
+own `_do_restore_message` (same format, marked `redelivered`). The workers are
+asked again just before restoring:
+
+- a message a live worker is **running** is always refused;
+- a message a live worker **holds** (prefetched or scheduled) is refused
+  unless you also tick the force option, because that worker will still run it;
+- if the workers can't be asked at all, nothing is restored (`409`).
+
+!!! warning "Restoring can run a task twice"
+    A worker that is alive but slow to answer looks the same as a dead one.
+    And a task whose worker died partway through runs again from the start.
+    Only restore tasks that are safe to repeat. The dashboard asks you to
+    confirm with this warning.
+
+Each restore that put anything back writes a `restore_unacked` audit row.
+Messages that were acknowledged or restored by kombu in the meantime are
+reported as missing.
+
+### Other brokers
+
+RabbitMQ tracks unacknowledged messages itself and redelivers them as soon as
+the consumer's connection closes, so nothing gets stuck the way it can on
+Redis. On RabbitMQ (and other non-Redis transports) the endpoint answers
+`{"supported": false, "reason": ...}`. The RabbitMQ management UI shows
+unacknowledged counts per queue, and the planned RabbitMQ management
+integration ([roadmap](roadmap.md)) will show them here.
+
 ## Purging a queue
 
 `POST /api/queues/{name}/purge` calls `queue_purge` on that one queue and

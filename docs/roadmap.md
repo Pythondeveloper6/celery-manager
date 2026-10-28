@@ -9,17 +9,6 @@ your app's users, user management, schedule editing, maintenance windows, the
 dead-letter view and data retention) shipped in 0.1.0a5. See the
 [changelog](changelog.md).
 
-## Know your broker
-
-These use Redis or RabbitMQ directly, beyond the queue depth celery-manager reads today.
-
-**Delayed tasks.** Tasks held by workers with an ETA or countdown, in one list, with
-cancel.
-
-**Stuck and lost tasks (Redis).** Tasks a worker took but never acknowledged, for
-example after a crash, with how long they have been held and a way to put them back
-on the queue.
-
 ## RabbitMQ
 
 **Management integration.** Consumers and unacknowledged messages per queue, publish
