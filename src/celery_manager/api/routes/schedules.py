@@ -92,7 +92,8 @@ def missed(name: str, request: Request, username: str = Depends(get_current_user
     with request.app.state.cm_session_factory() as session:
         tracking_since = first_stamped_occurrence(session, name)
         runs = list_missed_runs(
-            session, config.celery_app, name, grace_seconds=config.missed_run_grace_seconds
+            session, config.celery_app, name, grace_seconds=config.missed_run_grace_seconds,
+            apply_edits=config.schedule_editing,
         )
     return {
         "active": tracking_since is not None,
@@ -173,6 +174,7 @@ def list_schedules(request: Request, username: str = Depends(get_current_user)):
             config.celery_app,
             datetime.now(timezone.utc) - timedelta(hours=24),
             grace_seconds=config.missed_run_grace_seconds,
+            apply_edits=config.schedule_editing,
         )
         return [
             {**_schedule_summary(s, config), "missed_count": counts.get(s.name, 0)}
