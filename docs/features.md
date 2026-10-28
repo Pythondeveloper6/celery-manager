@@ -84,6 +84,26 @@ Resuming picks up from now: it doesn't catch up on the runs it missed.
 In the dashboard: **Pause schedule** on the Schedules page.
 [Read more](dashboard.md#pausing-a-whole-schedule)
 
+**Edit a schedule.** Change a schedule's crontab or interval from the
+dashboard, see its next five runs before you save, and revert to the
+schedule in your code at any time. Needs beat to run
+`celery_manager.beat:DatabaseScheduler` and `schedule_editing=True`.
+In the dashboard: **Edit schedule** on a schedule's page.
+[Read more](schedules.md)
+
+**Maintenance windows.** Skip chosen schedules, or all of them, on a
+recurring window such as every Sunday from 02:00 for two hours, in any
+timezone. Runs inside the window are recorded as skipped with the reason;
+there is nothing to resume afterwards.
+In the dashboard: **Schedules**, under the schedule list.
+[Read more](schedules.md#maintenance-windows)
+
+**Missed runs.** A scheduled run that was due but never arrived (beat was
+down, the message was lost) is listed on the schedule's page and counted on
+the schedule list, instead of going unnoticed.
+In the dashboard: **Schedules**, then a schedule's name.
+[Read more](decorator.md#missed-run-detection)
+
 ## Understand trends and failures
 
 **Insights.** How many runs, how many succeeded, and how long they take
@@ -181,6 +201,11 @@ dashboard can let your app's own users in and take their role from your app
 shut down workers, change branding). The server enforces it; the dashboard
 hides what you can't use.
 [Read more](roles.md)
+
+**Manage users in the dashboard.** Admins add accounts, change roles, reset
+passwords and delete accounts from the **Users** page; everyone can change
+their own password. A password change signs that account out everywhere
+else. [Read more](roles.md#from-the-dashboard)
 
 **Themes and branding.** Light, dark or follow the system, chosen per
 browser. Set the product name, accent colour and logo once for everyone.
