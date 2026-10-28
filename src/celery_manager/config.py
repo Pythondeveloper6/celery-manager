@@ -153,6 +153,18 @@ class CeleryManagerConfig:
         sign them out of the host, and they would be straight back in.
     login_provider_name: what the dashboard calls the host app on the sign-in
         screen and in the sidebar ("Sign in with Acme Admin").
+    queue_browser_show_args: show task arguments when browsing the messages
+        waiting in a queue (`GET /api/queues/{name}/messages`). True by
+        default, matching task runs, where every role sees arguments (see
+        docs/roles.md). Set it to False if your task arguments carry secrets
+        you don't want read off the broker: the arguments are then left out
+        of the response for every role, not just hidden in the dashboard.
+    queue_browser_amqp: allow browsing RabbitMQ queues. Off by default
+        because RabbitMQ can't show a message without handing it out: each
+        message looked at is taken without acknowledgement and rejected back
+        onto the queue, which marks it redelivered and may move it to the
+        front. While False the endpoint answers `supported: false` with the
+        reason. Redis browsing is read-only and needs no switch.
     """
 
     celery_app: Celery
@@ -185,3 +197,5 @@ class CeleryManagerConfig:
     login_url: str | None = None
     logout_url: str | None = None
     login_provider_name: str = "your app"
+    queue_browser_show_args: bool = True
+    queue_browser_amqp: bool = False
