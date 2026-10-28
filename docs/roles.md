@@ -11,7 +11,7 @@ the role before it can.
 |---|---|---|
 | `viewer` | People who watch: support, on-call shadowing, managers | See everything. Change nothing. |
 | `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, skip single runs, and the worker controls you can undo from the dashboard. |
-| `admin` | People who own the deployment | Everything, including purging queues, shutting down workers and changing branding. |
+| `admin` | People who own the deployment | Everything, including purging queues, shutting down workers and changing branding and setting up alerts. |
 
 The server checks the role on every request that changes something. A
 request the role doesn't allow gets `403` and does nothing. The dashboard
@@ -48,6 +48,10 @@ The server check is the real one.
 | Reset a user's password | `POST /api/users/{username}/password` | `admin` |
 | Delete a user | `DELETE /api/users/{username}` | `admin` |
 | Change your own password | `POST /api/me/password` | `viewer` (any signed-in account) |
+| See alert rules, channels (URLs masked) and incidents | `GET /api/alerts/rules`, `.../channels`, `.../incidents` | `viewer` |
+| Add, edit or delete an alert rule | `POST /api/alerts/rules`, `PATCH`/`DELETE /api/alerts/rules/{id}` | `admin` |
+| Add, edit or delete an alert channel | `POST /api/alerts/channels`, `PATCH`/`DELETE /api/alerts/channels/{id}` | `admin` |
+| Send a test message to a channel | `POST /api/alerts/channels/{id}/test` | `admin` |
 
 Why the line falls where it does:
 
@@ -59,8 +63,10 @@ Why the line falls where it does:
   sends a body; it changes nothing, so viewers may do it.
 - **Admin** controls either lose data (a purge deletes messages for good),
   can't be undone from the dashboard (a shut-down worker needs someone to
-  start it again), or affect everyone (branding, and data retention, which
-  decides what is deleted for good).
+  start it again), or affect everyone (branding; data retention, which
+  decides what is deleted for good; and alerts: a rule or channel decides
+  who gets woken up, and a channel holds a webhook URL that is itself a
+  credential).
 
 `GET /metrics` is not role-based: it uses its own bearer token
 ([Metrics](metrics.md)), because Prometheus has no dashboard session.

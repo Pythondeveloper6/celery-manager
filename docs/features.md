@@ -129,6 +129,14 @@ it. In the dashboard: **Settings**. [Read more](retention.md)
 runtimes, failure ratios, queue depth, workers online and missed runs, plus an
 optional OpenTelemetry export. Protected by a token you choose.
 [Read more](metrics.md)
+## Know when something goes wrong
+
+**Alerts.** A message to Slack, a webhook or email when a task's failure
+rate jumps, a queue backs up, a worker goes offline, or a periodic task
+misses its run. Rules are set per task, queue, worker or schedule (or a
+pattern), with a quiet period so one incident sends one message, and a
+"resolved" message when it's over.
+In the dashboard: **Alerts**. [Read more](alerts.md)
 
 ## Share and keep what you find
 
