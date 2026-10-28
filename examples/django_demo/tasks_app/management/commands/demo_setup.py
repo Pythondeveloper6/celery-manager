@@ -2,11 +2,16 @@
 maintenance window and retention rules. Safe to run again: anything that
 already exists is left alone."""
 
-from django.core.management.base import BaseCommand
 from demo.cm import config
+from django.core.management.base import BaseCommand
 
 from celery_manager.auth.users import create_user, user_exists
-from celery_manager.control.alerts import create_channel, create_rule, list_channels, list_rules
+from celery_manager.control.alerts import (
+    create_channel,
+    create_rule,
+    list_channels,
+    list_rules,
+)
 from celery_manager.control.maintenance import create_window, list_windows
 from celery_manager.control.retention import update_retention
 from celery_manager.runtime import setup

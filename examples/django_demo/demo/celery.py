@@ -17,6 +17,6 @@ app.autodiscover_tasks()
 # Beat's DatabaseScheduler (`celery -A demo beat -S
 # celery_manager.beat:DatabaseScheduler`) reads schedule edits made in the
 # dashboard from celery-manager's database, and finds it here.
-from django.conf import settings  # noqa: E402
+from django.conf import settings
 
 app.conf.celery_manager_db_url = settings.CELERY_MANAGER_DB_URL

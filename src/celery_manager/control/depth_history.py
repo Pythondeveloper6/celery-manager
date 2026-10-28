@@ -36,6 +36,7 @@ docstring has the exact rule.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import threading
 from datetime import datetime, timedelta, timezone
@@ -245,7 +246,7 @@ def growth(depths: list[int], min_increase: int) -> dict | None:
     rise = depths[-1] - depths[0]
     if rise < min_increase:
         return None
-    steps = [b - a for a, b in zip(depths, depths[1:], strict=False)]
+    steps = [b - a for a, b in itertools.pairwise(depths)]
     drops = [-s for s in steps if s < 0]
     if len(drops) / len(steps) > MAX_DECREASING_STEP_SHARE:
         return None
