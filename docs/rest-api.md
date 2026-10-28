@@ -326,6 +326,30 @@ Runs with status `failed` that nothing was run again from. See
 | `PUT` | `/api/schedules/{name}/schedule` | `operator` | a spec, as for `preview` | `200` — the schedule's summary plus `unmatched_overrides: [datetime]`. Saves the edit (audit `edit_schedule`, `details` = `before`, `after`, `code`, `unmatched_overrides`). Saving the spec already saved is a no-op with no audit row. `409` while `schedule_editing` is off, `422` as for `preview`, `404` for an unknown schedule. |
 | `DELETE` | `/api/schedules/{name}/schedule` | `operator` | — | `200` — the schedule's summary, now running as the code says (audit `revert_schedule`, `details` = the removed edit, `code`, `edited_by`, `edited_at`). Idempotent: no edit, no audit row. Allowed while `schedule_editing` is off, so an edit left from before can still be cleared. `404` for an unknown schedule. |
 
+### Maintenance windows
+
+A window skips chosen schedules' firings on a weekly recurrence. See
+[Maintenance windows](schedules.md#maintenance-windows). Fields:
+`name` (unique), `days_of_week` (`0` = Monday ... `6` = Sunday),
+`start_time` (`"HH:MM"`), `duration_minutes` (1 to 10080), `timezone` (IANA name,
+default the Celery app's `timezone`, else `UTC`), `applies_to` (`"*"` or a list of
+schedule names from `beat_schedule`) and `enabled` (default `true`).
+
+| Method | Path | Auth | Body | Returns |
+|---|---|---|---|---|
+| `GET` | `/api/maintenance-windows` | required (any role) | — | `200 {"default_timezone": str, "windows": [...]}`. Each window has the fields above plus `id`, `created_by`, `created_at`, `updated_by`, `updated_at`, `active` (in progress now) and `next_start`/`next_end` (the span in progress, else the next one; UTC). |
+| `POST` | `/api/maintenance-windows` | `operator` | the fields above | `200` — the window. Audit `create_maintenance_window`, `target_id` = the name, `details` = the fields. `422` with a sentence in `detail` for invalid fields or an unknown schedule name, `409` for a duplicate name. |
+| `PUT` | `/api/maintenance-windows/{id}` | `operator` | the fields above (all of them) | `200` — the window. Audit `update_maintenance_window`. `422` / `409` as for `POST`, `404` for an unknown id. |
+| `DELETE` | `/api/maintenance-windows/{id}` | `operator` | — | `200 {"deleted": true}`. Audit `delete_maintenance_window`. `404` for an unknown id. |
+| `POST` | `/api/maintenance-windows/preview` | required (any role) | `days_of_week`, `start_time`, `duration_minutes`, optional `timezone` | `200 {"windows": [{"start": datetime, "end": datetime} × 5]}` (UTC). Saves nothing. `422` for invalid fields. |
+
+`GET /api/schedules` items also carry `maintenance_windows`:
+`[{"id", "name", "active"}]`, the enabled windows that apply to the schedule.
+`GET /api/schedules/{name}/occurrences` items carry `maintenance_window`: the
+name of the window the occurrence falls inside (several are joined with `", "`),
+or `null`. `GET /api/tasks/{id}` carries `skip_reason` (`"maintenance window:
+<name>"`, `"schedule paused"`, `"occurrence skipped by an operator"`, or `null`).
+
 ### Pausing a whole schedule
 
 `POST /api/schedules/{name}/pause` stops a schedule's task body from running

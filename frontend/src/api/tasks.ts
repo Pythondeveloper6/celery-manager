@@ -28,6 +28,9 @@ export interface TaskDetail extends TaskSummary {
   args: string;
   kwargs: string;
   exception: string | null;
+  // Why a skipped run was skipped ("schedule paused", "maintenance window:
+  // <name>"); null for other statuses and for skips recorded before it existed.
+  skip_reason: string | null;
   traceback: string | null;
   log_output: string | null;
   queue: string | null;

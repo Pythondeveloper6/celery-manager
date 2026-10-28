@@ -145,3 +145,63 @@ with session_factory() as session:
 An invalid spec raises `celery_manager.schedule_specs.ScheduleSpecError`.
 For the schedule in force (edit or code), use
 `celery_manager.control.schedules.effective_schedule(session, name, entry)`.
+
+## Maintenance windows
+
+A maintenance window skips chosen schedules on a weekly recurrence, for
+example every Sunday from 02:00 to 04:00, and ends by itself: nothing is
+paused, so there is nothing to resume. Beat keeps sending; each firing due
+inside an enabled window is recorded as `skipped` and the task body does not
+run, exactly like a [pause](rest-api.md#pausing-a-whole-schedule). The run's
+detail shows why: `Skipped: maintenance window: Sunday patching`.
+
+Manage windows on the **Schedules** page, under the table. Anyone signed in can
+see them; operators can create, edit and delete them (each change is in the
+audit log). A window has:
+
+- **Days** of the week, a **start time** and a **duration**. It can cross
+  midnight (Saturday 23:00 for 3 hours covers early Sunday), and can last up
+  to a week.
+- A **timezone**, an IANA name such as `Europe/Berlin`. It defaults to the
+  Celery app's `timezone` setting, or `UTC` if that is unset.
+- **Applies to**: all schedules, or the ones you pick.
+- **Enabled**: a disabled window is kept but ignored.
+
+The dialog previews the next five windows as you type.
+
+How a firing is judged:
+
+- By the time it was *due*, not when a worker picked it up. With beat running
+  `celery_manager.beat:Scheduler` that is the stamped occurrence time; without
+  it, the time the task starts.
+- The start is inclusive and the end exclusive, so a run due exactly at 04:00
+  runs under a window that ends at 04:00.
+- Windows follow their timezone's daylight saving changes. The duration is real
+  elapsed time, so a window that spans a clock change is an hour longer or
+  shorter on the wall clock. A start time that does not exist on a
+  spring-forward day (02:30 when the clocks jump from 02:00 to 03:00) begins
+  when the clocks reach it; an ambiguous one on a fall-back day uses the first.
+- Edits and deletions apply from the next firing. Firings already skipped stay
+  skipped; nothing is caught up afterwards.
+- If the schedule is also paused, or the occurrence was skipped by an operator,
+  that reason is the one recorded.
+
+Upcoming runs on a schedule's page are marked **Maintenance window: name**
+before they happen, and the schedule list shows a chip with the window's name
+(highlighted while it is in progress). [Missed-run
+detection](decorator.md#missed-run-detection) is unaffected: a run skipped by a
+window counts as arrived, because the decorator still records it.
+
+The decorator must be configured in the worker process (`celery_manager.setup`),
+as for pausing; windows are read from the same database.
+
+```python
+from celery_manager.control.maintenance import active_windows, create_window
+
+with session_factory() as session:
+    create_window(session, {
+        "name": "Sunday patching", "days_of_week": [6], "start_time": "02:00",
+        "duration_minutes": 120, "timezone": "Europe/Berlin", "applies_to": "*",
+    }, "alice")
+    active_windows(session, "nightly", datetime.now(timezone.utc))
+```

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSchedules, type ScheduleSummary } from "../api/schedules";
 import "../styles/missed-runs.css";
+import "../styles/maintenance.css";
+import { MaintenanceWindows } from "../components/MaintenanceWindows";
 import { ScheduleToggle } from "../components/ScheduleToggle";
 import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 
@@ -116,6 +118,15 @@ export function ScheduleList() {
                       <Link to={`/schedules/${encodeURIComponent(s.name)}`} className="cm-schedule-link">
                         {s.name}
                       </Link>
+                      {s.maintenance_windows.map((w) => (
+                        <span
+                          key={w.id}
+                          className="cm-badge cm-mw-chip"
+                          title={w.active ? `Maintenance window in progress: runs are being skipped` : `Maintenance window: ${w.name}`}
+                        >
+                          {w.active ? `In ${w.name}` : w.name}
+                        </span>
+                      ))}
                       {s.missed_count > 0 && (
                         <span
                           className="cm-badge cm-missed-badge"
@@ -171,6 +182,8 @@ export function ScheduleList() {
           </div>
         )}
       </div>
+
+      <MaintenanceWindows scheduleNames={(schedules ?? []).map((s) => s.name)} onChanged={refresh} />
     </div>
   );
 }

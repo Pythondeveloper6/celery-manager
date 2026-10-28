@@ -10,8 +10,8 @@ the role before it can.
 | Role | For | Can |
 |---|---|---|
 | `viewer` | People who watch: support, on-call shadowing, managers | See everything. Change nothing. |
-| `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, skip single runs, and the worker controls you can undo from the dashboard. |
-| `admin` | People who own the deployment | Everything, including purging queues, shutting down workers and changing branding and setting up alerts. |
+| `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, manage maintenance windows, skip single runs, and the worker controls you can undo from the dashboard. |
+| `admin` | People who own the deployment | Everything, including purging queues, shutting down workers, changing branding and setting up alerts. |
 
 The server checks the role on every request that changes something. A
 request the role doesn't allow gets `403` and does nothing. The dashboard
@@ -34,6 +34,9 @@ The server check is the real one.
 | Pause or resume a schedule | `POST /api/schedules/{name}/pause`, `.../resume` | `operator` |
 | Preview a schedule change (the next five runs; saves nothing) | `POST /api/schedules/{name}/preview` | `viewer` |
 | Change when a schedule runs, or revert it to the code's | `PUT /api/schedules/{name}/schedule`, `DELETE .../schedule` | `operator` |
+| List maintenance windows | `GET /api/maintenance-windows` | `viewer` |
+| Preview a maintenance window (the next five spans; saves nothing) | `POST /api/maintenance-windows/preview` | `viewer` |
+| Create, edit or delete a maintenance window | `POST /api/maintenance-windows`, `PUT`/`DELETE .../{id}` | `operator` |
 | Add or remove a worker pool process | `POST /api/workers/{worker}/pool/grow`, `.../shrink` | `operator` |
 | Make a worker start or stop consuming a queue | `POST /api/workers/{worker}/queues/add`, `.../cancel` | `operator` |
 | Set a task rate limit | `POST /api/tasks/rate-limit` | `operator` |
