@@ -28,6 +28,9 @@ from celery_manager.api.routes import (
     deadletters as deadletter_routes,
 )
 from celery_manager.api.routes import (
+    delayed as delayed_routes,
+)
+from celery_manager.api.routes import (
     export as export_routes,
 )
 from celery_manager.api.routes import (
@@ -50,6 +53,9 @@ from celery_manager.api.routes import (
 )
 from celery_manager.api.routes import (
     tasks as task_routes,
+)
+from celery_manager.api.routes import (
+    unacked as unacked_routes,
 )
 from celery_manager.api.routes import (
     users as user_routes,
@@ -226,6 +232,8 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(user_routes.router)
     app.include_router(analytics_routes.router)
     app.include_router(worker_routes.router)
+    app.include_router(delayed_routes.router)
+    app.include_router(unacked_routes.router)
     app.include_router(queue_routes.router)
     app.include_router(broker_routes.router)
     app.include_router(workflow_routes.router)
