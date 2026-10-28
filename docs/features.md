@@ -57,6 +57,10 @@ In the dashboard: the buttons on a run's page.
 **Retry with changes** to edit them first. Select several failed runs to
 retry them together.
 
+**Dead letters.** Runs that failed after their last retry, in one list,
+grouped by task and exception. Fix the arguments and run one or many again.
+[Read more](dead-letters.md)
+
 **Bulk cancel.** Cancel the runs you've selected, or every waiting or
 running task that matches your current filters. You see the count before
 you confirm. [Read more](queues.md#bulk-cancel)

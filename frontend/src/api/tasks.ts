@@ -83,7 +83,7 @@ export async function getTask(taskId: string): Promise<TaskDetail> {
 
 // FastAPI reports validation failures as `detail: [{loc, msg}]` and other
 // refusals as `detail: "text"`; either way the operator should see words.
-async function errorMessage(response: Response, fallback: string): Promise<string> {
+export async function errorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json();
     const detail = body?.detail;

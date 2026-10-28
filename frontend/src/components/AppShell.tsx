@@ -7,6 +7,7 @@ import {
   IconCalendarClock,
   IconKey,
   IconChartLine,
+  IconDeadLetter,
   IconLayers,
   IconListChecks,
   IconLogOut,
@@ -44,6 +45,7 @@ const NAV_ITEMS: {
   needs?: Role;
 }[] = [
   { to: "/", end: true, label: "Tasks", icon: IconListChecks },
+  { to: "/dead-letters", label: "Dead letters", icon: IconDeadLetter },
   { to: "/schedules", label: "Schedules", icon: IconCalendarClock },
   { to: "/audit", label: "Audit log", icon: IconScrollText },
   { to: "/insights", label: "Insights", icon: IconChartLine },
@@ -82,6 +84,7 @@ function useIsMobile(): boolean {
 }
 
 function sectionLabel(pathname: string): string {
+  if (pathname.startsWith("/dead-letters")) return "Dead letters";
   if (pathname.startsWith("/schedules")) return "Schedules";
   if (pathname.startsWith("/audit")) return "Audit log";
   if (pathname.startsWith("/insights") || pathname.startsWith("/task-types")) return "Insights";

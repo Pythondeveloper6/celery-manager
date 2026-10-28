@@ -302,6 +302,16 @@ returned (oldest first, always including the requested run); `truncated` is
 session like the rest of the API. `GET /api/tasks/{task_id}` also returns
 `parent_id`, `root_id` and `group_id`.
 
+## Dead letters
+
+Runs with status `failed` that nothing was run again from. See
+[Dead letters](dead-letters.md) for the definition.
+
+| Method | Path | Auth | Body / query | Returns |
+|---|---|---|---|---|
+| `GET` | `/api/dead-letters` | required | Query `task_name`, `exception` (an exception type such as `ConnectionError`), `since` (ISO datetime; when the run failed), `limit` (default 50, at most 500), `offset` | `200 {"items": [...], "total", "limit", "offset", "summary"}`. Each item has `task_id`, `task_name`, `exception`, `exception_type`, `last_line` (last line of the traceback), `args`, `kwargs` (JSON strings as stored), `queue`, `earlier_attempts`, `started_at`, `finished_at`. `summary` is `{"groups": [{"task_name", "exception_type", "count"}], "total", "truncated"}`, biggest group first, and ignores `task_name` and `exception` so it can be used to pick them. |
+| `POST` | `/api/dead-letters/rerun` | operator | `{"task_ids": [str, ...], "args": [...]?, "kwargs": {...}?}` | `200 {"reruns": [{"task_id", "new_task_id", "args_edited"}], "errors": [{"task_id", "error"}]}`. Dispatches a new run per id, to the original's queue, with `retried_from_id` set (which removes the original from the list). `args`/`kwargs` left out keep each run's stored value; given, they replace it for every id, and then all ids must be runs of one task. Everything is validated before anything is sent: `404` unknown id, `409` an id is not (or no longer) a dead letter, `400` more than 500 ids or edited arguments across several tasks, `422` `args` not a list, `kwargs` not an object, no ids, or stored arguments that cannot be decoded and were not replaced. A broker error on one run is reported in `errors` (the rest still go). One audit row per run. |
+
 ## Schedules
 
 | Method | Path | Auth | Request | Response |
@@ -566,6 +576,7 @@ of another action. Every control action is covered:
 | `start` | `task` | the newly dispatched task id | `POST /api/tasks/start` |
 | `cancel` | `task` | the task id being revoked | `POST /api/tasks/{task_id}/cancel` |
 | `retry` | `task` | the *original* task id | `POST /api/tasks/{task_id}/retry` and `/api/tasks/retry-bulk` (one row per task) |
+| `rerun_dead_letter` | `task` | the *original* task id | `POST /api/dead-letters/rerun` (one row per run) — `details={"new_task_id", "args_edited", "bulk"}`, plus the `args`/`kwargs` sent when edited |
 | `pause_occurrence` | `schedule` | the schedule name | `POST /api/schedules/{name}/occurrences/pause` |
 | `pause_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/pause` — only when it actually pauses (not on an idempotent repeat); `details` is `null` |
 | `resume_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/resume` — only when it actually resumes; `details={"paused_at", "paused_by"}` of the pause it ended |

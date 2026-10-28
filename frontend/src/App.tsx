@@ -7,6 +7,7 @@ import { AppShell } from "./components/AppShell";
 import { Login } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
+import { DeadLetters } from "./pages/DeadLetters";
 import { ScheduleList } from "./pages/ScheduleList";
 import { ScheduleOccurrences } from "./pages/ScheduleOccurrences";
 import { AuditLog } from "./pages/AuditLog";
@@ -108,6 +109,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<TaskList />} />
             <Route path="/tasks/:taskId" element={<TaskDetail />} />
+            <Route path="/dead-letters" element={<DeadLetters />} />
             <Route path="/schedules" element={<ScheduleList />} />
             <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
             <Route path="/audit" element={<AuditLog />} />
