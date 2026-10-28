@@ -154,7 +154,7 @@ class _NoRedirect(urlrequest.HTTPRedirectHandler):
     header to wherever it points; a management URL that redirects is a
     misconfiguration to report, not to work around."""
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: PLR0913 — urllib's signature
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
 
@@ -242,7 +242,7 @@ def _http_error(exc: urlerror.HTTPError, path: str) -> Exception:
                              "(rabbitmq_management_username / rabbitmq_management_password)")
     if code == 403:
         return RabbitMQError("the management user isn't allowed to do this (403): it needs the monitoring tag "
-                             "to read, and read+write permission on the vhost to browse or requeue")
+                             "to read, and read permission on the queue to browse it")
     if code == 404:
         return RabbitMQNotFound(f"not found on the management API: {unquote(path)}")
     if 300 <= code < 400:
@@ -895,7 +895,7 @@ def requeue_dlq(config, session, name: str, username: str, *, keys: list[str] | 
     _with_deadline(config, lambda client: _require_dlq(config, client, name))
     try:
         conn = (open_connection or _open_amqp)(config.celery_app, float(config.rabbitmq_management_timeout_seconds) + 2.0)
-    except Exception as exc:  # noqa: BLE001 — refused, auth failure: nothing taken yet
+    except Exception as exc:
         raise RabbitMQError(f"could not connect to the broker: {exc}") from exc
     try:
         result = requeue_on_channel(

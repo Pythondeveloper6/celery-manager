@@ -55,6 +55,12 @@ config = CeleryManagerConfig(
 | `login_provider_name` | `str` | `"your app"` | What the sign-in screen and sidebar call your app ("Sign in with Acme"). |
 | `queue_browser_show_args` | `bool` | `True` | Show task arguments when [browsing a queue's waiting messages](queues.md#looking-inside-a-queue). Every role sees them, as on task runs (see [Roles](roles.md#what-viewers-can-see)). `False` leaves `args`/`kwargs` out of the response for everyone, for deployments whose task arguments carry secrets. |
 | `queue_browser_amqp` | `bool` | `False` | Allow browsing RabbitMQ queues. Off by default because RabbitMQ can only show a message by handing it out: each one looked at is taken without acknowledgement and put back, which marks it redelivered and may move it to the front. While off, browsing a RabbitMQ queue answers `supported: false` with the reason. Redis browsing is read-only and needs no switch. |
+| `rabbitmq_management_url` | `str \| None` | `None` | The [RabbitMQ management API](rabbitmq.md), e.g. `http://rabbit:15672`. Turns on the RabbitMQ panel on the Queues page, the `rabbitmq_*` metrics, the `rabbitmq_alarm` alert kind and the dead-letter queue page. Off while `None`, and always off when the broker isn't RabbitMQ. The vhost is taken from the broker URL. Redirects are never followed. |
+| `rabbitmq_management_username` | `str \| None` | `None` | Management API login. The `monitoring` tag is enough to read; browsing a dead-letter queue also needs read permission on it; requeue uses the broker URL's user ([permissions](rabbitmq.md#the-management-user)). |
+| `rabbitmq_management_password` | `str \| None` | `None` | Its password. Only ever lives here: never in the database, an API response, a log line or the config's `repr()`. |
+| `rabbitmq_management_verify_tls` | `bool` | `True` | Verify the management API's certificate on `https` URLs. Turn off only for a test broker with a self-signed certificate. |
+| `rabbitmq_management_timeout_seconds` | `float` | `3.0` | Time limit for one management API operation, all its HTTP calls together. |
+| `rabbitmq_dlq_patterns` | `list[str]` | `["*.dlq", "*.dead", "dlq.*"]` | Queue-name patterns that count as [dead-letter queues](rabbitmq.md#dead-letter-queues) even when no queue's dead-letter exchange routes to them. |
 
 The fields above are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from

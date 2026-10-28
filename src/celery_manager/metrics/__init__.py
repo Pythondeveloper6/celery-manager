@@ -40,7 +40,9 @@ from celery_manager.control.broker import broker_health
 from celery_manager.control.latency import wait_samples
 from celery_manager.control.missed import missed_run_counts
 from celery_manager.control.queues import _run_with_deadline, list_queues
-from celery_manager.control.rabbitmq import not_configured_reason as rabbitmq_not_configured
+from celery_manager.control.rabbitmq import (
+    not_configured_reason as rabbitmq_not_configured,
+)
 from celery_manager.control.rabbitmq import queue_stats as rabbitmq_queue_stats
 from celery_manager.control.tasks import list_registered_tasks
 from celery_manager.db.models import TaskRun

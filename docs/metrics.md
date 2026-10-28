@@ -67,8 +67,14 @@ scrape time, and every metric is a gauge.
 | `celery_manager_broker_memory_max_bytes` | `transport` | Redis `maxmemory`; `0` means no limit. Redis only. |
 | `celery_manager_broker_evicted_keys` | `transport` | Keys Redis has evicted since it started. Redis only. Above zero can mean queued tasks were lost (see [Broker health](queues.md#broker-health)). |
 | `celery_manager_broker_connected_clients` | `transport` | Clients connected to Redis. Redis only. |
+| `celery_manager_rabbitmq_queue_unacked` | `queue` | Messages delivered to consumers but not yet acknowledged. Every queue in the vhost (at most 200). Only with [RabbitMQ management](rabbitmq.md) configured, as are the next five. |
+| `celery_manager_rabbitmq_queue_consumers` | `queue` | Consumers attached to the queue. |
+| `celery_manager_rabbitmq_queue_publish_rate` | `queue` | Messages published into the queue per second, as sampled by the management API. Absent until it has a sample. |
+| `celery_manager_rabbitmq_queue_deliver_rate` | `queue` | Messages delivered or fetched from the queue per second. Absent until sampled. |
+| `celery_manager_rabbitmq_mem_alarm` | `node` | `1` while the node has a memory alarm (RabbitMQ blocks every publisher), else `0`. |
+| `celery_manager_rabbitmq_disk_alarm` | `node` | `1` while the node has a disk-space alarm, else `0`. |
 | `celery_manager_window_seconds` | none | The length of the window above: 900. |
-| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `queue_wait`, `workers`, `missed`, `broker`. `0` means that part failed and its metrics are left out of the response. |
+| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `queue_wait`, `workers`, `missed`, `broker`, and `rabbitmq` when RabbitMQ management is configured. `0` means that part failed and its metrics are left out of the response. |
 
 The "histogram" is windowed, so it is exposed as gauges named
 `_bucket`/`_sum`/`_count`, not as a Prometheus histogram. Use

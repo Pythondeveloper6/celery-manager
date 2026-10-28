@@ -1,19 +1,12 @@
 # Roadmap
 
-What we plan to build next. Nothing here has shipped yet, and the order may change.
-Ideas and use cases are welcome in the
-[issue tracker](https://github.com/Pythondeveloper6/celery-manager/issues).
-
-Everything on the previous roadmap (alerts, missed-run detection, metrics, sign-in with
-your app's users, user management, schedule editing, maintenance windows, the
-dead-letter view and data retention) shipped in 0.1.0a5. See the
+Everything on the previous roadmap shipped in 0.1.0a5: alerts, missed-run detection,
+metrics, sign-in with your app's users, user management, schedule editing, maintenance
+windows, the dead-letter view and data retention, and the broker features (broker
+health, queue wait time and depth history, delayed and stuck tasks, looking inside a
+queue, and RabbitMQ management and dead-letter queues). See the
 [changelog](changelog.md).
 
-## RabbitMQ
+Nothing new is planned yet. Ideas and use cases are welcome in the
+[issue tracker](https://github.com/Pythondeveloper6/celery-manager/issues).
 
-**Management integration.** Consumers and unacknowledged messages per queue, publish
-and deliver rates, queue type (classic or quorum) and node alarms, from the RabbitMQ
-management API.
-
-**Dead-letter queues.** See what RabbitMQ dead-lettered and send it back to the queue
-it came from.

@@ -51,6 +51,8 @@ The server check is the real one.
 | Browse the messages waiting in a queue | `GET /api/queues/{name}/messages` | `viewer` |
 | Delete one waiting message (Redis) | `DELETE /api/queues/{name}/messages/{task_id}` | `admin` |
 | Move one waiting message to another queue (Redis) | `POST /api/queues/{name}/messages/{task_id}/move` | `admin` |
+| See RabbitMQ nodes, alarms and dead-letter queues, and browse a dead-letter queue | `GET /api/rabbitmq/overview`, `.../dlqs`, `.../dlqs/{name}/messages` | `viewer` |
+| Requeue messages from a RabbitMQ dead-letter queue | `POST /api/rabbitmq/dlqs/{name}/requeue` | `admin` |
 | Change branding | `PUT /api/settings` | `admin` |
 | Change data retention | `PUT /api/settings/retention` | `admin` |
 | Preview what retention would delete (deletes nothing) | `POST /api/settings/retention/preview` | `viewer` |

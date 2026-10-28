@@ -42,6 +42,7 @@ const KIND_LABEL: Record<RuleKind, string> = {
   broker_memory: "Broker memory high",
   queue_wait: "Queue wait time",
   queue_growing: "Queue growing",
+  rabbitmq_alarm: "RabbitMQ alarm",
 };
 
 // About the one broker, not a named thing: no target field, the server pins it to "*".
@@ -56,6 +57,7 @@ const TARGET_LABEL: Record<RuleKind, string> = {
   broker_memory: "Broker",
   queue_wait: "Queue name",
   queue_growing: "Queue name",
+  rabbitmq_alarm: "RabbitMQ node",
 };
 
 const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
@@ -67,6 +69,7 @@ const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
   broker_memory: "*",
   queue_wait: "e.g. emails",
   queue_growing: "e.g. celery",
+  rabbitmq_alarm: "* or e.g. rabbit@node-1",
 };
 
 // Per kind, the threshold fields in the order shown. Mirrors RULE_PARAMS in
@@ -106,6 +109,8 @@ const PARAM_FIELDS: Record<
     { key: "minutes", label: "Growing for (minutes)", hint: "Look at depth samples from this long. Needs the events listener's depth sampler running.", fallback: 15, min: 1, max: 10080 },
     { key: "min_increase", label: "Increase (messages)", hint: "Fire when the queue gained at least this many messages without draining on the way.", fallback: 50, min: 1, max: 1000000000 },
   ],
+  // RabbitMQ: nothing to tune; fires while a node reports a memory or disk alarm.
+  rabbitmq_alarm: [],
 };
 
 const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email" };
@@ -133,6 +138,8 @@ function describeCondition(rule: AlertRule): string {
       return `p${p.quantile} queue wait of ${p.seconds}s or more over ${p.window_minutes} min (at least ${p.min_runs} runs)`;
     case "queue_growing":
       return `Depth up by ${p.min_increase} or more over ${p.minutes} min, without draining`;
+    case "rabbitmq_alarm":
+      return "A RabbitMQ node reports a memory or disk alarm";
   }
 }
 

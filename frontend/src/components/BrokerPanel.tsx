@@ -123,9 +123,13 @@ function AmqpBody({ details }: { details: AmqpDetails }) {
         <Stat label="Server" value={[details.product, details.version].filter(Boolean).join(" ") || "unknown"} />
         {details.cluster_name && <Stat label="Cluster" value={details.cluster_name} />}
       </dl>
-      <p className="cm-broker-note">
-        Memory and disk alarms need the RabbitMQ management API, which isn&rsquo;t configured, so none are shown here.
-      </p>
+      {details.management === "configured" ? (
+        <p className="cm-broker-note">Memory and disk alarms are in the RabbitMQ panel below.</p>
+      ) : (
+        <p className="cm-broker-note">
+          Memory and disk alarms need the RabbitMQ management API, which isn&rsquo;t configured, so none are shown here.
+        </p>
+      )}
     </>
   );
 }

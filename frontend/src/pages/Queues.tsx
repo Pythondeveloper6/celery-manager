@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { BrokerPanel } from "../components/BrokerPanel";
+import { RabbitPanel, RabbitQueueDetails } from "../components/RabbitPanel";
 import {
   getQueueHistory,
   listQueues,
@@ -322,6 +323,7 @@ export function Queues() {
       </header>
 
       <BrokerPanel refreshToken={refreshToken} />
+      <RabbitPanel meta={listing?.rabbitmq} visible={visible} />
 
       {broker?.error && (
         <p className="cm-alert" role="status">
@@ -413,6 +415,7 @@ export function Queues() {
                         <span className="cm-queue-sources">
                           {q.sources.map((s) => SOURCE_LABELS[s] ?? s).join(" · ")}
                         </span>
+                        <RabbitQueueDetails info={q.rabbitmq} />
                       </td>
                       <td className="cm-col-fit cm-num">
                         <span className="cm-queue-cell-label">Broker depth</span>
