@@ -29,6 +29,7 @@ from celery_manager.api.routes import deadletters as deadletter_routes
 from celery_manager.api.routes import delayed as delayed_routes
 from celery_manager.api.routes import maintenance as maintenance_routes
 from celery_manager.api.routes import queues as queue_routes
+from celery_manager.api.routes import rabbitmq as rabbitmq_routes
 from celery_manager.api.routes import schedules as schedule_routes
 from celery_manager.api.routes import tasks as task_routes
 from celery_manager.api.routes import unacked as unacked_routes
@@ -91,6 +92,7 @@ WRITE_ROUTES = [
     ("POST", "/api/queues/celery/purge", None, "admin"),
     ("DELETE", "/api/queues/celery/messages/t1", None, "admin"),
     ("POST", "/api/queues/celery/messages/t1/move", {"target": "other"}, "admin"),
+    ("POST", "/api/rabbitmq/dlqs/celery.dlq/requeue", {}, "admin"),
     ("PUT", "/api/settings", {"brand_name": "Acme"}, "admin"),
     ("PUT", "/api/settings/retention", {"default_days": None}, "admin"),
     ("POST", "/api/settings/retention/preview", {}, "viewer"),
@@ -151,6 +153,7 @@ ROUTE_ROLES = {
     ("POST", "/api/queues/{name}/purge"): "admin",
     ("DELETE", "/api/queues/{name}/messages/{task_id}"): "admin",
     ("POST", "/api/queues/{name}/messages/{task_id}/move"): "admin",
+    ("POST", "/api/rabbitmq/dlqs/{name}/requeue"): "admin",
     ("PUT", "/api/settings"): "admin",
     ("PUT", "/api/settings/retention"): "admin",
     ("POST", "/api/settings/retention/preview"): "viewer",
@@ -185,6 +188,9 @@ READ_ROUTES = [
     "/api/alerts/channels",
     "/api/alerts/incidents",
     "/api/queues/celery/history",
+    "/api/rabbitmq/overview",
+    "/api/rabbitmq/dlqs",
+    "/api/rabbitmq/dlqs/celery.dlq/messages",
 ]
 
 # Control functions the write routes call; stubbed so an allowed request
@@ -211,6 +217,7 @@ _STUBBED = {
     queue_routes: ["purge_queue", "delete_message", "move_message"],
     delayed_routes: ["cancel_delayed_tasks"],
     unacked_routes: ["restore_unacked"],
+    rabbitmq_routes: ["requeue_dlq"],
 }
 
 
@@ -305,6 +312,7 @@ def test_refused_actions_never_reach_the_control_layer(shared, stubbed, role):
         assert called == []
     elif role == "operator":
         assert not {"shutdown_worker", "purge_queue", "delete_message", "move_message"} & set(called)
+        assert "requeue_dlq" not in called
 
 
 @pytest.mark.parametrize("role", ROLES)

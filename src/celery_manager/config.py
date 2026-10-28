@@ -165,6 +165,30 @@ class CeleryManagerConfig:
         onto the queue, which marks it redelivered and may move it to the
         front. While False the endpoint answers `supported: false` with the
         reason. Redis browsing is read-only and needs no switch.
+    rabbitmq_management_url: the RabbitMQ management API, e.g.
+        ``http://rabbit:15672``. Turns on the RabbitMQ panel on the Queues
+        page (consumers, unacknowledged messages, rates, queue type, node
+        alarms), the rabbitmq metrics, the ``rabbitmq_alarm`` alert kind and
+        the dead-letter queue view. None (the default) leaves them off; so
+        does a broker that isn't RabbitMQ. The vhost is the broker URL's.
+        Redirects are never followed (they would resend the credentials).
+    rabbitmq_management_username: the management API login. A user with the
+        ``monitoring`` tag is enough to read; browsing and requeueing
+        dead-letter queues also need read and write permission on the vhost
+        (see docs/rabbitmq.md).
+    rabbitmq_management_password: its password. Like ``smtp_password`` it
+        lives only here: never in the database, an API response, a log line
+        or the config's repr().
+    rabbitmq_management_verify_tls: verify the management API's TLS
+        certificate (https URLs). Turn it off only for a test broker with a
+        self-signed certificate.
+    rabbitmq_management_timeout_seconds: the time limit for one management
+        API operation (all of its HTTP calls together). Short on purpose:
+        the Queues page polls it every few seconds.
+    rabbitmq_dlq_patterns: queue-name patterns (fnmatch) that count as
+        dead-letter queues even when no queue's dead-letter exchange points
+        at them. Queues that are the target of some queue's
+        ``x-dead-letter-exchange`` are found without a pattern.
     """
 
     celery_app: Celery
@@ -199,3 +223,10 @@ class CeleryManagerConfig:
     login_provider_name: str = "your app"
     queue_browser_show_args: bool = True
     queue_browser_amqp: bool = False
+    rabbitmq_management_url: str | None = None
+    rabbitmq_management_username: str | None = None
+    # Kept out of repr() so a logged or printed config doesn't carry it.
+    rabbitmq_management_password: str | None = field(default=None, repr=False)
+    rabbitmq_management_verify_tls: bool = True
+    rabbitmq_management_timeout_seconds: float = 3.0
+    rabbitmq_dlq_patterns: list[str] = field(default_factory=lambda: ["*.dlq", "*.dead", "dlq.*"])

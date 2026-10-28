@@ -53,6 +53,7 @@ from celery_manager.control.depth_history import window_samples
 from celery_manager.control.latency import percentile, wait_samples
 from celery_manager.control.missed import list_missed_runs
 from celery_manager.control.queues import list_queues as _list_queues
+from celery_manager.control.rabbitmq import nodes_for_alerts as _rabbitmq_nodes
 from celery_manager.control.workers import inspect_workers as _inspect_workers
 from celery_manager.db.models import (
     AlertChannel,
@@ -105,7 +106,8 @@ class _Probe:
     """Broker and worker answers for one pass, fetched at most once however
     many rules need them, and only if some rule does."""
 
-    def __init__(self, session, celery_app, config, now, inspect_workers_fn, list_queues_fn, broker_health_fn=None):
+    def __init__(self, session, celery_app, config, now, inspect_workers_fn, list_queues_fn, broker_health_fn=None,
+                 rabbitmq_nodes_fn=None):
         self.session = session
         self.celery_app = celery_app
         self.config = config
@@ -116,6 +118,17 @@ class _Probe:
         self._queues = None
         self._sightings = None
         self._broker = None
+        self._rabbitmq_nodes_fn = rabbitmq_nodes_fn or _rabbitmq_nodes
+        self._rabbitmq_nodes = None
+
+    def rabbitmq_nodes(self) -> list[dict]:
+        """RabbitMQ nodes with their alarm flags, from the management API."""
+        if self._rabbitmq_nodes is None:
+            try:
+                self._rabbitmq_nodes = self._rabbitmq_nodes_fn(self.config)
+            except Exception as exc:  # noqa: BLE001 - not configured, unreachable, 401: all "can't judge"
+                raise CheckUnavailable(f"RabbitMQ management API: {exc}") from None
+        return self._rabbitmq_nodes
 
     def queues(self) -> dict:
         if self._queues is None:
@@ -350,6 +363,27 @@ def _check_queue_growing(rule: AlertRule, params: dict, probe: _Probe) -> Observ
     return observation
 
 
+# --- RabbitMQ checks ---
+
+
+def _check_rabbitmq_alarm(rule: AlertRule, params: dict, probe: _Probe) -> Observation:
+    observation = Observation()
+    for node in probe.rabbitmq_nodes():
+        name = str(node.get("name") or "")
+        if not name or not _matches(rule.target, name):
+            continue
+        alarms = [kind for kind, flag in (("memory", "mem_alarm"), ("disk", "disk_free_alarm")) if node.get(flag)]
+        if alarms:
+            observation.firing[name] = {
+                "alarms": alarms,
+                "mem_used": node.get("mem_used"),
+                "mem_limit": node.get("mem_limit"),
+                "disk_free": node.get("disk_free"),
+                "disk_free_limit": node.get("disk_free_limit"),
+            }
+    return observation
+
+
 _CHECKS = {
     "failure_rate": _check_failure_rate,
     "queue_backlog": _check_queue_backlog,
@@ -359,6 +393,7 @@ _CHECKS = {
     "broker_memory": _check_broker_memory,
     "queue_wait": _check_queue_wait,
     "queue_growing": _check_queue_growing,
+    "rabbitmq_alarm": _check_rabbitmq_alarm,
 }
 
 
@@ -404,6 +439,11 @@ def _summary(rule: AlertRule, key: str, details: dict, event: str) -> str:
             return f"Queue {key} is no longer growing"
         return (f"Queue {key} grew from {details['from']} to {details['to']} waiting messages in the last "
                 f"{details['minutes']} min")
+    if kind == "rabbitmq_alarm":
+        if event == "resolved":
+            return f"RabbitMQ node {key} has no memory or disk alarm any more"
+        return (f"RabbitMQ node {key} has a {' and '.join(details.get('alarms') or ['resource'])} alarm: "
+                "publishers are blocked until it clears")
     return f"{rule.name}: {key}"
 
 
@@ -416,7 +456,8 @@ def dashboard_link(config: CeleryManagerConfig, kind: str | None, key: str | Non
         return base + "task-types/" + quote(key, safe="")
     if kind == "missed_run" and key:
         return base + "schedules/" + quote(key, safe="")
-    if kind in ("queue_backlog", "broker_unreachable", "broker_memory", "queue_wait", "queue_growing"):
+    if kind in ("queue_backlog", "broker_unreachable", "broker_memory", "queue_wait", "queue_growing",
+                "rabbitmq_alarm"):
         return base + "queues"
     if kind == "worker_offline":
         return base + "workers"
@@ -602,6 +643,7 @@ def evaluate_once(
     inspect_workers_fn=None,
     list_queues_fn=None,
     broker_health_fn=None,
+    rabbitmq_nodes_fn=None,
 ) -> list[dict]:
     """Judge every enabled rule once. Returns one entry per message sent
     (`rule_id`, `key`, `event`, `channels`, `errors`), for logs and tests.
@@ -609,7 +651,9 @@ def evaluate_once(
     `senders` maps a channel kind to a callable `(channel config, message,
     config)`, `inspect_workers_fn` and `list_queues_fn` stand in for
     `control.workers.inspect_workers`, `control.queues.list_queues` and
-    `control.broker.broker_health`; all four default to the real thing and exist for tests.
+    `control.broker.broker_health`, and `rabbitmq_nodes_fn` for
+    `control.rabbitmq.nodes_for_alerts`; all default to the real thing and
+    exist for tests.
     """
     now = _aware(now) or datetime.now(timezone.utc)
     sent: list[dict] = []
@@ -617,6 +661,7 @@ def evaluate_once(
         probe = _Probe(
             session, celery_app, config, now,
             inspect_workers_fn or _inspect_workers, list_queues_fn or _list_queues, broker_health_fn,
+            rabbitmq_nodes_fn,
         )
         rules = session.query(AlertRule).filter(AlertRule.enabled.is_(True)).order_by(AlertRule.id).all()
         for rule in rules:

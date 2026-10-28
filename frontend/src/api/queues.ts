@@ -1,4 +1,5 @@
 import { API_BASE as BASE } from "./base";
+import type { RabbitListingMeta, RabbitQueueInfo } from "./rabbitmq";
 
 // Two different numbers per queue, never to be merged in the UI:
 //   depth           — messages the broker holds right now (null = couldn't ask)
@@ -16,6 +17,9 @@ export interface QueueInfo {
   // Queue wait over the listing's wait window (ETA time excluded); null when
   // no run with a recorded send time started in it.
   wait: QueueWait | null;
+  // Management API details; present only when RabbitMQ management is
+  // configured (null for a queue it doesn't know). See api/rabbitmq.ts.
+  rabbitmq?: RabbitQueueInfo | null;
 }
 
 export interface QueueWait {
@@ -48,6 +52,7 @@ export interface QueueListing {
   queues: QueueInfo[];
   recorded_queued_unassigned: number;
   wait_window_seconds: number;
+  rabbitmq?: RabbitListingMeta;
 }
 
 export interface PurgeResult {
