@@ -4,6 +4,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { logout, type Role } from "../api/client";
 import { BrandMark, ThemeSwitch, useBranding } from "../branding";
 import {
+  IconBell,
   IconCalendarClock,
   IconKey,
   IconChartLine,
@@ -51,6 +52,7 @@ const NAV_ITEMS: {
   { to: "/insights", label: "Insights", icon: IconChartLine },
   { to: "/workers", label: "Workers", icon: IconServer },
   { to: "/queues", label: "Queues", icon: IconLayers },
+  { to: "/alerts", label: "Alerts", icon: IconBell },
   { to: "/users", label: "Users", icon: IconUsers, needs: "admin" },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
@@ -92,6 +94,7 @@ function sectionLabel(pathname: string): string {
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/users")) return "Users";
   if (pathname.startsWith("/queues")) return "Queues";
+  if (pathname.startsWith("/alerts")) return "Alerts";
   if (pathname === "/" || pathname.startsWith("/tasks")) return "Tasks";
   return "";
 }

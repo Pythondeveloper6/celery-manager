@@ -1,0 +1,111 @@
+/* Alerts page (pages/Alerts.tsx). Its dialogs reuse components/Modal.tsx
+   and styles/users.css. Tokens only, so light and dark both follow. */
+
+.cm-alerts-header-actions,
+.cm-alerts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-alerts-actions {
+  justify-content: flex-end;
+}
+
+/* A second, quieter line inside a cell: kind and target, quiet period. */
+.cm-alerts-sub {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: var(--cm-text-xs);
+  font-weight: 400;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-alerts-muted {
+  color: var(--cm-color-text-muted);
+}
+
+.cm-alerts-warn,
+.cm-alerts-sub.cm-alerts-warn {
+  color: var(--cm-color-danger);
+  overflow-wrap: anywhere;
+}
+
+/* Masked URLs, addresses and task names are long and unbreakable. */
+.cm-alerts-dest {
+  overflow-wrap: anywhere;
+}
+
+.cm-alerts-banner {
+  margin: 0;
+}
+
+.cm-alerts-legend {
+  margin-bottom: var(--cm-space-2);
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+}
+
+.cm-alerts-textarea {
+  height: auto;
+  min-height: 4.5rem;
+  padding: var(--cm-space-2) var(--cm-space-3);
+  resize: vertical;
+  font-family: inherit;
+}
+
+.cm-alerts-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-size: var(--cm-text-md);
+  cursor: pointer;
+}
+
+/* Rule and incident state: the badge box with a coloured dot, firing in the
+   danger colour so it is the one thing that stands out on the page. */
+.cm-alert-state {
+  --cm-status-color: var(--cm-color-success);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem var(--cm-space-2);
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  line-height: 1rem;
+  color: var(--cm-color-text-muted);
+  white-space: nowrap;
+  background-color: var(--cm-color-surface);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-alert-state::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cm-radius-full);
+  background-color: var(--cm-status-color);
+}
+
+.cm-alert-state[data-state="firing"] {
+  --cm-status-color: var(--cm-color-danger);
+  color: var(--cm-color-danger);
+  border-color: var(--cm-color-danger-border);
+}
+
+.cm-alert-state[data-state="firing"]::before {
+  animation: cm-pulse var(--cm-duration-pulse) ease-in-out infinite;
+}
+
+.cm-alert-state[data-state="resolved"] {
+  --cm-status-color: var(--cm-color-mark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-alert-state[data-state="firing"]::before {
+    animation: none;
+  }
+}
