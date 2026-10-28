@@ -76,6 +76,7 @@ tell you about three failing tasks separately.
 | `broker_memory` | `*` (one broker) | Redis uses at least `ratio` of its `maxmemory`. Redis only. | `ratio` (0.8, a fraction: 0.8 is 80%) |
 | `queue_wait` | queue name | At least `min_runs` runs started from the queue in the last `window_minutes`, and their `quantile`-th percentile queue wait is at least `seconds`. | `seconds` (60), `quantile` (95, meaning p95; 1 to 100), `window_minutes` (15), `min_runs` (5) |
 | `queue_growing` | queue name | The queue's sampled depth rose by at least `min_increase` over the last `minutes` without draining on the way. | `minutes` (15), `min_increase` (50) |
+| `rabbitmq_alarm` | RabbitMQ node name, e.g. `rabbit@node-1` | A RabbitMQ node reports a memory or disk alarm. Needs [RabbitMQ management](rabbitmq.md). | none |
 
 An incident **resolves** when its condition no longer holds: the failures
 leave the window, the queue drains, the worker answers again, or the missed
@@ -105,6 +106,11 @@ Some details per kind:
   events listener records, so it needs the listener running with
   `queue_sample_interval_seconds` above 0; the exact growth rule is defined
   there. Gaps in sampling neither fire nor resolve it.
+- **`rabbitmq_alarm`** reads `/api/nodes` from the RabbitMQ management API.
+  While a node has an alarm RabbitMQ blocks every publisher, so no task can
+  be sent. Each node is its own incident; it resolves when the alarm clears.
+  If the management API isn't configured or can't be reached the rule is
+  marked *couldn't check*. The message names the alarm (memory, disk or both).
 - **`missed_run`** uses the same detection as the Schedules page, so it needs
   beat to run the stamping scheduler and respects `missed_run_grace_seconds`
   (see [Missed-run detection](decorator.md#missed-run-detection)).

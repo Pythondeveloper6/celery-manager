@@ -272,8 +272,9 @@ A complete runnable Django example is in
 Shipped in 0.1.0a5: alerts, missed-run detection,
 Prometheus/OpenTelemetry metrics, sign-in with your app's users, user management in the
 dashboard, editing schedules from the UI, maintenance windows, a dead-letter view and
-data retention. Next: broker health, queue wait time and depth history, delayed and
-stuck tasks, browsing waiting messages, and RabbitMQ management and dead-letter queues.
+data retention; and for Redis and RabbitMQ: broker health, queue wait time and depth
+history, delayed and stuck tasks, browsing waiting messages, and RabbitMQ management
+and dead-letter queues.
 [Read the roadmap →](https://pythondeveloper6.github.io/celery-manager/roadmap/)
 
 ## Requirements

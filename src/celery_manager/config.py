@@ -173,8 +173,9 @@ class CeleryManagerConfig:
         does a broker that isn't RabbitMQ. The vhost is the broker URL's.
         Redirects are never followed (they would resend the credentials).
     rabbitmq_management_username: the management API login. A user with the
-        ``monitoring`` tag is enough to read; browsing and requeueing
-        dead-letter queues also need read and write permission on the vhost
+        ``monitoring`` tag is enough to read; browsing
+        a dead-letter queue also needs read permission on it (requeue uses
+        the broker URL's user)
         (see docs/rabbitmq.md).
     rabbitmq_management_password: its password. Like ``smtp_password`` it
         lives only here: never in the database, an API response, a log line

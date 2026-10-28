@@ -23,7 +23,7 @@ const REFRESH_MS = 10000;
 
 const DOCS_URL = "https://pythondeveloper6.github.io/celery-manager/rabbitmq/";
 
-export function formatBytes(value: number | null | undefined): string {
+function formatBytes(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let n = value;
@@ -35,7 +35,7 @@ export function formatBytes(value: number | null | undefined): string {
   return `${n >= 10 || unit === 0 ? Math.round(n) : n.toFixed(1)} ${units[unit]}`;
 }
 
-export function formatRate(rate: number | null | undefined): string {
+function formatRate(rate: number | null | undefined): string {
   if (rate === null || rate === undefined) return "—";
   return `${rate >= 10 ? Math.round(rate).toLocaleString() : rate.toFixed(1)}/s`;
 }
@@ -157,7 +157,7 @@ export function RabbitPanel({ meta, visible }: { meta: RabbitListingMeta | undef
               : "From the management API."}
           </p>
         </div>
-        <Link to="/queues/dead-letter-queues" className="cm-btn cm-btn-outline cm-btn-sm">
+        <Link to="/rabbitmq/dead-letters" className="cm-btn cm-btn-outline cm-btn-sm">
           Dead-letter queues
         </Link>
       </div>

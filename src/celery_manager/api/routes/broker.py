@@ -16,4 +16,11 @@ def get_broker_health(request: Request, username: str = Depends(get_current_user
     (`reachable: false` with `error`), and the dashboard polls this next to
     the queue list. The broker URL comes back with its password masked.
     """
-    return broker_health(request.app.state.cm_config.celery_app)
+    config = request.app.state.cm_config
+    health = broker_health(config.celery_app)
+    details = health.get("details")
+    # The alarms live in the RabbitMQ panel when the management API is set up
+    # (control/rabbitmq.py); say so rather than "not configured".
+    if isinstance(details, dict) and "management" in details and config.rabbitmq_management_url:
+        details["management"] = "configured"
+    return health

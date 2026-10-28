@@ -9,7 +9,9 @@ export type RuleKind =
   | "broker_unreachable"
   | "broker_memory"
   | "queue_wait"
-  | "queue_growing";
+  | "queue_growing"
+  // RabbitMQ
+  | "rabbitmq_alarm";
 export type ChannelKind = "slack" | "webhook" | "email";
 
 export interface AlertRule {
