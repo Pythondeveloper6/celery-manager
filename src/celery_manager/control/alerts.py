@@ -30,6 +30,8 @@ from celery_manager.db.models import AlertChannel, AlertIncident, AlertRule
 RULE_KINDS = (
     "failure_rate", "queue_backlog", "worker_offline", "missed_run",
     "broker_unreachable", "broker_memory", "queue_wait", "queue_growing",
+    # RabbitMQ (control/rabbitmq.py).
+    "rabbitmq_alarm",
 )
 # Kinds about the one broker rather than a named thing: their target is
 # always "*" whatever was sent, so a rule can't claim to watch "redis-2".
@@ -93,6 +95,10 @@ RULE_PARAMS: dict[str, dict[str, tuple[type, float, float, float]]] = {
         "minutes": (int, 15, 1, MAX_MINUTES),
         "min_increase": (int, 50, 1, 1_000_000_000),
     },
+    # --- RabbitMQ ---
+    # Fires while a RabbitMQ node matching the target reports a memory or
+    # disk alarm (publishers are blocked until it clears). Nothing to tune.
+    "rabbitmq_alarm": {},
 }
 
 # Email addresses are only shape-checked: the mail server is the authority.

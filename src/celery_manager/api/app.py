@@ -43,6 +43,9 @@ from celery_manager.api.routes import (
     queues as queue_routes,
 )
 from celery_manager.api.routes import (
+    rabbitmq as rabbitmq_routes,
+)
+from celery_manager.api.routes import (
     retention as retention_routes,
 )
 from celery_manager.api.routes import (
@@ -236,6 +239,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(unacked_routes.router)
     app.include_router(queue_routes.router)
     app.include_router(broker_routes.router)
+    app.include_router(rabbitmq_routes.router)
     app.include_router(workflow_routes.router)
     app.include_router(alert_routes.router)
 

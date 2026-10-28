@@ -40,6 +40,8 @@ from celery_manager.control.broker import broker_health
 from celery_manager.control.latency import wait_samples
 from celery_manager.control.missed import missed_run_counts
 from celery_manager.control.queues import _run_with_deadline, list_queues
+from celery_manager.control.rabbitmq import not_configured_reason as rabbitmq_not_configured
+from celery_manager.control.rabbitmq import queue_stats as rabbitmq_queue_stats
 from celery_manager.control.tasks import list_registered_tasks
 from celery_manager.db.models import TaskRun
 
@@ -76,6 +78,13 @@ METRIC_NAMES = (
     "celery_manager_broker_evicted_keys",
     "celery_manager_broker_connected_clients",
     "celery_manager_collector_up",
+    # RabbitMQ management API (only when rabbitmq_management_url is set).
+    "celery_manager_rabbitmq_queue_unacked",
+    "celery_manager_rabbitmq_queue_consumers",
+    "celery_manager_rabbitmq_queue_publish_rate",
+    "celery_manager_rabbitmq_queue_deliver_rate",
+    "celery_manager_rabbitmq_mem_alarm",
+    "celery_manager_rabbitmq_disk_alarm",
 )
 
 CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
@@ -317,6 +326,32 @@ def _broker_families(celery_app) -> list[Family]:
                 if details.get(key) is not None:
                     family.samples = [(transport, details[key])]
     return [up, latency, used, limit, evicted, clients]
+def _rabbitmq_families(config) -> list[Family]:
+    """Per-queue and per-node numbers from the RabbitMQ management API.
+
+    Every queue in the broker's vhost (capped at MAX_QUEUE_LABELS), not only
+    the ones celery-manager knows: a dead-letter queue filling up is exactly
+    the queue nobody configured. A rate the management API hasn't sampled
+    yet is left out rather than reported as 0.
+    """
+    queues, nodes = rabbitmq_queue_stats(config)
+    unacked = Family("celery_manager_rabbitmq_queue_unacked", "Messages delivered to consumers but not yet acknowledged, per RabbitMQ queue.")
+    consumers = Family("celery_manager_rabbitmq_queue_consumers", "Consumers attached, per RabbitMQ queue.")
+    publish = Family("celery_manager_rabbitmq_queue_publish_rate", "Messages published per second into the queue, as sampled by the management API.")
+    deliver = Family("celery_manager_rabbitmq_queue_deliver_rate", "Messages delivered (or fetched) per second from the queue, as sampled by the management API.")
+    for q in sorted(queues, key=lambda q: q["name"])[:MAX_QUEUE_LABELS]:
+        labels = {"queue": q["name"]}
+        for family, key in ((unacked, "messages_unacknowledged"), (consumers, "consumers"),
+                            (publish, "publish_rate"), (deliver, "deliver_rate")):
+            if isinstance(q.get(key), (int, float)):
+                family.samples.append((labels, q[key]))
+    mem = Family("celery_manager_rabbitmq_mem_alarm", "1 while the RabbitMQ node has a memory alarm (publishers are blocked).")
+    disk = Family("celery_manager_rabbitmq_disk_alarm", "1 while the RabbitMQ node has a disk-space alarm (publishers are blocked).")
+    for node in nodes:
+        if node.get("name"):
+            mem.samples.append(({"node": node["name"]}, 1 if node.get("mem_alarm") else 0))
+            disk.samples.append(({"node": node["name"]}, 1 if node.get("disk_free_alarm") else 0))
+    return [unacked, consumers, publish, deliver, mem, disk]
 
 
 def compute_snapshot(config, session_factory, now: datetime | None = None) -> list[Family]:
@@ -369,6 +404,12 @@ def compute_snapshot(config, session_factory, now: datetime | None = None) -> li
         broker = attempt("broker", lambda: _broker_families(celery_app))
         if broker is not None:
             families.extend(broker)
+
+    # Only asked for (and only reported in collector_up) when configured: a
+    # Redis deployment shouldn't carry a permanently failing collector.
+    if getattr(config, "rabbitmq_management_url", None) and not rabbitmq_not_configured(config):
+        rabbit = attempt("rabbitmq", lambda: _rabbitmq_families(config))
+        families.extend(rabbit or [])
 
     families.append(up)
     return families

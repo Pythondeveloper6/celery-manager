@@ -26,6 +26,7 @@ from celery_manager.control.queues import (
     list_queues,
     purge_queue,
 )
+from celery_manager.control.rabbitmq import annotate_queues
 
 router = APIRouter(prefix="/api/queues")
 
@@ -43,18 +44,23 @@ def get_queues(request: Request, workers: bool = True, username: str = Depends(g
     `broker.error` with `depth: null` per queue, because the recorded counts
     are still useful and the dashboard polls this every few seconds.
     `?workers=false` skips the (cached) worker active_queues inspect.
+
+    With RabbitMQ management configured, each queue also carries a
+    `rabbitmq` object (consumers, unacknowledged, rates, type, arguments)
+    and `rabbitmq` at the top level says whether that worked; see
+    control/rabbitmq.py.
     """
-    celery_app = request.app.state.cm_config.celery_app
+    config = request.app.state.cm_config
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
-        listing = list_queues(celery_app, session, include_workers=workers)
+        listing = list_queues(config.celery_app, session, include_workers=workers)
         # Queue wait over the last 15 minutes (the same window as the
         # metrics), `null` for a queue with no timed run in it.
         stats = wait_stats(session)
         for queue in listing["queues"]:
             queue["wait"] = stats["by_queue"].get(queue["name"])
         listing["wait_window_seconds"] = stats["window_seconds"]
-        return listing
+    return annotate_queues(config, listing)
 
 
 @router.get("/{name}/history")
