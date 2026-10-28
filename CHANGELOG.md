@@ -118,6 +118,15 @@ cookies now carry a password fingerprint, and older cookies have none.
   `queue_browser_show_args=False` hides arguments. On Redis an admin can
   delete one waiting message or move it to another known queue (audited;
   409 if a worker took it meanwhile).
+- **Held tasks.** A new page with two tabs. *Delayed*: every task workers
+  hold with an ETA or countdown, with a countdown, cancel and bulk cancel
+  (operator; the run is marked revoked and audited). *Stuck (Redis)*:
+  messages a worker took but never acknowledged, for example after a crash,
+  classed as running, held by a live worker or orphaned, with how long until
+  kombu redelivers them, and a restore (operator, audited) that refuses a
+  task a live worker is running. `GET /api/delayed`,
+  `POST /api/delayed/cancel`, `GET /api/queues/unacked`,
+  `POST /api/queues/unacked/restore`.
 - **Docker Compose demo.** `examples/django_demo` runs the whole stack with
   `docker compose up`: Postgres, Redis (or RabbitMQ with a profile), worker,
   beat, events listener, dashboard, Mailpit, a webhook sink, Prometheus
