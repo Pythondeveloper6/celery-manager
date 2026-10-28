@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import StreamingResponse
@@ -135,6 +136,37 @@ def unclassified_write_routes(app: FastAPI) -> list[tuple[str, str]]:
     return missing
 
 
+def _check_link(name: str, url: str | None) -> None:
+    """`login_url` / `logout_url` end up in an `<a href>`. Only a same-site
+    path or an http(s) URL: a `javascript:` URL there would run in the
+    dashboard's origin for everyone who clicks it."""
+    if url is None:
+        return
+    # Browsers read `\` as `/` (so `/\evil.example` is another host) and
+    # drop tabs and newlines inside URLs, so neither may appear at all.
+    if isinstance(url, str) and url.isprintable() and "\\" not in url and " " not in url:
+        parts = urlsplit(url)
+        if (parts.scheme in ("http", "https") and parts.netloc) or (
+            # A path, but not `//evil.example` (scheme-relative: another host).
+            not parts.scheme and not parts.netloc and url.startswith("/") and not url.startswith("//")
+        ):
+            return
+    raise ValueError(f"CeleryManagerConfig.{name} must be a path starting with '/' or an http(s) URL, not {url!r}")
+
+
+def _check_sign_in_options(config: CeleryManagerConfig) -> None:
+    if config.authenticate_request is not None and not callable(config.authenticate_request):
+        raise ValueError("CeleryManagerConfig.authenticate_request must be a callable taking the request")
+    if not config.local_login_enabled and config.authenticate_request is None:
+        raise ValueError(
+            "CeleryManagerConfig.local_login_enabled is False but no authenticate_request is set, "
+            "so nobody could sign in. Set authenticate_request (see celery_manager.integrations) "
+            "or leave local login on."
+        )
+    _check_link("login_url", config.login_url)
+    _check_link("logout_url", config.logout_url)
+
+
 def create_app(config: CeleryManagerConfig):
     """Build the celery-manager FastAPI app. Returns (app, session_factory)
     — callers that need direct DB access (tests, the events listener CLI)
@@ -150,6 +182,8 @@ def create_app(config: CeleryManagerConfig):
             "Set it to a private random value, e.g. the output of "
             '`python -c "import secrets; print(secrets.token_urlsafe(32))"`.'
         )
+
+    _check_sign_in_options(config)
 
     # Single shared entry point for "wire celery-manager into this process"
     # (init_db + session factory + decorator configure) rather than an inline

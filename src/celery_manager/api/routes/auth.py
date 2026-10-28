@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from celery_manager.api.deps import SESSION_COOKIE, Principal, cookie_path
+from celery_manager.auth.external import SOURCE_LOCAL
 from celery_manager.auth.sessions import sign_session
 from celery_manager.auth.users import session_fingerprint, verify_password
 
@@ -15,9 +16,38 @@ class LoginRequest(BaseModel):
     password: str
 
 
+@router.get("/auth/options")
+def auth_options(request: Request):
+    """How to sign in, for the login screen, so unauthenticated like
+    `GET /api/settings`. Nothing here is a secret: the login and logout URLs
+    are links the host app shows to everyone anyway.
+
+    ``local_login``: whether the username/password form works.
+    ``external``: whether the host app can sign people in
+    (``authenticate_request`` is set); the dashboard then labels its own
+    accounts "local". ``login_url`` may contain ``{next}`` for the dashboard
+    to fill in with its own address."""
+    config = request.app.state.cm_config
+    return {
+        "local_login": config.local_login_enabled,
+        "external": config.authenticate_request is not None,
+        "provider_name": config.login_provider_name,
+        "login_url": config.login_url,
+        "logout_url": config.logout_url,
+    }
+
+
 @router.post("/auth/login")
 def login(payload: LoginRequest, request: Request, response: Response):
     config = request.app.state.cm_config
+    if not config.local_login_enabled:
+        # Refused before the password is even looked at: a local account
+        # that still exists must not become a way in once the host app is
+        # meant to be the only one.
+        raise HTTPException(
+            status_code=403,
+            detail=f"Sign-in with a dashboard password is turned off. Sign in with {config.login_provider_name}.",
+        )
     session_factory = request.app.state.cm_session_factory
     with session_factory() as db_session:
         user = verify_password(db_session, payload.username, payload.password)
@@ -34,7 +64,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
         samesite="lax",
         secure=config.cookie_secure,
     )
-    return {"username": user.username, "role": user.role}
+    return {"username": user.username, "role": user.role, "source": SOURCE_LOCAL}
 
 
 @router.post("/auth/logout")
@@ -56,5 +86,7 @@ def logout(request: Request, response: Response):
 def whoami(principal: Principal):
     """The signed-in account and its role. The dashboard uses the role only
     to hide controls the account can't use; the server checks it again on
-    every state-changing request."""
-    return {"username": principal.username, "role": principal.role}
+    every state-changing request. ``source`` is ``"local"`` for
+    celery-manager's own accounts and ``"external"`` for someone the host
+    app signed in, whose password and sign-out belong to the host."""
+    return {"username": principal.username, "role": principal.role, "source": principal.source}
