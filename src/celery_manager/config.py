@@ -63,6 +63,16 @@ class CeleryManagerConfig:
         workers) and pushes them to the browser. Lower is snappier and
         costs one small indexed query per interval per API process; nothing
         is polled while nobody is watching.
+    schedule_editing: allow operators to change a schedule's crontab or
+        interval from the dashboard. Off by default because an edit only
+        takes effect when beat runs celery-manager's database-backed
+        scheduler (`celery -A app beat -S celery_manager.beat:DatabaseScheduler`,
+        with `app.conf.celery_manager_db_url` pointing at this `db_url`);
+        with the plain `Scheduler`, or any other, beat never reads the edit
+        and the dashboard would promise runs that don't happen. While False
+        the edit route answers 409, saved edits are ignored when listing
+        upcoming runs, and the dashboard shows the editor disabled with the
+        reason. Turn it on in the API process once beat runs that scheduler.
     """
 
     celery_app: Celery
@@ -75,3 +85,4 @@ class CeleryManagerConfig:
     auto_migrate: bool = True
     inspect_timeout_seconds: float = 1.0
     live_poll_interval_seconds: float = 1.0
+    schedule_editing: bool = False
