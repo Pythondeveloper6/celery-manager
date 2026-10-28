@@ -86,7 +86,9 @@ arguments hold secrets, don't give that person a dashboard account at all.
 
 ### From the dashboard
 
-Admins get a **Users** page in the sidebar. It lists every account and lets
+Admins get a **Users** page in the sidebar. It lists every local account (see
+[Roles from your own app](#roles-from-your-own-app) for users signed in by your
+app) and lets
 you add a user, change a role, reset a password (type one, or have a random
 one generated and shown once) and delete a user. Every change is recorded in
 the [audit log](dashboard.md) as `create_user`, `set_role`, `reset_password`
@@ -179,12 +181,41 @@ HTTP/1.1 403 Forbidden
 
 The dashboard shows that message as is.
 
-## Embedding in your own app
+## Roles from your own app
 
-celery-manager has no hook for plugging in your host app's login. When you
-mount it inside Django, Flask or FastAPI, it still uses its own accounts and
-its own `cm_session` cookie (see [Integrating with your app](integrations.md)).
-So roles work the same way when embedded: manage them from the Users page or the CLI.
+When celery-manager is mounted in (or next to) a Django, Flask or FastAPI app,
+people can sign in with that app's users instead of dashboard accounts (see
+[Sign in with your app's users](integrations.md#sign-in-with-your-apps-users)).
+Your app then decides each person's role, on every request, through a
+`role_for(user)` function that returns `"viewer"`, `"operator"`, `"admin"`, or
+`None` for no access:
+
+| Your app | Default mapping | Other options |
+|---|---|---|
+| Django | superuser → `admin`, staff → `operator`, everyone else → no access | `permission_roles(admin="app.perm", operator=..., viewer=...)` (highest permission held, directly or through a group), or any function of the user (groups, a profile field) |
+| Flask | none: you pass `role_for` | any function of your user object |
+| FastAPI | none: your function returns the role | anything your token or user record carries |
+
+The same three roles and the same table above apply; only where the role is
+stored changes. Things to know:
+
+- **Changes apply on the next request**, as for local accounts: demote or
+  deactivate someone in your app and their next dashboard request has the
+  new role, or none.
+- **`None` means no access**, shown as a "No access" page naming the account.
+  It never falls back to a local account in the same browser.
+- **A role that isn't one of the three is refused** with a server error
+  (`500`) and a log line, not guessed. A typo like `"Admin"` locks people out
+  loudly rather than letting them in quietly.
+- **The Users page manages local accounts only**, and is titled "Local
+  accounts" while your app signs people in. Users of your app aren't listed:
+  their roles live in your app. They have no password here, so **Change
+  password** is hidden for them.
+- **The audit log names them by the username your app returns.**
+
+Local accounts keep working alongside unless you set
+`local_login_enabled=False`. Keeping one local admin is a sensible way back in
+if your app's sign-in is ever broken.
 
 ## For contributors: adding a route
 
