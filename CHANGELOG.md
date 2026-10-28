@@ -8,6 +8,9 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ### Fixed
 
+- Publishing checks whether the tested version exists on PyPI, so an unchanged
+  version can publish after CI fixes. Registry errors fail the check explicitly.
+
 - Django schedule creation consistently reports duplicate names, including
   pre-save validation failures, while preserving unrelated storage errors.
 - MySQL/MariaDB task-run creation uses insert-first upserts to avoid the
@@ -63,7 +66,7 @@ starting application processes, or leave automatic migrations enabled. See
 - Cancelling an unknown task ID returns 404; explicit forced cancellation is admin-only.
 - Reversed `@track` / `@app.task` placement raises a clear import-time error.
 - CI and docs run after changes reach main. Publishing follows successful main CI,
-  checks the exact tested commit and requires a version increase. PR, manual and
+  checks the exact tested commit and publishes versions absent from PyPI. PR, manual and
   release-event triggers are removed.
 - Existing `celery_manager.beat:DatabaseScheduler` keeps its static-editing meaning;
   the Django integration is `celery_manager.beat:DjangoDatabaseScheduler`.

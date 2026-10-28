@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      changed: ${{ steps.version.outputs.changed }}
+      publish: ${{ steps.version.outputs.publish }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -39,28 +39,16 @@ jobs:
           python -m pip install build twine
           python -m build
           twine check --strict dist/*
-      - name: Publish only a new version
+      - name: Check whether the tested version needs publishing
         id: version
-        run: |
-          python - <<'PYTHON'
-          import os, pathlib, subprocess, tomllib
-          current = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
-          previous = tomllib.loads(subprocess.check_output(["git", "show", "HEAD^:pyproject.toml"], text=True))["project"]["version"]
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              from packaging.version import Version
-              if current != previous and Version(current) <= Version(previous):
-                  raise SystemExit("Release version must increase")
-              print(f"version={current}", file=output)
-              print(f"changed={str(current != previous).lower()}", file=output)
-          print(f"Version: {previous} -> {current}; publish={current != previous}")
-          PYTHON
+        run: python .github/scripts/publish_status.py
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
   testpypi:
-    if: needs.build.outputs.changed == 'true'
+    if: needs.build.outputs.publish == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
