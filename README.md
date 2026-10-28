@@ -269,11 +269,11 @@ A complete runnable Django example is in
 
 ## Roadmap
 
-Everything on the previous roadmap shipped in 0.1.0a5: alerts, missed-run detection,
+Shipped in 0.1.0a5: alerts, missed-run detection,
 Prometheus/OpenTelemetry metrics, sign-in with your app's users, user management in the
 dashboard, editing schedules from the UI, maintenance windows, a dead-letter view and
-data retention. Ideas for what comes next are welcome in the
-[issue tracker](https://github.com/Pythondeveloper6/celery-manager/issues).
+data retention. Next: broker health, queue wait time and depth history, delayed and
+stuck tasks, browsing waiting messages, and RabbitMQ management and dead-letter queues.
 [Read the roadmap →](https://pythondeveloper6.github.io/celery-manager/roadmap/)
 
 ## Requirements
