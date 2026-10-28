@@ -82,6 +82,15 @@ WRITE_ROUTES = [
     ("PATCH", "/api/users/viewer", {"role": "viewer"}, "admin"),
     ("POST", "/api/users/ghost/password", {"generate": True}, "admin"),
     ("DELETE", "/api/users/ghost", None, "admin"),
+    # Alerts: an unknown kind (422) or made-up ids (404), so an allowed role
+    # gets past the check without creating anything.
+    ("POST", "/api/alerts/rules", {"name": "r", "kind": "bogus"}, "admin"),
+    ("PATCH", "/api/alerts/rules/999", {"enabled": False}, "admin"),
+    ("DELETE", "/api/alerts/rules/999", None, "admin"),
+    ("POST", "/api/alerts/channels", {"name": "c", "kind": "bogus"}, "admin"),
+    ("PATCH", "/api/alerts/channels/999", {"name": "x"}, "admin"),
+    ("DELETE", "/api/alerts/channels/999", None, "admin"),
+    ("POST", "/api/alerts/channels/999/test", None, "admin"),
     # A too-short new password: past the role check (so allowed for every
     # role) without changing anything.
     (
@@ -121,6 +130,13 @@ ROUTE_ROLES = {
     ("POST", "/api/users/{target}/password"): "admin",
     ("DELETE", "/api/users/{target}"): "admin",
     ("POST", "/api/me/password"): "viewer",
+    ("POST", "/api/alerts/rules"): "admin",
+    ("PATCH", "/api/alerts/rules/{rule_id}"): "admin",
+    ("DELETE", "/api/alerts/rules/{rule_id}"): "admin",
+    ("POST", "/api/alerts/channels"): "admin",
+    ("PATCH", "/api/alerts/channels/{channel_id}"): "admin",
+    ("DELETE", "/api/alerts/channels/{channel_id}"): "admin",
+    ("POST", "/api/alerts/channels/{channel_id}/test"): "admin",
 }
 
 READ_ROUTES = [
@@ -135,6 +151,9 @@ READ_ROUTES = [
     "/api/settings/retention",
     "/api/analytics/overview",
     "/api/analytics/failures",
+    "/api/alerts/rules",
+    "/api/alerts/channels",
+    "/api/alerts/incidents",
 ]
 
 # Control functions the write routes call; stubbed so an allowed request
