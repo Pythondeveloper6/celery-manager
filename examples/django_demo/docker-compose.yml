@@ -1,0 +1,181 @@
+name: celery-manager-demo
+
+# Everything the Django demo needs, against real services:
+#
+#   docker compose up --build
+#
+# Dashboard http://localhost:8001, Django http://localhost:8000, Mailpit
+# http://localhost:8025, alert sink http://localhost:9000. See README.md.
+#
+# Optional profiles:
+#   metrics   adds Prometheus on :9090
+#   rabbitmq  adds RabbitMQ (use with CELERY_BROKER_URL, see README.md)
+#
+# Every secret below is a demo value for localhost. Never reuse any of them.
+
+x-demo-env: &demo-env
+  POSTGRES_HOST: postgres
+  POSTGRES_DB: demo
+  POSTGRES_USER: demo
+  POSTGRES_PASSWORD: demo
+  # celery-manager keeps its own tables in the same Postgres database.
+  CELERY_MANAGER_DB_URL: postgresql+psycopg://demo:demo@postgres:5432/demo
+  CELERY_MANAGER_SECRET_KEY: demo-only-secret-key-change-me-0123456789
+  CELERY_MANAGER_METRICS_TOKEN: demo-metrics-token
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  DJANGO_ALLOWED_HOSTS: "*"
+  DJANGO_SUPERUSER_USERNAME: admin
+  DJANGO_SUPERUSER_PASSWORD: admin-demo
+  DJANGO_SUPERUSER_EMAIL: admin@example.com
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+
+x-app: &app
+  build:
+    context: ../..
+    dockerfile: examples/django_demo/Dockerfile
+  image: celery-manager-django-demo
+  environment: *demo-env
+  restart: unless-stopped
+
+# What every long-running app container waits for: the databases and brokers
+# are healthy and the one-shot `setup` has migrated and seeded everything.
+x-after-setup: &after-setup
+  setup:
+    condition: service_completed_successfully
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+    required: false # only exists with --profile rabbitmq
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: demo
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d demo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    profiles: [rabbitmq]
+    ports:
+      - "15672:15672" # management UI, guest / guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025" # web UI and API; SMTP is mailpit:1025 inside the network
+
+  alert-sink:
+    image: python:3.12-slim
+    command: ["python", "/app/alert_sink.py"]
+    environment:
+      ALERT_SINK_SECRET: demo-webhook-secret
+    volumes:
+      - ./docker/alert_sink.py:/app/alert_sink.py:ro
+    ports:
+      - "9000:9000"
+
+  # One-shot: schema for Django and celery-manager, a Django superuser, and
+  # the demo users, alert rules, maintenance window and retention rules.
+  setup:
+    <<: *app
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        python manage.py migrate --noinput
+        celery-manager migrate --db-url "$$CELERY_MANAGER_DB_URL"
+        python manage.py createsuperuser --noinput || echo "superuser already exists"
+        python manage.py demo_setup
+
+  web:
+    <<: *app
+    command: python manage.py runserver 0.0.0.0:8000
+    depends_on: *after-setup
+    ports:
+      - "8000:8000"
+
+  dashboard:
+    <<: *app
+    command: python run_dashboard.py
+    depends_on: *after-setup
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/settings')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    <<: *app
+    # A stable name (celery@worker), so recreating the container does not
+    # leave an "offline" worker behind for the worker-offline alert.
+    hostname: worker
+    command: celery -A demo worker -l info -E -Q celery,reports --concurrency 6 --prefetch-multiplier 1
+    depends_on: *after-setup
+
+  beat:
+    <<: *app
+    command: celery -A demo beat -l info -S celery_manager.beat:DatabaseScheduler -s /tmp/celerybeat-schedule
+    depends_on: *after-setup
+
+  events:
+    <<: *app
+    command: celery-manager events --config demo.cm:config --with-alerts
+    depends_on: *after-setup
+
+  traffic:
+    <<: *app
+    command: python manage.py demo_traffic
+    depends_on:
+      <<: *after-setup
+      worker:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: [metrics]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      dashboard:
+        condition: service_healthy
+
+volumes:
+  pgdata:

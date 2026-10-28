@@ -14,6 +14,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
 from celery.schedules import schedule as _interval_schedule
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -29,7 +30,8 @@ SECRET_KEY = 'django-insecure-a(8c%m(mf4n*4$+ithdf7j+0o)&m$(1o5_28h0xcongrmblc2-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# The Docker stack reaches Django as `web` from other containers.
+ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 
 # Application definition
@@ -77,12 +79,26 @@ WSGI_APPLICATION = 'demo.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# SQLite when run by hand; PostgreSQL in the Docker stack (docker-compose.yml
+# sets POSTGRES_HOST and friends).
+if os.environ.get("POSTGRES_HOST"):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'HOST': os.environ["POSTGRES_HOST"],
+            'PORT': os.environ.get("POSTGRES_PORT", "5432"),
+            'NAME': os.environ.get("POSTGRES_DB", "demo"),
+            'USER': os.environ.get("POSTGRES_USER", "demo"),
+            'PASSWORD': os.environ.get("POSTGRES_PASSWORD", "demo"),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -130,8 +146,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Celery
 # https://docs.celeryq.dev/en/stable/userguide/configuration.html
 
-CELERY_BROKER_URL = "redis://localhost:6379/0"
-CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+# Redis by default. The Docker stack can switch the broker to RabbitMQ
+# (`amqp://...`) with one environment variable; see the README.
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+# Slow index rebuilds get their own queue, so the Queues page and the
+# queue-backlog alert have a second queue to show.
+CELERY_TASK_ROUTES = {"tasks_app.tasks.rebuild_search_index": {"queue": "reports"}}
 # The events listener only sees what Celery emits: workers must send task events
 # and the publisher must send task-sent (worker/queue are null otherwise).
 CELERY_WORKER_SEND_TASK_EVENTS = True
@@ -146,11 +167,32 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": _interval_schedule(run_every=timedelta(hours=2)),
         "args": (),
     },
+    # Every minute, so missed runs, maintenance windows and schedule edits
+    # show up within minutes instead of hours.
+    "heartbeat-every-minute": {
+        "task": "tasks_app.tasks.heartbeat",
+        "schedule": crontab(minute="*"),
+    },
+    # An interval schedule whose task fails now and then even after Celery's
+    # own retries, so its failures land in Dead letters.
+    "sync-inventory-every-5-minutes": {
+        "task": "tasks_app.tasks.sync_inventory",
+        "schedule": _interval_schedule(run_every=timedelta(minutes=5)),
+    },
+    # The retention prune (celery_manager.tasks.prune, registered in
+    # tasks_app/tasks.py). Listed here rather than passed as
+    # register_prune_task(schedule=...) because, with Django settings loaded
+    # under the CELERY_ namespace, assigning `app.conf.beat_schedule` at
+    # runtime is shadowed by CELERY_BEAT_SCHEDULE and the entry is lost.
+    "celery-manager-prune": {
+        "task": "celery_manager.tasks.prune",
+        "schedule": crontab(hour=3, minute=0),
+    },
 }
 
 # celery-manager
 
-CELERY_MANAGER_DB_URL = "sqlite:///celery_manager_demo.db"
+CELERY_MANAGER_DB_URL = os.environ.get("CELERY_MANAGER_DB_URL", "sqlite:///celery_manager_demo.db")
 
 
 def secret_key() -> str:
