@@ -21,7 +21,12 @@ from celery_manager.auth.users import create_user
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.control import alerts as alert_control
 from celery_manager.control import depth_history
-from celery_manager.control.depth_history import growth, history, prune_samples, sample_once
+from celery_manager.control.depth_history import (
+    growth,
+    history,
+    prune_samples,
+    sample_once,
+)
 from celery_manager.control.latency import percentile, wait_seconds, wait_stats
 from celery_manager.control.retention import run_prune
 from celery_manager.db.migrate import alembic_config, upgrade_database
@@ -412,7 +417,7 @@ def test_queue_wait_defaults_and_validation():
 
 
 def test_queue_wait_alert_fires_per_queue_and_resolves(env):
-    config, sf = env
+    _config, sf = env
     fake = Fake()
     _alert_rule(sf, "queue_wait", params={"seconds": 30, "min_runs": 3})
     with sf() as s:
@@ -432,7 +437,7 @@ def test_queue_wait_alert_fires_per_queue_and_resolves(env):
 
 
 def test_queue_wait_alert_ignores_eta_time(env):
-    config, sf = env
+    _config, sf = env
     fake = Fake()
     _alert_rule(sf, "queue_wait", params={"seconds": 30, "min_runs": 3})
     with sf() as s:
@@ -449,7 +454,7 @@ def _depth_rows(sf, queue, series, end=NOW, step=60):
 
 
 def test_queue_growing_fires_and_resolves(env):
-    config, sf = env
+    _config, sf = env
     fake = Fake()
     _alert_rule(sf, "queue_growing", params={"minutes": 10, "min_increase": 50})
     _depth_rows(sf, "busy", [0, 10, 25, 40, 60, 80, 100, 130, 160, 190, 220])  # 11 samples, 10 min
@@ -465,7 +470,7 @@ def test_queue_growing_fires_and_resolves(env):
 
 
 def test_queue_growing_is_unknown_without_enough_fresh_samples(env):
-    config, sf = env
+    _config, sf = env
     fake = Fake()
     rule = _alert_rule(sf, "queue_growing", params={"minutes": 10, "min_increase": 50})
     _depth_rows(sf, "busy", [0, 10, 25, 40, 60, 80, 100, 130, 160, 190, 220])
@@ -478,7 +483,7 @@ def test_queue_growing_is_unknown_without_enough_fresh_samples(env):
 
 
 def test_queue_growing_says_so_when_nothing_was_ever_sampled(env):
-    config, sf = env
+    _config, sf = env
     fake = Fake()
     rule = _alert_rule(sf, "queue_growing")
     _evaluate(env, fake)
@@ -545,7 +550,7 @@ def test_queue_listing_and_task_detail_carry_wait(api, monkeypatch):
 
 
 def test_metrics_expose_queue_wait_quantiles(api):
-    client, sf, config = api
+    _client, sf, config = api
     now = datetime.now(timezone.utc)
     with sf() as s:
         for i, w in enumerate([1, 2, 3, 4, 10]):
@@ -598,7 +603,7 @@ def test_sampler_records_the_real_redis_queue_depth(env):
     try:
         for i in range(3):
             client.lpush(queue, f'{{"n": {i}}}')
-        config, sf = env
+        _config, sf = env
         celery_app = Celery("t", broker=url)
         celery_app.conf.task_default_queue = queue
         written = sample_once(sf, celery_app, now=NOW)

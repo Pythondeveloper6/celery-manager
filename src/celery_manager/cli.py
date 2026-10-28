@@ -300,7 +300,9 @@ def main() -> None:
             start_in_background(session_factory, config.celery_app, config, args.alerts_interval)
         # Queue depth history: its own thread and sessions, for the same
         # reason. A no-op when queue_sample_interval_seconds is 0.
-        from celery_manager.control.depth_history import start_in_background as start_sampler
+        from celery_manager.control.depth_history import (
+            start_in_background as start_sampler,
+        )
 
         start_sampler(session_factory, config.celery_app, config)
         EventListener(config, session_factory).run()
