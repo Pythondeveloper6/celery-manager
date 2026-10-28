@@ -45,6 +45,13 @@ from celery_manager.db.models import AuditLog, User
 # (method, path, json body, minimum role). One entry per state-changing route;
 # `test_matrix_covers_every_state_changing_route` keeps it complete.
 WRITE_ROUTES = [
+    ("POST", "/api/auth/bridge", None, "viewer"),
+    ("POST", "/api/schedules", {"name":"example", "task":"demo.echo", "schedule":{"type":"interval","seconds":60}}, "admin"),
+    ("PATCH", "/api/schedules/nightly", {"enabled":False}, "operator"),
+    ("DELETE", "/api/schedules/nightly", None, "admin"),
+    ("POST", "/api/schedules/preview", {"type":"interval","seconds":60}, "viewer"),
+    ("POST", "/api/schedules/nightly/skip-next", None, "operator"),
+    ("POST", "/api/schedules/nightly/run-now", None, "operator"),
     ("POST", "/api/tasks/start", {"task_name": "demo.echo"}, "operator"),
     ("POST", "/api/tasks/t1/cancel", None, "operator"),
     ("POST", "/api/tasks/t1/retry", None, "operator"),
@@ -126,6 +133,13 @@ WRITE_ROUTES = [
 
 # The same matrix by route template, as the app declares it.
 ROUTE_ROLES = {
+    ("POST", "/api/auth/bridge"): "viewer",
+    ("POST", "/api/schedules"): "admin",
+    ("PATCH", "/api/schedules/{name}"): "operator",
+    ("DELETE", "/api/schedules/{name}"): "admin",
+    ("POST", "/api/schedules/preview"): "viewer",
+    ("POST", "/api/schedules/{name}/skip-next"): "operator",
+    ("POST", "/api/schedules/{name}/run-now"): "operator",
     ("POST", "/api/tasks/start"): "operator",
     ("POST", "/api/tasks/{task_id}/cancel"): "operator",
     ("POST", "/api/tasks/{task_id}/retry"): "operator",

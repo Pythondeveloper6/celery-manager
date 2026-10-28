@@ -36,7 +36,7 @@ RULE_KINDS = (
 # Kinds about the one broker rather than a named thing: their target is
 # always "*" whatever was sent, so a rule can't claim to watch "redis-2".
 BROKER_KINDS = ("broker_unreachable", "broker_memory")
-CHANNEL_KINDS = ("slack", "webhook", "email")
+CHANNEL_KINDS = ("slack", "webhook", "email", "teams")
 
 MAX_NAME_LENGTH = 100
 MAX_TARGET_LENGTH = 255
@@ -247,7 +247,7 @@ def _validate_channel_config(kind: str, config, existing: dict | None) -> dict:
     if not isinstance(config, dict):
         raise ValueError("config must be an object")  # noqa: TRY004
     existing = existing or {}
-    allowed = {"slack": {"url"}, "webhook": {"url", "secret"}, "email": {"to"}}[kind]
+    allowed = {"slack": {"url"}, "teams": {"url"}, "webhook": {"url", "secret"}, "email": {"to"}}[kind]
     unknown = sorted(set(config) - allowed)
     if unknown:
         raise ValueError(f"unknown setting for a {kind} channel: {', '.join(unknown)}")

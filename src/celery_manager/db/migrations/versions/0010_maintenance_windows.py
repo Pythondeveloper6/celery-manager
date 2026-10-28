@@ -33,20 +33,20 @@ def upgrade() -> None:
         sa.Column("updated_by", sa.String(length=255), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("maintenance_windows", schema=None) as batch_op:
+    schema=op.get_context().opts.get("version_table_schema"))
+    with op.batch_alter_table("maintenance_windows", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.create_index(batch_op.f("ix_maintenance_windows_name"), ["name"], unique=True)
 
     # Nullable, no backfill: skips recorded before this have no reason.
-    with op.batch_alter_table("task_runs", schema=None) as batch_op:
+    with op.batch_alter_table("task_runs", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.add_column(sa.Column("skip_reason", sa.String(length=255), nullable=True))
 
 
 def downgrade() -> None:
     # Drops every window (an older version never skips on one, so the
     # schedules simply run) and the reasons on past skipped runs.
-    with op.batch_alter_table("task_runs", schema=None) as batch_op:
+    with op.batch_alter_table("task_runs", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_column("skip_reason")
-    with op.batch_alter_table("maintenance_windows", schema=None) as batch_op:
+    with op.batch_alter_table("maintenance_windows", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f("ix_maintenance_windows_name"))
-    op.drop_table("maintenance_windows")
+    op.drop_table("maintenance_windows", schema=op.get_context().opts.get("version_table_schema"))

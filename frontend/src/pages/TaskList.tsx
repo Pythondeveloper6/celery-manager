@@ -865,7 +865,7 @@ export function TaskList() {
               title="The live connection is down. Refreshing every 5 seconds until it's back."
             >
               <span className="cm-paused-dot" aria-hidden="true" />
-              {stream === "connecting" ? "Connecting" : "Reconnecting"}
+              {stream === "polling" ? "Polling" : stream === "connecting" ? "Connecting" : "Reconnecting"}
             </div>
           )}
           {canOperate && (

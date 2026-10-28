@@ -27,6 +27,7 @@ def list_audit(request: Request, limit: int = 50, username: str = Depends(get_cu
         return [
             {
                 "username": r.username,
+                "actor_subject": r.actor_subject,
                 "action": r.action,
                 "target_type": r.target_type,
                 "target_id": r.target_id,

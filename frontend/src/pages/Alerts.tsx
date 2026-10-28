@@ -113,7 +113,7 @@ const PARAM_FIELDS: Record<
   rabbitmq_alarm: [],
 };
 
-const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email" };
+const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email", teams: "Microsoft Teams" };
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;

@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from celery_manager.api.deps import get_current_user, require_operator
+from celery_manager.api.deps import Principal, get_current_user, require_operator
 from celery_manager.api.serialization import utc, utc_bound
 from celery_manager.control.deadletter import (
     BulkRerunTooLarge,
@@ -18,6 +18,7 @@ from celery_manager.control.deadletter import (
     rerun_with_arguments,
     summarize_dead_letters,
 )
+from celery_manager.control.policy import DispatchDenied
 from celery_manager.control.tasks import MAX_PAGE_SIZE, TaskRunNotFound
 
 router = APIRouter(prefix="/api/dead-letters")
@@ -82,7 +83,7 @@ class RerunRequest(BaseModel):
 
 
 @router.post("/rerun")
-def rerun(payload: RerunRequest, request: Request, username: str = Depends(require_operator)):
+def rerun(payload: RerunRequest, request: Request, principal: Principal, username: str = Depends(require_operator)):
     """Run dead letters again, with their own arguments or with edited ones.
 
     404 for an unknown id, 409 if a selected run is no longer a dead letter
@@ -93,6 +94,7 @@ def rerun(payload: RerunRequest, request: Request, username: str = Depends(requi
     celery_app = request.app.state.cm_config.celery_app
     with request.app.state.cm_session_factory() as session:
         try:
+            session.info["cm_principal"] = principal
             return rerun_with_arguments(
                 celery_app, session, payload.task_ids, payload.args, payload.kwargs, username,
             )
@@ -102,5 +104,7 @@ def rerun(payload: RerunRequest, request: Request, username: str = Depends(requi
             raise HTTPException(status_code=409, detail=str(exc))
         except (BulkRerunTooLarge, MixedTaskNames) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        except DispatchDenied:
+            raise
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))

@@ -24,9 +24,9 @@ def load_celery_app(path: str):
     return getattr(importlib.import_module(module_path), attr)
 
 
-def migrate(db_url: str, *, check: bool = False) -> int:
+def migrate(db_url: str, *, check: bool = False, db_schema=None) -> int:
     """`celery-manager migrate`. Returns the process exit code."""
-    engine = create_db_engine(db_url)
+    engine = create_db_engine(db_url, db_schema=db_schema)
     try:
         status = migration_status(engine)
         if status.current is not None:
@@ -51,10 +51,10 @@ def migrate(db_url: str, *, check: bool = False) -> int:
         engine.dispose()
 
 
-def _user_session_factory(db_url: str):
+def _user_session_factory(db_url: str, db_schema=None):
     # Same path every other process takes (init_db honours auto_migrate), so
     # the users table, and its role column, exist before we write to it.
-    config = CeleryManagerConfig(celery_app=None, db_url=db_url)
+    config = CeleryManagerConfig(celery_app=None, db_url=db_url, db_schema=db_schema)
     engine = init_db(config)
     return engine, get_session_factory(engine)
 
@@ -70,11 +70,11 @@ def _read_password(from_stdin: bool) -> str:
     return password
 
 
-def create_user_command(db_url: str, username: str, role: str, *, password_stdin: bool = False) -> int:
+def create_user_command(db_url: str, username: str, role: str, *, password_stdin: bool = False, db_schema=None) -> int:
     """`celery-manager create-user`. Returns the process exit code."""
     from celery_manager.auth.users import create_user, user_exists
 
-    engine, session_factory = _user_session_factory(db_url)
+    engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
     try:
         with session_factory() as session:
             if user_exists(session, username):
@@ -91,11 +91,11 @@ def create_user_command(db_url: str, username: str, role: str, *, password_stdin
         engine.dispose()
 
 
-def set_role_command(db_url: str, username: str, role: str) -> int:
+def set_role_command(db_url: str, username: str, role: str, *, db_schema=None) -> int:
     """`celery-manager set-role`. Returns the process exit code."""
     from celery_manager.auth.users import set_user_role
 
-    engine, session_factory = _user_session_factory(db_url)
+    engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
     try:
         with session_factory() as session:
             try:
@@ -109,11 +109,11 @@ def set_role_command(db_url: str, username: str, role: str) -> int:
         engine.dispose()
 
 
-def list_users_command(db_url: str) -> int:
+def list_users_command(db_url: str, *, db_schema=None) -> int:
     """`celery-manager list-users`. Returns the process exit code."""
     from celery_manager.db.models import User
 
-    engine, session_factory = _user_session_factory(db_url)
+    engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
     try:
         with session_factory() as session:
             rows = session.query(User.username, User.role).order_by(User.username).all()
@@ -126,11 +126,11 @@ def list_users_command(db_url: str) -> int:
         engine.dispose()
 
 
-def prune_command(db_url: str, *, dry_run: bool = False, batch_size: int = 1000) -> int:
+def prune_command(db_url: str, *, dry_run: bool = False, batch_size: int = 1000, db_schema=None) -> int:
     """`celery-manager prune`. Returns the process exit code."""
     from celery_manager.control.retention import run_prune
 
-    engine, session_factory = _user_session_factory(db_url)
+    engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
     try:
         with session_factory() as session:
             try:
@@ -181,6 +181,7 @@ def alerts_command(config: CeleryManagerConfig, interval: float | None, once: bo
 
     engine = init_db(config)
     session_factory = get_session_factory(engine)
+    session_factory.configure(info={"cm_config": config})
     try:
         if once:
             sent = evaluate_once(session_factory, config.celery_app, config)
@@ -218,6 +219,7 @@ def main() -> None:
         action="store_true",
         help="also evaluate alert rules in this process, on a background thread",
     )
+    events_parser.add_argument("--enable-events", action=argparse.BooleanOptionalAction, default=True)
     events_parser.add_argument("--alerts-interval", type=float, help="seconds between alert checks")
 
     alerts_parser = subparsers.add_parser("alerts", help="evaluate alert rules and send messages")
@@ -231,6 +233,7 @@ def main() -> None:
         "migrate", help="upgrade the database schema to the latest revision"
     )
     migrate_parser.add_argument("--db-url", required=True)
+    migrate_parser.add_argument("--db-schema")
     migrate_parser.add_argument(
         "--check",
         action="store_true",
@@ -240,6 +243,7 @@ def main() -> None:
     create_user_parser = subparsers.add_parser("create-user", help="create a dashboard user")
     create_user_parser.add_argument("username")
     create_user_parser.add_argument("--db-url", required=True)
+    create_user_parser.add_argument("--db-schema")
     create_user_parser.add_argument(
         "--role",
         choices=ROLES,
@@ -256,33 +260,36 @@ def main() -> None:
     set_role_parser.add_argument("username")
     set_role_parser.add_argument("role", choices=ROLES)
     set_role_parser.add_argument("--db-url", required=True)
+    set_role_parser.add_argument("--db-schema")
 
     list_users_parser = subparsers.add_parser("list-users", help="list dashboard users and their roles")
     list_users_parser.add_argument("--db-url", required=True)
+    list_users_parser.add_argument("--db-schema")
 
     prune_parser = subparsers.add_parser(
         "prune", help="delete runs older than the retention rules (a no-op until rules are set)"
     )
     prune_parser.add_argument("--db-url", required=True)
+    prune_parser.add_argument("--db-schema")
     prune_parser.add_argument("--dry-run", action="store_true", help="only report what would be deleted")
     prune_parser.add_argument("--batch-size", type=int, default=1000, help="rows per transaction (default 1000)")
 
     args = parser.parse_args()
 
     if args.command == "prune":
-        sys.exit(prune_command(args.db_url, dry_run=args.dry_run, batch_size=args.batch_size))
+        sys.exit(prune_command(args.db_url, dry_run=args.dry_run, batch_size=args.batch_size, db_schema=args.db_schema))
 
     if args.command == "create-user":
-        sys.exit(create_user_command(args.db_url, args.username, args.role, password_stdin=args.password_stdin))
+        sys.exit(create_user_command(args.db_url, args.username, args.role, password_stdin=args.password_stdin, db_schema=args.db_schema))
 
     if args.command == "set-role":
-        sys.exit(set_role_command(args.db_url, args.username, args.role))
+        sys.exit(set_role_command(args.db_url, args.username, args.role, db_schema=args.db_schema))
 
     if args.command == "list-users":
-        sys.exit(list_users_command(args.db_url))
+        sys.exit(list_users_command(args.db_url, db_schema=args.db_schema))
 
     if args.command == "migrate":
-        sys.exit(migrate(args.db_url, check=args.check))
+        sys.exit(migrate(args.db_url, check=args.check, db_schema=args.db_schema))
 
     if args.command == "alerts":
         config = _load_config(args.config, args.celery_app, args.db_url)
@@ -292,6 +299,7 @@ def main() -> None:
         config = _load_config(args.config, args.celery_app, args.db_url)
         engine = init_db(config)
         session_factory = get_session_factory(engine)
+        session_factory.configure(info={"cm_config": config})
         if args.with_alerts:
             # Same process, own thread and own sessions: the listener's
             # capture loop blocks, and a slow webhook must not delay events.
@@ -305,7 +313,7 @@ def main() -> None:
         )
 
         start_sampler(session_factory, config.celery_app, config)
-        EventListener(config, session_factory).run()
+        EventListener(config, session_factory).run(enable_events=args.enable_events)
 
 
 if __name__ == "__main__":

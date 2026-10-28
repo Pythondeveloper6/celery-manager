@@ -23,25 +23,27 @@ def upgrade() -> None:
     # from the latest timestamp each row already carries, then tighten it
     # (batch mode recreates the table for that on SQLite; elsewhere it is a
     # plain ALTER).
-    with op.batch_alter_table('task_runs', schema=None) as batch_op:
+    with op.batch_alter_table('task_runs', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.add_column(sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True))
 
-    op.execute(
-        "UPDATE task_runs SET updated_at = "
-        "COALESCE(finished_at, progress_updated_at, started_at, CURRENT_TIMESTAMP)"
-    )
+    from celery_manager.db.dialect import utcnow
+    table = sa.table("task_runs", sa.column("updated_at"), sa.column("finished_at"),
+                     sa.column("progress_updated_at"), sa.column("started_at"),
+                     schema=op.get_context().opts.get("version_table_schema"))
+    op.execute(table.update().values(updated_at=sa.func.coalesce(
+        table.c.finished_at, table.c.progress_updated_at, table.c.started_at, utcnow())))
 
-    with op.batch_alter_table('task_runs', schema=None) as batch_op:
+    with op.batch_alter_table('task_runs', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.alter_column(
             'updated_at',
             existing_type=sa.DateTime(timezone=True),
             nullable=False,
-            server_default=sa.func.now(),
+            server_default=utcnow(),
         )
         batch_op.create_index(batch_op.f('ix_task_runs_updated_at'), ['updated_at'], unique=False)
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('task_runs', schema=None) as batch_op:
+    with op.batch_alter_table('task_runs', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f('ix_task_runs_updated_at'))
         batch_op.drop_column('updated_at')

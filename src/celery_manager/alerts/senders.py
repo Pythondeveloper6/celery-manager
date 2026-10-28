@@ -198,4 +198,15 @@ def send_email(channel_config: dict, message: AlertMessage, config: CeleryManage
         raise DeliveryError(f"could not reach the SMTP server: {exc}") from None
 
 
-SENDERS = {"slack": send_slack, "webhook": send_webhook, "email": send_email}
+def send_teams(channel_config, message, config):
+    card = {"type": "AdaptiveCard", "version": "1.2",
+            "body": [{"type": "TextBlock", "text": message.subject(), "weight": "Bolder", "wrap": True},
+                     {"type": "TextBlock", "text": message.text(include_url=False), "wrap": True}]}
+    if message.url:
+        card["actions"] = [{"type": "Action.OpenUrl", "title": "Open dashboard", "url": message.url}]
+    payload = {"type": "message", "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive",
+                                                  "contentUrl": None, "content": card}]}
+    post_json(channel_config["url"], json.dumps(payload).encode(), {}, config.alert_send_timeout_seconds)
+
+
+SENDERS = {"slack": send_slack, "webhook": send_webhook, "email": send_email, "teams": send_teams}

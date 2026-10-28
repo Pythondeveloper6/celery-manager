@@ -172,7 +172,7 @@ def _earliest(current: datetime | None, incoming: datetime | None) -> datetime |
     return incoming if incoming < current_utc else current
 
 
-def upsert_task_run(session, event: dict) -> None:
+def upsert_task_run(session, event: dict, config=None) -> None:
     """Apply a single Celery event to the task_runs table.
 
     Pure function over a SQLAlchemy session so it's testable without a
@@ -256,6 +256,11 @@ def upsert_task_run(session, event: dict) -> None:
         run.runtime_seconds = event["runtime"]
     if event.get("exception") is not None:
         run.exception = event["exception"]
+    if (status_applied and event_type == "task-succeeded" and "result" in event
+            and run.result_repr is None and (config is None or config.store_results)):
+        from celery_manager.logcapture import result_fields
+        for key, value in result_fields(event["result"], config).items():
+            setattr(run, key, value)
     if event.get("traceback") is not None:
         run.traceback = event["traceback"]
 
@@ -273,16 +278,49 @@ class EventListener:
         self._config = config
         self._session_factory = session_factory
 
-    def run(self) -> None:
+    def run(self, *, enable_events=True) -> None:
         app = self._config.celery_app
         state = app.events.State()
 
+        import logging
+        import threading
+        import time
+        log = logging.getLogger(__name__)
+        stop = threading.Event()
+        last_heartbeat = [time.monotonic()]
+
+        def enable():
+            try:
+                app.control.enable_events()
+            except Exception:
+                log.warning("celery-manager: could not enable worker events", exc_info=True)
+
+        def maintain():
+            while not stop.wait(60):
+                enable()
+                if time.monotonic() - last_heartbeat[0] > 120:
+                    log.warning("celery-manager: no worker heartbeat received in two minutes")
+
         def on_event(event):
+            if event.get("type") in ("worker-online", "worker-heartbeat"):
+                last_heartbeat[0] = time.monotonic()
             state.event(event)
             with self._session_factory() as session:
-                upsert_task_run(session, event)
+                from celery_manager.events.workers import record_worker_event
+                record_worker_event(session, event)
+                upsert_task_run(session, event, self._config)
                 session.commit()
 
-        with app.connection() as connection:
-            receiver = app.events.Receiver(connection, handlers={"*": on_event})
-            receiver.capture(limit=None, timeout=None, wakeup=True)
+        thread = None
+        if enable_events:
+            enable()
+            thread = threading.Thread(target=maintain, name="cm-enable-events", daemon=True)
+            thread.start()
+        try:
+            with app.connection() as connection:
+                receiver = app.events.Receiver(connection, handlers={"*": on_event})
+                receiver.capture(limit=None, timeout=None, wakeup=True)
+        finally:
+            stop.set()
+            if thread:
+                thread.join(timeout=1)

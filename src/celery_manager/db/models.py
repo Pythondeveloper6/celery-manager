@@ -11,9 +11,10 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from celery_manager.db.dialect import utcnow
 
 
 class Base(DeclarativeBase):
@@ -47,6 +48,10 @@ class TaskRun(Base):
     exception: Mapped[str | None] = mapped_column(Text, nullable=True)
     traceback: Mapped[str | None] = mapped_column(Text, nullable=True)
     log_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    log_output_truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    result_repr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    initiator: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     schedule_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
@@ -104,7 +109,7 @@ class TaskRun(Base):
         DateTime(timezone=True),
         default=_utcnow,
         onupdate=_utcnow,
-        server_default=func.now(),
+        server_default=utcnow(),
         index=True,
     )
 
@@ -142,6 +147,8 @@ class PeriodicSchedule(Base):
     # describing the code's schedule, so "revert to code" has something to
     # show. Beat applies it only when it runs
     # `celery_manager.beat:DatabaseScheduler`.
+    definition: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     schedule_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -241,6 +248,7 @@ class AppSetting(Base):
 
 
 class AuditLog(Base):
+    actor_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -360,3 +368,12 @@ class AlertWorkerSighting(Base):
     worker: Mapped[str] = mapped_column(String(255), primary_key=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WorkerState(Base):
+    __tablename__ = "worker_states"
+    hostname: Mapped[str] = mapped_column(String(255), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    active: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processed: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   cancelTask,
   getTask,
+  TaskNotRecorded,
   retryTask,
   subscribeToUpdates,
   type TaskDetail as TaskDetailData,
@@ -148,6 +149,7 @@ export function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const [task, setTask] = useState<TaskDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState(false);
   // Kept apart from `error` on purpose: a failed *background* refresh must
   // never replace a page full of real data with an error screen. The last
   // known state stays on screen and the failure is reported next to it.
@@ -167,6 +169,7 @@ export function TaskDetail() {
   useEffect(() => {
     setTask(null);
     setError(null);
+    setWaiting(false);
     setLiveError(null);
     setRetrying(false);
     setRetryError(null);
@@ -184,7 +187,10 @@ export function TaskDetail() {
         if (!cancelled) setTask(next);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Task not found.");
+        if (!cancelled) {
+          if (err instanceof TaskNotRecorded) setWaiting(true);
+          else setError(err instanceof Error ? err.message : "Couldn't load this task.");
+        }
       });
     return () => {
       cancelled = true;
@@ -192,7 +198,7 @@ export function TaskDetail() {
   }, [taskId]);
 
   const running = task !== null && isRunning(task);
-  const live = task !== null && ACTIVE_STATUSES.has(task.status);
+  const live = waiting || (task !== null && ACTIVE_STATUSES.has(task.status));
 
   // Live refresh. While the run is active the page listens on /api/stream
   // and refetches this one row whenever the change feed reports it — the
@@ -226,11 +232,12 @@ export function TaskDetail() {
         .then((next) => {
           if (cancelled) return;
           setTask(next);
+          setWaiting(false);
           setLiveError(null);
         })
         .catch((err) => {
           if (cancelled) return;
-          setLiveError(err instanceof Error ? err.message : "Couldn't refresh this run.");
+          if (!(err instanceof TaskNotRecorded)) setLiveError(err instanceof Error ? err.message : "Couldn't refresh this run.");
         })
         .finally(() => {
           inFlight = false;
@@ -269,11 +276,12 @@ export function TaskDetail() {
         .then((next) => {
           if (cancelled) return;
           setTask(next);
+          setWaiting(false);
           setLiveError(null);
         })
         .catch((err) => {
           if (cancelled) return;
-          setLiveError(err instanceof Error ? err.message : "Couldn't refresh this run.");
+          if (!(err instanceof TaskNotRecorded)) setLiveError(err instanceof Error ? err.message : "Couldn't refresh this run.");
         });
     }, POLL_INTERVAL_MS);
     return () => {
@@ -387,7 +395,7 @@ export function TaskDetail() {
       ) : !task ? (
         <p className="cm-loading">
           <span className="cm-live-dot" aria-hidden="true" />
-          Loading&hellip;
+          {waiting ? "Waiting for a task record. This page checks automatically; verify the task ID if it does not appear." : "Loading…"}
         </p>
       ) : (
         <>
@@ -698,6 +706,14 @@ export function TaskDetail() {
               {/* Renders nothing unless this run is part of a chain, group or chord. */}
               <WorkflowCard taskId={task.task_id} status={task.status} />
 
+              <section className="cm-card cm-detail-section" aria-labelledby="cm-result-heading">
+                <h2 className="cm-card-title" id="cm-result-heading">Result</h2>
+                {task.result_repr !== null ? <pre className="cm-code cm-code-tall">{task.result_repr}</pre>
+                  : <p className="cm-run-hint">No result recorded.</p>}
+                {task.result_truncated && <p className="cm-run-hint">Result exceeded the storage limit; showing the beginning and end.</p>}
+                {task.initiator && <p className="cm-run-hint">Started by {task.initiator}</p>}
+              </section>
+
               {/* Logs before args: the log is what you read next after the
                   traceback; args/kwargs are the reproduction recipe. */}
               <section className="cm-card cm-detail-section" aria-labelledby="cm-log-heading">
@@ -707,10 +723,11 @@ export function TaskDetail() {
                 {task.log_output ? (
                   <pre className="cm-code cm-code-tall">{task.log_output}</pre>
                 ) : (
-                  <p className="cm-run-hint">No log output captured for this run.</p>
+                  <p className="cm-run-hint">{task.logs_restricted ? "Your role does not have access to logs." : "No log output captured for this run."}</p>
                 )}
               </section>
 
+              {task.log_output_truncated && <p className="cm-run-hint">Logs exceeded the capture limit; showing the beginning and end.</p>}
               <section className="cm-card cm-detail-section" aria-labelledby="cm-args-heading">
                 <h2 className="cm-card-title" id="cm-args-heading">
                   Arguments

@@ -40,6 +40,8 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import Connection, Engine, create_engine, event, inspect, text
 from sqlalchemy.pool import NullPool
 
+from celery_manager.db.dialect import schema_of
+
 logger = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
@@ -94,11 +96,11 @@ def head_revision() -> str:
 
 
 def _current_revision(connection: Connection) -> str | None:
-    return MigrationContext.configure(connection, opts={"version_table": VERSION_TABLE}).get_current_revision()
+    return MigrationContext.configure(connection, opts={"version_table": VERSION_TABLE, "version_table_schema": schema_of(connection)}).get_current_revision()
 
 
 def _has_tables(connection: Connection) -> bool:
-    return bool(set(inspect(connection).get_table_names()) & _BASELINE_TABLES)
+    return bool(set(inspect(connection).get_table_names(schema=schema_of(connection))) & _BASELINE_TABLES)
 
 
 def _adoption_stamp(connection: Connection) -> str | None:
@@ -113,10 +115,10 @@ def _adoption_stamp(connection: Connection) -> str | None:
     which also brings a partial or half-upgraded database level.
     """
     inspector = inspect(connection)
-    tables = set(inspector.get_table_names())
+    tables = set(inspector.get_table_names(schema=schema_of(connection)))
     if not _BASELINE_TABLES <= tables:
         return None
-    columns = {c["name"] for c in inspector.get_columns("periodic_schedules")}
+    columns = {c["name"] for c in inspector.get_columns("periodic_schedules", schema=schema_of(connection))}
     if {"paused_at", "paused_by"} <= columns:
         return SCHEDULE_PAUSE_REVISION
     return None
@@ -198,6 +200,14 @@ def upgrade_database(engine: Engine) -> None:
         if dialect == "postgresql":
             # Transaction-scoped: released by the commit below.
             connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PG_LOCK_KEY})
+        elif dialect == "mssql":
+            acquired = connection.execute(text(
+                "DECLARE @rc int; EXEC @rc = sp_getapplock @Resource=:name, "
+                "@LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=:timeout; SELECT @rc"
+            ), {"name": "celery_manager_migrate:" + (schema_of(connection) or "default"),
+                "timeout": _LOCK_TIMEOUT_SECONDS * 1000}).scalar()
+            if acquired is None or acquired < 0:
+                raise RuntimeError("celery-manager: timed out waiting for another process's schema migration")
         elif dialect in ("mysql", "mariadb"):
             acquired = connection.execute(
                 text("SELECT GET_LOCK(:name, :timeout)"),
@@ -210,7 +220,7 @@ def upgrade_database(engine: Engine) -> None:
             connection.commit()
         except Exception:
             connection.rollback()
-            if dialect in ("postgresql", "mysql", "mariadb"):
+            if dialect in ("postgresql", "mysql", "mariadb", "mssql"):
                 raise
             # No lock on this backend: another process may have run the same
             # migration concurrently and won. Fine if the database is current.

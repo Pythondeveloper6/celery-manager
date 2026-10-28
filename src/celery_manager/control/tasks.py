@@ -228,6 +228,10 @@ def start_task(
     queue: str | None = None,
     countdown: float | None = None,
     eta: datetime | None = None,
+    config=None,
+    principal=None,
+    _preserve_queue=False,
+    _delivery_options=None,
 ) -> str:
     """Dispatch a task on demand (e.g. from the dashboard's 'run now' action).
 
@@ -239,7 +243,16 @@ def start_task(
     """
     # Only forward the options the caller actually set, so a plain start
     # reaches the broker exactly as it always has.
-    options: dict = {}
+    from celery_manager.control.policy import validate_dispatch
+    config = config or (session.info.get("cm_config") if session is not None else None)
+    principal = principal or (session.info.get("cm_principal") if session is not None else None)
+    validate_dispatch(config, task_name, args, kwargs, queue=None if _preserve_queue else queue, session=session, principal=principal)
+    options: dict = dict(_delivery_options or {})
+    allowed_options = {"exchange", "routing_key", "priority", "expires", "headers"}
+    if set(options) - allowed_options:
+        raise ValueError("Unsupported delivery option")
+    if "headers" in options:
+        options["headers"] = {k: v for k, v in options["headers"].items() if not str(k).startswith("cm_")}
     if queue:
         options["queue"] = queue
     if countdown is not None:
@@ -258,7 +271,7 @@ def start_task(
         })
         session.commit()
     if session is not None and username is not None:
-        details = {"task_name": task_name, "args": args, "kwargs": kwargs}
+        details = {"task_name": task_name, "args": args, "kwargs": kwargs, "delivery_options": json.loads(json.dumps(options, default=str))}
         if queue:
             details["queue"] = queue
         if countdown is not None:
@@ -389,6 +402,11 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     final_kwargs = kwargs if kwargs is not None else _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
 
     edited = args is not None or kwargs is not None
+    from celery_manager.control.policy import validate_dispatch
+    config = session.info.get("cm_config")
+    principal = session.info.get("cm_principal")
+    validate_dispatch(config, run.task_name, final_args, final_kwargs, edited=edited,
+                      session=session, principal=principal)
     new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
 
     # Upsert, never check-then-insert. `task_runs.task_id` is UNIQUE, and by
@@ -437,6 +455,18 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
 
 
 def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str) -> list[str]:
+    if session.info.get("cm_config") is not None:
+        from celery_manager.control.policy import validate_dispatch
+        # Validate the whole requested scope before publishing the first task.
+        # A broker failure during the actual sends can still be partial.
+        for task_id in task_ids:
+            run = get_task_run(session, task_id)
+            if run is None:
+                raise TaskRunNotFound(f"no task run found for {task_id}")
+            args = _decode_stored_call_argument(run.args, "args", task_id, [])
+            kwargs = _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
+            validate_dispatch(session.info["cm_config"], run.task_name, args, kwargs,
+                              session=session, principal=session.info.get("cm_principal"))
     return [retry_task(celery_app, session, task_id, username) for task_id in task_ids]
 
 

@@ -73,20 +73,16 @@ app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {
 Serve `app` with any WSGI server (`flask run`, gunicorn, waitress). Login,
 the task list and every other REST call work through the adapter.
 
-!!! warning "Live updates (SSE) do not work well through a2wsgi"
-    We tested `/api/stream` through a2wsgi on the werkzeug threaded server.
-    Events arrive in real time (they are not buffered), but every open stream
-    holds a WSGI worker thread for as long as the tab is open, and a2wsgi never
-    notices when the browser disconnects, so each closed tab or reload leaks a
-    subscriber and its queue until the process restarts.
+!!! warning "Use polling through WSGI/a2wsgi"
+    Set `config.live_stream = "poll"` before `create_app(config)`. The API omits
+    `/api/stream` and the SPA uses polling without repeatedly opening EventSource
+    connections. Long-lived SSE connections consume WSGI workers and adapters may
+    not promptly notice disconnects. Keep `"sse"` for an ASGI deployment that
+    supports streaming. Older demos' `without_sse` wrapper is no longer necessary
+    when this option is set.
 
-    The dashboard works without it (the task list polls), so the Flask demo
-    answers `/api/stream` with `204 No Content` by wrapping the dashboard in a
-    tiny ASGI function (see `without_sse` in `examples/flask_demo/app.py`; the
-    browser's `EventSource` stops and does not retry on a 204). If you want push
-    updates, run the dashboard as its own uvicorn process and put it behind the
-    same reverse proxy path as your Flask app (see
-    [Behind a reverse proxy](#behind-a-reverse-proxy)).
+For OIDC, bridge sessions, trusted origins, frame ancestors, immediate task links
+and external schedule adapters, see the [production adoption guide](production.md).
 
 ## Django
 

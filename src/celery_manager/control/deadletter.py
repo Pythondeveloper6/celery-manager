@@ -294,7 +294,11 @@ def rerun_with_arguments(
         stored_kwargs = _stored_unless_replaced(run.kwargs, "kwargs", task_id, {}, kwargs)
         final_args = stored_args if args is None else args
         final_kwargs = stored_kwargs if kwargs is None else kwargs
-        plan.append((run, final_args, final_kwargs, final_args != stored_args or final_kwargs != stored_kwargs))
+        edited = final_args != stored_args or final_kwargs != stored_kwargs
+        from celery_manager.control.policy import validate_dispatch
+        validate_dispatch(session.info.get("cm_config"), run.task_name, final_args, final_kwargs,
+                          edited=edited, session=session, principal=session.info.get("cm_principal"))
+        plan.append((run, final_args, final_kwargs, edited))
 
     reruns: list[dict] = []
     errors: list[dict] = []
@@ -304,7 +308,7 @@ def rerun_with_arguments(
             # its page can be opened at once; no username, because the audit
             # row written below is the specific one for this action.
             new_id = start_task(
-                celery_app, run.task_name, final_args, final_kwargs, session=session, queue=run.queue,
+                celery_app, run.task_name, final_args, final_kwargs, session=session, queue=run.queue, _preserve_queue=True,
             )
         except Exception as exc:  # noqa: BLE001 - a broker failure on one run must not hide the others
             errors.append({"task_id": run.task_id, "error": str(exc) or type(exc).__name__})

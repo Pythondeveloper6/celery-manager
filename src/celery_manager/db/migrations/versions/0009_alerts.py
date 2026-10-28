@@ -33,7 +33,7 @@ def upgrade() -> None:
         sa.Column("last_error_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
-    )
+    schema=op.get_context().opts.get("version_table_schema"))
     op.create_table(
         "alert_rules",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -52,14 +52,14 @@ def upgrade() -> None:
         sa.Column("last_check_error", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
-    )
+    schema=op.get_context().opts.get("version_table_schema"))
     op.create_table(
         "alert_worker_sightings",
         sa.Column("worker", sa.String(length=255), nullable=False),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("worker"),
-    )
+    schema=op.get_context().opts.get("version_table_schema"))
     # `open_key` is unique and NULL once an incident resolves: the
     # database, not process memory, guarantees one open incident per rule
     # and key however many evaluators run.
@@ -77,23 +77,23 @@ def upgrade() -> None:
         sa.Column("resolved_notified_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("details", sa.Text(), nullable=True),
         sa.Column("delivery_error", sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(["rule_id"], ["alert_rules.id"]),
+        sa.ForeignKeyConstraint(["rule_id"], [(op.get_context().opts.get("version_table_schema") + "." if op.get_context().opts.get("version_table_schema") else "") + "alert_rules.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("open_key"),
-    )
-    with op.batch_alter_table("alert_incidents", schema=None) as batch_op:
+    schema=op.get_context().opts.get("version_table_schema"))
+    with op.batch_alter_table("alert_incidents", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.create_index(batch_op.f("ix_alert_incidents_opened_at"), ["opened_at"], unique=False)
         batch_op.create_index(batch_op.f("ix_alert_incidents_rule_id"), ["rule_id"], unique=False)
         batch_op.create_index(batch_op.f("ix_alert_incidents_state"), ["state"], unique=False)
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("alert_incidents", schema=None) as batch_op:
+    with op.batch_alter_table("alert_incidents", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f("ix_alert_incidents_state"))
         batch_op.drop_index(batch_op.f("ix_alert_incidents_rule_id"))
         batch_op.drop_index(batch_op.f("ix_alert_incidents_opened_at"))
 
-    op.drop_table("alert_incidents")
-    op.drop_table("alert_worker_sightings")
-    op.drop_table("alert_rules")
-    op.drop_table("alert_channels")
+    op.drop_table("alert_incidents", schema=op.get_context().opts.get("version_table_schema"))
+    op.drop_table("alert_worker_sightings", schema=op.get_context().opts.get("version_table_schema"))
+    op.drop_table("alert_rules", schema=op.get_context().opts.get("version_table_schema"))
+    op.drop_table("alert_channels", schema=op.get_context().opts.get("version_table_schema"))

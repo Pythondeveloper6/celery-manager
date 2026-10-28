@@ -28,6 +28,10 @@ from celery_manager.db.models import AuditLog, Base, TaskRun
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
 
+def registered_placeholder(*args, **kwargs):
+    return None
+
+
 def _run(task_id, status="failed", name="demo.pay", exception="ConnectionError('boom')", **extra):
     fields = {
         "task_id": task_id, "task_name": name, "status": status, "exception": exception,
@@ -300,6 +304,8 @@ def test_a_broker_error_on_one_run_is_reported_and_the_rest_still_go(session, ce
 @pytest.fixture
 def api(monkeypatch):
     celery = Celery("dl")
+    celery.task(name="demo.pay", shared=False)(registered_placeholder)
+    celery.task(name="demo.mail", shared=False)(registered_placeholder)
     config = CeleryManagerConfig(celery_app=celery, db_url="sqlite:///:memory:", secret_key="test-secret")
     app, session_factory = create_app(config)
     with session_factory() as s:

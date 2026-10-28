@@ -23,12 +23,13 @@ def upgrade() -> None:
     # of a control they had yesterday. Added nullable, backfilled, then
     # tightened, so the backfill value (admin) can differ from the default
     # for new rows (viewer, the least privileged role).
-    with op.batch_alter_table("users", schema=None) as batch_op:
+    with op.batch_alter_table("users", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.add_column(sa.Column("role", sa.String(length=16), nullable=True))
 
-    op.execute("UPDATE users SET role = 'admin'")
+    table = sa.table("users", sa.column("role", sa.String(16)), schema=op.get_context().opts.get("version_table_schema"))
+    op.execute(table.update().values(role="admin"))
 
-    with op.batch_alter_table("users", schema=None) as batch_op:
+    with op.batch_alter_table("users", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.alter_column(
             "role",
             existing_type=sa.String(length=16),
@@ -38,5 +39,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("users", schema=None) as batch_op:
+    with op.batch_alter_table("users", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_column("role")

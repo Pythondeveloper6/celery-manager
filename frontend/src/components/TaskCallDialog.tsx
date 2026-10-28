@@ -9,6 +9,7 @@ import {
   type SignatureParam,
 } from "../api/tasks";
 import { IconSearch, IconX } from "./icons";
+import { API_BASE } from "../api/base";
 
 // One editor for both "start a task" and "retry with changes": both end in
 // "pick/confirm a task name, edit args + kwargs, dispatch". The dialog does
@@ -129,6 +130,14 @@ export function TaskCallDialog({
   const [argsText, setArgsText] = useState(isRetry ? prettyStored(retryOf?.args, "[]") : "[]");
   const [kwargsText, setKwargsText] = useState(isRetry ? prettyStored(retryOf?.kwargs, "{}") : "{}");
   const [queue, setQueue] = useState("");
+  const [queueAllowed, setQueueAllowed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/auth/options`).then((r) => r.json()).then((options) => {
+      if (!cancelled) setQueueAllowed(options.allow_queue_override === true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [when, setWhen] = useState<"now" | "countdown" | "eta">("now");
   const [countdown, setCountdown] = useState("");
   const [eta, setEta] = useState("");
@@ -264,7 +273,6 @@ export function TaskCallDialog({
   const required = realParams(signature).filter((p) => p.required && p.kind === "positional");
   const title = titleOverride ?? (isRetry ? "Retry with changes" : "Start a task");
   const showPicker = !isRetry && !taskName;
-  const exactMatch = registered?.some((t) => t.name === query.trim());
 
   return (
     <div className="cm-sheet-root" onKeyDown={onKeyDown}>
@@ -312,7 +320,6 @@ export function TaskCallDialog({
                     if (e.key === "Enter") {
                       e.preventDefault();
                       if (matches.length === 1) pick(matches[0].name);
-                      else if (query.trim() && !exactMatch && matches.length === 0) pick(query.trim());
                     }
                   }}
                 />
@@ -326,7 +333,7 @@ export function TaskCallDialog({
                 {registered === null && !loadError && <li className="cm-picker-empty">Loading tasks&hellip;</li>}
                 {registered !== null && registered.length === 0 && (
                   <li className="cm-picker-empty">
-                    No tasks are registered in this process. Type a task name to use it anyway.
+                    No tasks are available to start. Check the task registration and dashboard allowlist.
                   </li>
                 )}
                 {registered !== null && registered.length > 0 && matches.length === 0 && query.trim() && (
@@ -340,14 +347,7 @@ export function TaskCallDialog({
                     </button>
                   </li>
                 ))}
-                {query.trim() && !exactMatch && (
-                  <li>
-                    <button type="button" className="cm-picker-item" onClick={() => pick(query.trim())}>
-                      <span className="cm-picker-name">Use &ldquo;{query.trim()}&rdquo;</span>
-                      <span className="cm-picker-doc">Not in the list. Dispatch it by name.</span>
-                    </button>
-                  </li>
-                )}
+
               </ul>
             </div>
           ) : (
@@ -433,6 +433,7 @@ export function TaskCallDialog({
                       id={`${uid}-queue`}
                       className="cm-input"
                       value={queue}
+                      disabled={!queueAllowed}
                       placeholder={selected?.queue ?? "Default queue"}
                       onChange={(e) => setQueue(e.target.value)}
                     />

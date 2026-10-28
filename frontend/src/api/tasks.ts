@@ -33,6 +33,11 @@ export interface TaskDetail extends TaskSummary {
   skip_reason: string | null;
   traceback: string | null;
   log_output: string | null;
+  log_output_truncated: boolean;
+  logs_restricted: boolean;
+  result_repr: string | null;
+  result_truncated: boolean;
+  initiator: string | null;
   queue: string | null;
   worker: string | null;
   eta: string | null;
@@ -83,9 +88,12 @@ export async function listTasks(params: TaskQuery = {}): Promise<TaskPage> {
   return response.json();
 }
 
+export class TaskNotRecorded extends Error {}
+
 export async function getTask(taskId: string): Promise<TaskDetail> {
   const response = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}`, { credentials: "include" });
-  if (!response.ok) throw new Error(response.status === 404 ? "Task not found." : "Couldn't load this task.");
+  if (response.status === 404) throw new TaskNotRecorded("Waiting for a task record. Check the task ID if it does not appear.");
+  if (!response.ok) throw new Error("Couldn't load this task.");
   return response.json();
 }
 
@@ -247,7 +255,7 @@ export interface TaskEvent {
 /** "connecting" until the first open, "connected" while the stream is up,
  *  "reconnecting" from the moment it drops until it is back. Callers use it
  *  to decide whether to poll instead, and to show an honest "Live" badge. */
-export type StreamState = "connecting" | "connected" | "reconnecting";
+export type StreamState = "connecting" | "connected" | "reconnecting" | "polling";
 
 // How long to wait before rebuilding a stream the browser gave up on.
 const RECONNECT_DELAY_MS = 5000;
@@ -291,7 +299,14 @@ export function subscribeToUpdates(
   };
 
   onState?.("connecting");
-  connect();
+  fetch(`${BASE}/auth/options`, { credentials: "include" })
+    .then((response) => response.json())
+    .then((options) => {
+      if (closed) return;
+      if (options.live_stream === "poll") onState?.("polling");
+      else connect();
+    })
+    .catch(() => { if (!closed) connect(); });
   return () => {
     closed = true;
     if (retryTimer !== null) clearTimeout(retryTimer);

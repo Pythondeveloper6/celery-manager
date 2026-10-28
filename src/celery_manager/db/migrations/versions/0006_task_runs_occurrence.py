@@ -18,7 +18,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("task_runs", schema=None) as batch_op:
+    with op.batch_alter_table("task_runs", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.add_column(
             sa.Column("occurrence_at", sa.DateTime(timezone=True), nullable=True)
         )
@@ -31,7 +31,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("task_runs", schema=None) as batch_op:
+    with op.batch_alter_table("task_runs", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f("ix_task_runs_occurrence_at"))
         batch_op.drop_column("beat_sent_at")
         batch_op.drop_column("occurrence_at")

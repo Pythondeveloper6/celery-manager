@@ -12,11 +12,21 @@ from celery_manager.db.migrate import migration_status, upgrade_database
 logger = logging.getLogger(__name__)
 
 
-def create_db_engine(db_url: str) -> Engine:
+def create_db_engine(db_url: str, *, db_schema=None, engine_options=None) -> Engine:
     """The engine celery-manager uses for `db_url`, with the SQLite
     adjustments every process needs. Creates no tables."""
+    import re
+    if db_schema is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", db_schema):
+        raise ValueError("db_schema must be a SQL identifier")
+    options = dict(engine_options or {})
+    if db_schema:
+        execution = dict(options.get("execution_options") or {})
+        execution["schema_translate_map"] = {None: db_schema}
+        options["execution_options"] = execution
     if db_url.startswith("sqlite"):
-        connect_args = {"check_same_thread": False}
+        if db_schema not in (None, "main"):
+            raise ValueError("SQLite does not support a dedicated schema; use a separate database file")
+        connect_args = {"check_same_thread": False, **options.pop("connect_args", {})}
         if ":memory:" in db_url:
             # SQLAlchemy's default pool for sqlite ":memory:" URLs
             # (SingletonThreadPool) hands each thread its own separate
@@ -25,9 +35,9 @@ def create_db_engine(db_url: str) -> Engine:
             # table created on the calling thread would be invisible to the
             # request handler. StaticPool keeps a single shared connection
             # for the whole engine, matching sqlite's on-disk semantics.
-            return create_engine(db_url, connect_args=connect_args, poolclass=StaticPool)
-        return create_engine(db_url, connect_args=connect_args)
-    return create_engine(db_url)
+            return create_engine(db_url, connect_args=connect_args, **{"poolclass": StaticPool, **options})
+        return create_engine(db_url, connect_args=connect_args, **options)
+    return create_engine(db_url, **options)
 
 
 def init_db(config: CeleryManagerConfig) -> Engine:
@@ -37,7 +47,7 @@ def init_db(config: CeleryManagerConfig) -> Engine:
     With `auto_migrate=False` the database is not touched; a schema that
     isn't current is only logged, and running `celery-manager migrate` is
     the deployment's job."""
-    engine = create_db_engine(config.db_url)
+    engine = create_db_engine(config.db_url, db_schema=config.db_schema, engine_options=config.engine_options)
     if config.auto_migrate:
         upgrade_database(engine)
         return engine

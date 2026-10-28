@@ -30,9 +30,21 @@ from celery_manager.control.schedules import (
     revert_schedule,
     schedule_edit_fields,
 )
+from celery_manager.db.models import PeriodicSchedule
 from celery_manager.schedule_specs import ScheduleSpecError
 
-router = APIRouter(prefix="/api/schedules")
+
+def refresh_backend(request: Request, username: str = Depends(get_current_user)):
+    config = request.app.state.cm_config
+    try:
+        config._schedule_service.refresh()
+    except Exception as exc:
+        raise HTTPException(503, "The scheduler backend could not be read; stored schedules were kept.") from exc
+
+
+require_viewer = require_role("viewer")
+
+router = APIRouter(prefix="/api/schedules", dependencies=[Depends(refresh_backend)])
 
 
 class PauseRequest(BaseModel):
@@ -92,7 +104,7 @@ def missed(name: str, request: Request, username: str = Depends(get_current_user
     7 days, newest detection rules in `control/missed.py`). `active` is false
     until beat has stamped a run for it, i.e. detection is not yet possible."""
     config = request.app.state.cm_config
-    if name not in (config.celery_app.conf.beat_schedule or {}):
+    if name not in config._schedule_service.entries:
         raise HTTPException(status_code=404, detail="Unknown schedule.")
     with request.app.state.cm_session_factory() as session:
         tracking_since = first_stamped_occurrence(session, name)
@@ -112,6 +124,9 @@ def _schedule_summary(s, config) -> dict:
     edit = schedule_edit_fields(s, config.celery_app, apply_edits=config.schedule_editing)
     return {
         "name": s.name,
+        "source": s.source,
+        "backend_writable": config._schedule_service.backend.writable,
+        "definition": __import__("json").loads(s.definition) if s.definition else None,
         "task_name": s.task_name,
         "schedule_spec": edit["schedule_spec"],
         "enabled": s.enabled,
@@ -126,7 +141,7 @@ def _schedule_summary(s, config) -> dict:
         "edited_at": utc(edit["edited_at"]),
         # Repeated per item so the dashboard needs no extra request to know
         # whether to offer the editor; see `CeleryManagerConfig.schedule_editing`.
-        "schedule_editing": config.schedule_editing,
+        "schedule_editing": config.schedule_editing or config._schedule_service.backend.writable,
     }
 
 
@@ -209,7 +224,7 @@ EDITING_DISABLED = (
 
 
 @router.post("/{name}/preview")
-def preview(name: str, request: Request, spec: Annotated[dict, Body()], username: str = Depends(require_role("viewer"))):
+def preview(name: str, request: Request, spec: Annotated[dict, Body()], username: str = Depends(require_viewer)):
     """The next five runs under the schedule in the body (a spec, see
     `celery_manager.schedule_specs`), without saving it. A POST only because
     the spec is a JSON body; it changes nothing, so any signed-in account
@@ -234,6 +249,12 @@ def save_schedule(name: str, request: Request, spec: Annotated[dict, Body()], us
     `unmatched_overrides`: future skips/cancels the new schedule has no run
     for (kept, but they will not apply)."""
     config = request.app.state.cm_config
+    if config._schedule_service.backend.writable:
+        from celery_manager.api.routes.schedule_backend import UpdateSchedule, update
+        update(name, UpdateSchedule(schedule=spec), request, username)
+        with request.app.state.cm_session_factory() as session:
+            row = session.query(PeriodicSchedule).filter_by(name=name).one()
+            return {**_schedule_summary(row, config), "unmatched_overrides": []}
     if not config.schedule_editing:
         raise HTTPException(status_code=409, detail=EDITING_DISABLED)
     with request.app.state.cm_session_factory() as session:

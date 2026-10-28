@@ -36,6 +36,7 @@ class CurrentUser:
     # SOURCE_LOCAL for celery-manager's own accounts, SOURCE_EXTERNAL for a
     # user the host app vouched for (`CeleryManagerConfig.authenticate_request`).
     source: str = SOURCE_LOCAL
+    subject: str | None = None
 
 
 def get_current_principal(
@@ -62,14 +63,19 @@ def get_current_principal(
                 # Shown as-is by the dashboard's "no access" page.
                 detail=f"Your {config.login_provider_name} account ({external.username}) has no access to this dashboard.",
             )
-        return CurrentUser(username=external.username, role=external.role, source=SOURCE_EXTERNAL)
+        return CurrentUser(username=external.username, role=external.role, source=SOURCE_EXTERNAL, subject=external.subject)
+    if session is not None and config.session_bridge_enabled:
+        from celery_manager.auth.sessions import verify_bridge
+        bridge = verify_bridge(config.secret_key, session, config.bridge_max_age_seconds)
+        if bridge is not None:
+            return CurrentUser(**bridge, source=SOURCE_EXTERNAL)
     if not config.local_login_enabled:
         # Ignore cm_session cookies outright: turning local login off must
         # end the sessions it already issued, not only stop new ones.
         raise HTTPException(status_code=401, detail="not authenticated")
     if session is None:
         raise HTTPException(status_code=401, detail="not authenticated")
-    claims = verify_session_claims(config.secret_key, session)
+    claims = verify_session_claims(config.secret_key, session, config.session_max_age_seconds)
     if claims is None:
         raise HTTPException(status_code=401, detail="invalid or expired session")
     username, fingerprint = claims
@@ -93,9 +99,17 @@ def get_current_principal(
 Principal = Annotated[CurrentUser, Depends(get_current_principal)]
 
 
+class Actor(str):
+    def __new__(cls, principal):
+        actor = super().__new__(cls, principal.username)
+        actor.subject = principal.subject
+        actor.role = principal.role
+        return actor
+
+
 def get_current_user(principal: Principal) -> str:
     """Any signed-in account, whatever its role. For read-only routes."""
-    return principal.username
+    return Actor(principal)
 
 
 # Attribute set on every dependency `require_role` builds, so the app can
@@ -119,7 +133,7 @@ def require_role(role: str):
                 # Shown as-is by the dashboard, so written for a person.
                 detail=f"Not allowed: this action needs the {role} role (you are {principal.role}).",
             )
-        return principal.username
+        return Actor(principal)
 
     setattr(dependency, REQUIRED_ROLE_ATTR, role)
     dependency.__name__ = f"require_{role}"

@@ -4,6 +4,7 @@ import { listSchedules, type ScheduleSummary } from "../api/schedules";
 import "../styles/missed-runs.css";
 import "../styles/maintenance.css";
 import { MaintenanceWindows } from "../components/MaintenanceWindows";
+import { BackendSchedules, BackendScheduleActions } from "../components/BackendSchedules";
 import { ScheduleToggle } from "../components/ScheduleToggle";
 import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 
@@ -71,6 +72,7 @@ export function ScheduleList() {
         </p>
       )}
 
+      <BackendSchedules onChanged={refresh} />
       <div className="cm-card cm-card-flush">
         {error ? (
           // Same error treatment as TaskList and the audit log: the server's
@@ -93,7 +95,7 @@ export function ScheduleList() {
           </div>
         ) : schedules.length === 0 ? (
           <p className="cm-empty-state">
-            No periodic schedules configured yet. Add one to your Celery beat schedule and it appears here.
+            No schedules found. Create one with a writable backend or add one to your Celery configuration.
           </p>
         ) : (
           <div className="cm-table-scroll">
@@ -168,6 +170,7 @@ export function ScheduleList() {
                           onChange={handleChange}
                           onError={(m) => handleRowError(s.name, m)}
                         />
+                        <BackendScheduleActions schedule={s} onChanged={refresh} onError={(m) => handleRowError(s.name, m)} />
                         {rowErrors[s.name] && (
                           <p className="cm-error" role="alert">
                             {rowErrors[s.name]}
