@@ -14,6 +14,7 @@ import {
 } from "../api/users";
 import { Modal } from "../components/Modal";
 import { IconCheck, IconCopy } from "../components/icons";
+import { useAuthOptions } from "../lib/auth";
 import { needsRole, useCan, useRole, useUsername } from "../lib/role";
 
 const ROLES: Role[] = ["viewer", "operator", "admin"];
@@ -260,6 +261,7 @@ function ResetPasswordDialog({ username, onClose }: { username: string; onClose:
 export function Users() {
   const isAdmin = useCan("admin");
   const me = useRole();
+  const authOptions = useAuthOptions();
   // Marks "you" and hides actions the server would refuse on your own row.
   const currentUsername = useUsername();
   const [users, setUsers] = useState<DashboardUser[] | null>(null);
@@ -328,8 +330,12 @@ export function Users() {
     <div className="cm-page">
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
-          <h1 className="cm-page-title">Users</h1>
-          <p className="cm-page-lede">Who can sign in to this dashboard, and what they can do.</p>
+          <h1 className="cm-page-title">{authOptions.external ? "Local accounts" : "Users"}</h1>
+          <p className="cm-page-lede">
+            {authOptions.external
+              ? `Accounts stored by this dashboard itself. People who sign in with ${authOptions.provider_name} get their role from ${authOptions.provider_name} and aren't listed here.`
+              : "Who can sign in to this dashboard, and what they can do."}
+          </p>
         </div>
         <div className="cm-users-header-actions">
           <button type="button" className="cm-btn cm-btn-primary" onClick={() => setAdding(true)}>
@@ -337,6 +343,13 @@ export function Users() {
           </button>
         </div>
       </header>
+
+      {!authOptions.local_login && (
+        <p className="cm-notice" role="status">
+          Signing in with these accounts is turned off (<code>local_login_enabled=False</code>). They are kept, and work
+          again if it is turned back on.
+        </p>
+      )}
 
       <div className="cm-card cm-card-flush">
         {actionError && (

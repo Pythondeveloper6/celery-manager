@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { HashRouter, Link, Route, Routes } from "react-router-dom";
-import { whoami, type CurrentUser } from "./api/client";
+import {
+  DEFAULT_AUTH_OPTIONS,
+  getAuthOptions,
+  NoAccessError,
+  whoami,
+  type AuthOptions,
+  type CurrentUser,
+} from "./api/client";
+import { AuthOptionsContext, SourceContext } from "./lib/auth";
 import { RoleContext, UsernameContext } from "./lib/role";
 import { BrandMark, useBranding } from "./branding";
 import { AppShell } from "./components/AppShell";
-import { Login } from "./pages/Login";
+import { Login, NoAccess } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
 import { DeadLetters } from "./pages/DeadLetters";
@@ -43,19 +51,31 @@ function NotFound() {
 export function App() {
   const { settings } = useBranding();
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [authOptions, setAuthOptions] = useState<AuthOptions>(DEFAULT_AUTH_OPTIONS);
   const [checked, setChecked] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
+  // The host app signed this person in but gave them no role here.
+  const [noAccess, setNoAccess] = useState<string | null>(null);
 
   const runCheck = useCallback(() => {
     setChecked(false);
     setCheckError(null);
-    whoami()
-      .then((user) => {
+    setNoAccess(null);
+    // Together, so the login screen knows whether to show the password form
+    // or a "Sign in with <host>" link before it first paints.
+    Promise.all([whoami(), getAuthOptions()])
+      .then(([user, options]) => {
         setUser(user);
+        setAuthOptions(options);
         setChecked(true);
       })
-      .catch((err) => {
-        setCheckError(err instanceof Error ? err.message : "Could not reach the server.");
+      .catch(async (err) => {
+        if (err instanceof NoAccessError) {
+          setAuthOptions(await getAuthOptions());
+          setNoAccess(err.message);
+        } else {
+          setCheckError(err instanceof Error ? err.message : "Could not reach the server.");
+        }
         setChecked(true);
       });
   }, []);
@@ -65,6 +85,8 @@ export function App() {
   }, [runCheck]);
 
   if (!checked) return null;
+
+  if (noAccess) return <NoAccess message={noAccess} options={authOptions} onRetry={runCheck} />;
 
   if (checkError) {
     return (
@@ -93,7 +115,7 @@ export function App() {
     );
   }
 
-  if (!user) return <Login onSuccess={setUser} />;
+  if (!user) return <Login options={authOptions} onSuccess={setUser} onRetry={runCheck} />;
 
   // HashRouter, not BrowserRouter: the backend serves the built SPA via a
   // plain StaticFiles(html=True) mount with no catch-all fallback route, so
@@ -104,8 +126,12 @@ export function App() {
   // the "#".
   return (
     <HashRouter>
+      <AuthOptionsContext.Provider value={authOptions}>
+      <SourceContext.Provider value={user.source}>
       <RoleContext.Provider value={user.role}>
-        <UsernameContext.Provider value={user.username}>
+        {/* "You" on the Users page means your local account. Someone the
+            host signed in is not the local account that shares their name. */}
+        <UsernameContext.Provider value={user.source === "local" ? user.username : null}>
         <AppShell username={user.username} role={user.role} onSignedOut={() => setUser(null)}>
           <Routes>
             <Route path="/" element={<TaskList />} />
@@ -126,6 +152,8 @@ export function App() {
         </AppShell>
         </UsernameContext.Provider>
       </RoleContext.Provider>
+      </SourceContext.Provider>
+      </AuthOptionsContext.Provider>
     </HashRouter>
   );
 }
