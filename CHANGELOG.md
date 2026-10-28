@@ -6,14 +6,65 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0a5] — 2026-10-27
+## [0.1.0a5] — 2026-10-28
 
-Run the migrations after upgrading (`0006` and `0007`; automatic unless
+Run the migrations after upgrading (`0006` to `0010`; automatic unless
 `auto_migrate=False`). To get exact skip matching, run beat with
-`-S celery_manager.beat:Scheduler`.
+`-S celery_manager.beat:Scheduler`. Everyone is signed out once: session
+cookies now carry a password fingerprint, and older cookies have none.
 
 ### Added
 
+- **Alerts.** Rules for a task's failure rate, a queue backlog, a worker
+  going offline or a periodic task missing its run, each sent to Slack, a
+  webhook (signed with `X-Celery-Manager-Signature` when it has a secret) or
+  email. One message per incident, a quiet period, and an optional
+  "resolved" message; safe with several evaluators on one database. Run the
+  evaluator with `celery-manager alerts` or `celery-manager events
+  --with-alerts`. New Alerts page, `/api/alerts/*` routes (writes are
+  admin), migration `0009`, and config options `dashboard_url`, `smtp_*`,
+  `alert_email_from`, `alert_send_timeout_seconds` and
+  `alert_interval_seconds`. See `docs/alerts.md`.
+- **Missed-run detection.** Scheduled runs that were due but never arrived,
+  judged from beat's occurrence stamps: a "Missed runs" section on each
+  schedule, a count on the schedule list, `GET /api/schedules/{name}/missed`
+  and `missed_count` on `GET /api/schedules`. New
+  `missed_run_grace_seconds` (default 300).
+- **Prometheus metrics and OpenTelemetry.** `GET /metrics`, off until
+  `metrics_token` is set, then behind `Authorization: Bearer`. Stored runs by
+  task and status, a 15-minute runtime histogram and failure ratio, queue
+  depth, workers online and missed runs. Optional `otel` extra with
+  `celery_manager.metrics.otel.register()`. See `docs/metrics.md`.
+- **Sign in with your app's users.** `authenticate_request` on the config,
+  with ready-made `django_authenticator()` and `flask_authenticator()` in
+  `celery_manager.integrations` that map host users to roles. Also
+  `local_login_enabled`, `login_url`, `logout_url` and
+  `login_provider_name`, and `GET /api/auth/options`. See
+  `docs/integrations.md`.
+- **User management in the dashboard.** An admin-only Users page and
+  `/api/users` routes to add users, change roles, reset passwords and delete
+  accounts, with the last admin protected. Every account can change its own
+  password (`POST /api/me/password`). A password change ends that account's
+  other sessions.
+- **Edit schedules from the dashboard.** Change a crontab or interval, with
+  the next five runs previewed before saving, and revert to the code's
+  schedule. Opt in with `schedule_editing=True` and run beat with
+  `-S celery_manager.beat:DatabaseScheduler` (it reads
+  `celery_manager_db_url` from the Celery config). Migration `0008`. See
+  `docs/schedules.md`.
+- **Maintenance windows.** Skip chosen schedules (or all) on a recurring
+  window, e.g. Sundays 02:00 for two hours, in any IANA timezone. Runs inside
+  a window are recorded as skipped with a reason; nothing needs resuming.
+  Migration `0010` (also adds `task_runs.skip_reason`, now set for pauses and
+  single-run skips too).
+- **Dead-letter view.** Failed runs nobody has retried, grouped by task and
+  exception, with "edit arguments and run again" for one run or many
+  (`GET /api/dead-letters`, `POST /api/dead-letters/rerun`, operator).
+- **Data retention.** Delete runs after a number of days, with per-task
+  overrides, a longer period for failed runs and an optional audit-log
+  period, set on the Settings page. Nothing is deleted until you set it.
+  Prune with `celery-manager prune [--dry-run]` or the opt-in task from
+  `celery_manager.tasks.register_prune_task()`. See `docs/retention.md`.
 - **Explicit occurrence identity for skips.** New beat scheduler
   `celery_manager.beat:Scheduler` (and `StampOccurrencesMixin` for custom
   schedulers) stamps each beat message with `cm_schedule` and
