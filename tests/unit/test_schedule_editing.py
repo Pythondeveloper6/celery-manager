@@ -8,6 +8,7 @@ accepted by the API when `schedule_editing` says beat will apply it."""
 
 from __future__ import annotations
 
+import itertools
 import json
 import time
 from datetime import datetime, timedelta, timezone
@@ -34,7 +35,12 @@ from celery_manager.control.schedules import (
     sync_periodic_schedules,
 )
 from celery_manager.db.migrate import alembic_config, upgrade_database
-from celery_manager.db.models import AuditLog, PeriodicSchedule, ScheduleOverride, TaskRun
+from celery_manager.db.models import (
+    AuditLog,
+    PeriodicSchedule,
+    ScheduleOverride,
+    TaskRun,
+)
 from celery_manager.db.session import get_session_factory, init_db
 from celery_manager.decorator import configure, track
 from celery_manager.schedule_specs import (
@@ -212,7 +218,7 @@ def test_preview_returns_the_next_five_crontab_runs():
     assert len(times) == 5
     assert all(t.minute == 0 and t.hour % 6 == 0 for t in times)
     assert now < times[0] <= now + timedelta(hours=6)
-    assert all(b - a == timedelta(hours=6) for a, b in zip(times, times[1:]))
+    assert all(b - a == timedelta(hours=6) for a, b in itertools.pairwise(times))
 
 
 def test_interval_preview_is_projected_from_the_last_run():

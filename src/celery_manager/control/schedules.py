@@ -8,7 +8,11 @@ from celery.schedules import maybe_schedule
 from celery_manager.control.audit import record as record_audit
 from celery_manager.control.maintenance import enabled_windows, windows_active_at
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride, TaskRun
-from celery_manager.occurrences import CALENDAR_MATCH_WINDOW, is_interval_schedule, next_occurrence_after
+from celery_manager.occurrences import (
+    CALENDAR_MATCH_WINDOW,
+    is_interval_schedule,
+    next_occurrence_after,
+)
 from celery_manager.schedule_specs import (
     ScheduleSpecError,
     build_schedule,

@@ -245,7 +245,7 @@ class DatabaseScheduler(Scheduler):
         self._cm_last_refresh = time.monotonic()
         try:
             edits = self._cm_read_edits()
-        except Exception:  # noqa: BLE001 — keep firing on what we have
+        except Exception:
             logger.exception("celery-manager: could not read schedule edits; keeping the current schedules")
             return False
         changed = False

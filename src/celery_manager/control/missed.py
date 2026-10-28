@@ -43,6 +43,7 @@ Rules, shared by both public functions:
 
 from __future__ import annotations
 
+import itertools
 from collections import deque
 from datetime import datetime, timedelta, timezone
 
@@ -257,7 +258,7 @@ def _missed_interval(session, name, run_every, since, upper, grace_seconds, max_
             j += 1
             steps += 1
 
-    for (_, prev_sent), (occurrence, _) in zip(chain, chain[1:]):
+    for (_, prev_sent), (occurrence, _) in itertools.pairwise(chain):
         gap = occurrence - prev_sent
         if gap > run_every + grace:
             # Beat fires the latest due point once after a gap, so the

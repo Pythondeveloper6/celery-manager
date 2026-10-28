@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from celery_manager.api.deps import get_current_user, require_operator, require_role
 from celery_manager.api.serialization import utc
+from celery_manager.control.maintenance import (
+    applies_to_schedule,
+    enabled_windows,
+    window_span_at,
+)
 from celery_manager.control.missed import (
     first_stamped_occurrence,
     list_missed_runs,
     missed_run_counts,
 )
-from celery_manager.control.maintenance import applies_to_schedule, enabled_windows, window_span_at
 from celery_manager.control.schedules import (
     edit_schedule,
     is_paused,
@@ -205,7 +209,7 @@ EDITING_DISABLED = (
 
 
 @router.post("/{name}/preview")
-def preview(name: str, request: Request, spec: dict = Body(...), username: str = Depends(require_role("viewer"))):
+def preview(name: str, request: Request, spec: Annotated[dict, Body()], username: str = Depends(require_role("viewer"))):
     """The next five runs under the schedule in the body (a spec, see
     `celery_manager.schedule_specs`), without saving it. A POST only because
     the spec is a JSON body; it changes nothing, so any signed-in account
@@ -223,7 +227,7 @@ def preview(name: str, request: Request, spec: dict = Body(...), username: str =
 
 
 @router.put("/{name}/schedule")
-def save_schedule(name: str, request: Request, spec: dict = Body(...), username: str = Depends(require_operator)):
+def save_schedule(name: str, request: Request, spec: Annotated[dict, Body()], username: str = Depends(require_operator)):
     """Save an edit of when this schedule runs (operator). 409 while
     `schedule_editing` is off, 422 for an invalid spec, 404 for an unknown
     schedule. The response is the schedule's summary plus

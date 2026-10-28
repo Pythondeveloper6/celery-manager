@@ -26,8 +26,8 @@ from celery_manager.api.app import (
 )
 from celery_manager.api.deps import require_role
 from celery_manager.api.routes import deadletters as deadletter_routes
-from celery_manager.api.routes import queues as queue_routes
 from celery_manager.api.routes import maintenance as maintenance_routes
+from celery_manager.api.routes import queues as queue_routes
 from celery_manager.api.routes import schedules as schedule_routes
 from celery_manager.api.routes import tasks as task_routes
 from celery_manager.api.routes import workers as worker_routes

@@ -28,8 +28,10 @@ from celery_manager.api.routes import (
     export as export_routes,
 )
 from celery_manager.api.routes import (
-    metrics as metrics_routes,
     maintenance as maintenance_routes,
+)
+from celery_manager.api.routes import (
+    metrics as metrics_routes,
 )
 from celery_manager.api.routes import (
     queues as queue_routes,

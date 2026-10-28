@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 import pytest
 from alembic import command
@@ -28,14 +27,21 @@ from celery_manager.control.maintenance import (
     create_window,
     next_spans,
     normalize_window,
-    update_window,
 )
 from celery_manager.control.missed import list_missed_runs
-from celery_manager.control.schedules import list_upcoming_with_overrides, pause_schedule, sync_periodic_schedules
+from celery_manager.control.schedules import (
+    list_upcoming_with_overrides,
+    pause_schedule,
+    sync_periodic_schedules,
+)
 from celery_manager.db.migrate import alembic_config, upgrade_database
 from celery_manager.db.models import AuditLog, Base, MaintenanceWindow, TaskRun
 from celery_manager.decorator import configure, track
-from celery_manager.occurrences import OCCURRENCE_HEADER, SCHEDULE_HEADER, format_occurrence
+from celery_manager.occurrences import (
+    OCCURRENCE_HEADER,
+    SCHEDULE_HEADER,
+    format_occurrence,
+)
 
 NAME = "nightly"
 OTHER = "hourly"
