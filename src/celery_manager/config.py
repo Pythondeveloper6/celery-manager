@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from celery import Celery
 
@@ -80,6 +80,32 @@ class CeleryManagerConfig:
     metrics_cache_seconds: how long the computed metrics snapshot is reused,
         so many scrapers (or a scrape storm) cost one database pass and one
         broker round trip per interval. 0 disables the cache.
+    dashboard_url: the dashboard's public address, e.g.
+        `https://ops.example.com/celery/`. Alert messages link to the
+        relevant page under it (the task, queue, worker or schedule). None,
+        the default, sends messages without links: a process outside the
+        web server cannot work out the URL people reach the dashboard on.
+    smtp_host: SMTP server for email alert channels. None (the default)
+        disables email delivery: an email channel's messages then fail
+        with an explanation, recorded on the channel. SMTP settings live
+        here, never in the database, so the password is never part of an
+        API response or a database dump.
+    smtp_port: SMTP port. 587 (submission with STARTTLS) by default.
+    smtp_username: SMTP login. None sends without authenticating.
+    smtp_password: SMTP password, used only with `smtp_username`.
+    smtp_use_tls: upgrade the SMTP connection with STARTTLS before
+        logging in. True by default; turn it off only for a local relay.
+    alert_email_from: the From address of alert emails. Required for
+        email channels; there is no safe default.
+    alert_send_timeout_seconds: the time limit for each outbound alert
+        delivery (one Slack post, one webhook call, one SMTP session). A
+        channel that doesn't answer in time is recorded as failed and the
+        other channels are still tried.
+    alert_interval_seconds: how often the alerts evaluator
+        (`celery-manager alerts`, or `events --with-alerts`) checks every
+        rule. Each check costs one worker ping (only with worker_offline
+        rules), one broker queue listing (only with queue_backlog rules)
+        and a few indexed `task_runs` queries.
     """
 
     celery_app: Celery
@@ -95,3 +121,13 @@ class CeleryManagerConfig:
     schedule_editing: bool = False
     metrics_token: str | None = None
     metrics_cache_seconds: float = 5.0
+    dashboard_url: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    # Kept out of repr() so a logged or printed config doesn't carry it.
+    smtp_password: str | None = field(default=None, repr=False)
+    smtp_use_tls: bool = True
+    alert_email_from: str | None = None
+    alert_send_timeout_seconds: float = 10.0
+    alert_interval_seconds: float = 60.0
