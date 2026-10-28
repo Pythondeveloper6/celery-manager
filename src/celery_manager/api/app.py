@@ -36,6 +36,9 @@ from celery_manager.api.routes import (
     workers as worker_routes,
 )
 from celery_manager.api.routes import (
+    users as user_routes,
+)
+from celery_manager.api.routes import (
     workflows as workflow_routes,
 )
 from celery_manager.api.security import SecurityMiddleware
@@ -159,6 +162,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(schedule_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(user_routes.router)
     app.include_router(analytics_routes.router)
     app.include_router(worker_routes.router)
     app.include_router(queue_routes.router)

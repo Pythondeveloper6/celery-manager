@@ -37,6 +37,12 @@ The server check is the real one.
 | Shut down a worker | `POST /api/workers/{worker}/shutdown` | `admin` |
 | Purge a queue | `POST /api/queues/{name}/purge` | `admin` |
 | Change branding | `PUT /api/settings` | `admin` |
+| List users | `GET /api/users` | `admin` |
+| Add a user | `POST /api/users` | `admin` |
+| Change a user's role | `PATCH /api/users/{username}` | `admin` |
+| Reset a user's password | `POST /api/users/{username}/password` | `admin` |
+| Delete a user | `DELETE /api/users/{username}` | `admin` |
+| Change your own password | `POST /api/me/password` | `viewer` (any signed-in account) |
 
 Why the line falls where it does:
 
@@ -57,6 +63,40 @@ data, so blocking export would only make it slower to get. If your task
 arguments hold secrets, don't give that person a dashboard account at all.
 
 ## Managing accounts
+
+### From the dashboard
+
+Admins get a **Users** page in the sidebar. It lists every account and lets
+you add a user, change a role, reset a password (type one, or have a random
+one generated and shown once) and delete a user. Every change is recorded in
+the [audit log](dashboard.md) as `create_user`, `set_role`, `reset_password`
+or `delete_user`. Passwords are never logged. Everyone, whatever their role,
+can change their own password from **Change password** in the sidebar; that
+needs the current password.
+
+Rules the server enforces, with the reason shown in the dashboard:
+
+- **There is always at least one admin.** The last admin can't be demoted
+  or deleted. Make another account an admin first.
+- **You can't delete your own account.** Ask another admin. (Deleting
+  yourself would end your session mid-request, and another admin can do it
+  just as well.)
+- **You reset your own password with Change password**, not the admin reset,
+  because that asks for the current one.
+- Passwords are at least 8 characters and at most 72 bytes. Usernames are
+  1-64 characters: letters, digits and `. _ @ + -`, starting with a letter
+  or digit (so an email address works). These limits apply to accounts made
+  in the dashboard; the CLI and `create_user()` accept shorter passwords as
+  before.
+
+**A password change signs the account out everywhere.** The session cookie
+carries a fingerprint of the account's password hash, checked on every
+request, so a reset or change ends every session issued before it. When you
+change your own password, the browser you did it in stays signed in. Cookies
+issued by earlier versions have no fingerprint, so upgrading signs everyone
+out once.
+
+### From the command line
 
 Use the CLI. It works on the same database as the dashboard (`--db-url`):
 
@@ -124,7 +164,7 @@ The dashboard shows that message as is.
 celery-manager has no hook for plugging in your host app's login. When you
 mount it inside Django, Flask or FastAPI, it still uses its own accounts and
 its own `cm_session` cookie (see [Integrating with your app](integrations.md)).
-So roles work the same way when embedded: manage them with the CLI.
+So roles work the same way when embedded: manage them from the Users page or the CLI.
 
 ## For contributors: adding a route
 
