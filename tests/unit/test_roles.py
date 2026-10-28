@@ -85,6 +85,8 @@ WRITE_ROUTES = [
     ),
     ("POST", "/api/workers/w1/shutdown", None, "admin"),
     ("POST", "/api/queues/celery/purge", None, "admin"),
+    ("DELETE", "/api/queues/celery/messages/t1", None, "admin"),
+    ("POST", "/api/queues/celery/messages/t1/move", {"target": "other"}, "admin"),
     ("PUT", "/api/settings", {"brand_name": "Acme"}, "admin"),
     ("PUT", "/api/settings/retention", {"default_days": None}, "admin"),
     ("POST", "/api/settings/retention/preview", {}, "viewer"),
@@ -141,6 +143,8 @@ ROUTE_ROLES = {
     ("POST", "/api/tasks/rate-limit"): "operator",
     ("POST", "/api/workers/{worker}/shutdown"): "admin",
     ("POST", "/api/queues/{name}/purge"): "admin",
+    ("DELETE", "/api/queues/{name}/messages/{task_id}"): "admin",
+    ("POST", "/api/queues/{name}/messages/{task_id}/move"): "admin",
     ("PUT", "/api/settings"): "admin",
     ("PUT", "/api/settings/retention"): "admin",
     ("POST", "/api/settings/retention/preview"): "viewer",
@@ -198,7 +202,7 @@ _STUBBED = {
     ],
     maintenance_routes: ["create_window", "update_window", "delete_window"],
     worker_routes: ["shutdown_worker", "resize_pool", "set_consumer", "set_rate_limit"],
-    queue_routes: ["purge_queue"],
+    queue_routes: ["purge_queue", "delete_message", "move_message"],
 }
 
 
@@ -292,7 +296,7 @@ def test_refused_actions_never_reach_the_control_layer(shared, stubbed, role):
     if role == "viewer":
         assert called == []
     elif role == "operator":
-        assert "shutdown_worker" not in called and "purge_queue" not in called
+        assert not {"shutdown_worker", "purge_queue", "delete_message", "move_message"} & set(called)
 
 
 @pytest.mark.parametrize("role", ROLES)
