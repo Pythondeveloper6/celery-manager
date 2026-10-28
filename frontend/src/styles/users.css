@@ -112,7 +112,9 @@
   gap: var(--cm-space-2);
 }
 
-.cm-users-role {
+/* Doubled class: tokens.css can load after this file and its
+   `.cm-select { width: 100%; min-width: 0 }` would otherwise win. */
+.cm-select.cm-users-role {
   width: auto;
   min-width: 8rem;
 }

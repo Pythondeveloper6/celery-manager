@@ -53,7 +53,8 @@
   gap: var(--cm-space-1);
 }
 
-.cm-mw-day[aria-pressed="true"] {
+/* Doubled class: .cm-btn-outline in tokens.css can load after this file. */
+.cm-mw-day.cm-mw-day[aria-pressed="true"] {
   background: var(--cm-color-primary);
   color: var(--cm-color-primary-foreground);
   border-color: var(--cm-color-primary);
