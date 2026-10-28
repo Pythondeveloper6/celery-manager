@@ -71,6 +71,8 @@ WRITE_ROUTES = [
     ("POST", "/api/workers/w1/shutdown", None, "admin"),
     ("POST", "/api/queues/celery/purge", None, "admin"),
     ("PUT", "/api/settings", {"brand_name": "Acme"}, "admin"),
+    ("PUT", "/api/settings/retention", {"default_days": None}, "admin"),
+    ("POST", "/api/settings/retention/preview", {}, "viewer"),
     (
         "POST",
         "/api/users",
@@ -112,6 +114,8 @@ ROUTE_ROLES = {
     ("POST", "/api/workers/{worker}/shutdown"): "admin",
     ("POST", "/api/queues/{name}/purge"): "admin",
     ("PUT", "/api/settings"): "admin",
+    ("PUT", "/api/settings/retention"): "admin",
+    ("POST", "/api/settings/retention/preview"): "viewer",
     ("POST", "/api/users"): "admin",
     ("PATCH", "/api/users/{target}"): "admin",
     ("POST", "/api/users/{target}/password"): "admin",
@@ -128,6 +132,7 @@ READ_ROUTES = [
     "/api/dead-letters",
     "/api/schedules",
     "/api/audit",
+    "/api/settings/retention",
     "/api/analytics/overview",
     "/api/analytics/failures",
 ]

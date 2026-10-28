@@ -24,7 +24,13 @@ from celery_manager.api.routes import (
     export as export_routes,
 )
 from celery_manager.api.routes import (
+    metrics as metrics_routes,
+)
+from celery_manager.api.routes import (
     queues as queue_routes,
+)
+from celery_manager.api.routes import (
+    retention as retention_routes,
 )
 from celery_manager.api.routes import (
     schedules as schedule_routes,
@@ -36,10 +42,10 @@ from celery_manager.api.routes import (
     tasks as task_routes,
 )
 from celery_manager.api.routes import (
-    workers as worker_routes,
+    users as user_routes,
 )
 from celery_manager.api.routes import (
-    users as user_routes,
+    workers as worker_routes,
 )
 from celery_manager.api.routes import (
     workflows as workflow_routes,
@@ -48,6 +54,7 @@ from celery_manager.api.security import SecurityMiddleware
 from celery_manager.api.sse import EventBus, sse_stream
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.control.schedules import sync_periodic_schedules
+from celery_manager.metrics import MetricsCollector
 from celery_manager.runtime import setup as setup_runtime
 
 # The placeholder `CeleryManagerConfig.secret_key` ships with. It is public —
@@ -156,6 +163,10 @@ def create_app(config: CeleryManagerConfig):
     # The bus polls the DB change feed for writes made by other processes
     # (events listener, workers); see api/sse.py.
     app.state.cm_event_bus = EventBus(session_factory, poll_interval=config.live_poll_interval_seconds)
+    # Shared by /metrics and the optional OpenTelemetry export, so both read
+    # one cached snapshot. Built even when metrics are disabled: it does no
+    # work until something asks.
+    app.state.cm_metrics = MetricsCollector(config, session_factory)
     app.add_middleware(SecurityMiddleware)
 
     app.include_router(auth_routes.router)
@@ -166,6 +177,8 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(schedule_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(retention_routes.router)
+    app.include_router(metrics_routes.router)
     app.include_router(user_routes.router)
     app.include_router(analytics_routes.router)
     app.include_router(worker_routes.router)

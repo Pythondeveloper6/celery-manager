@@ -33,11 +33,12 @@ config = CeleryManagerConfig(
 | `export_max_rows` | `int` | `50000` | Hard cap on rows in one `GET /api/tasks/export` download. Larger results are cut to the newest rows and flagged with `X-Export-Truncated: true`. |
 | `live_poll_interval_seconds` | `float` | `1.0` | How often each API process polls `task_runs` for changes to push down `/api/stream` while at least one dashboard has it open. Each poll is a small query on an indexed column; nothing is polled while nobody is connected. Lower means quicker live updates and more queries. See [REST API: how changes reach the stream](rest-api.md#how-changes-reach-the-stream). |
 | `auto_migrate` | `bool` | `True` | Whether `init_db()` upgrades the database schema to the latest revision at startup. Set it to `False` to run `celery-manager migrate` as a deploy step instead; `init_db()` then leaves the database untouched and logs a warning if the schema isn't current. See [Schema and upgrades](#schema-and-upgrades). |
-
+| `metrics_token` | `str \| None` | `None` | Bearer token for `GET /metrics`. `None` disables the endpoint (it answers `404`). When set, scrapers must send `Authorization: Bearer <token>`. See [Metrics](metrics.md). |
+| `metrics_cache_seconds` | `float` | `5.0` | How long the computed metrics snapshot is reused, so many scrapers cost one database pass and one broker round trip per interval. `0` disables the cache. |
 | `inspect_timeout_seconds` | `float` | `1.0` | How long the [Workers page](workers.md) and the worker control endpoints wait for workers to reply to a broadcast (`inspect()`, `pool_grow`, `rate_limit`, ...). The HTTP request blocks for it, so keep it short; raise it only if workers on a slow or distant broker show as missing when they are running. |
 | `schedule_editing` | `bool` | `False` | Lets operators change a schedule's crontab or interval from the dashboard. Leave it off unless beat runs `celery_manager.beat:DatabaseScheduler`: no other scheduler reads the edits, so the dashboard would list runs that never happen. While it's off, `PUT /api/schedules/{name}/schedule` answers `409`, saved edits are ignored when listing upcoming runs, and the dashboard's editor can only preview and revert. See [Editing schedules](schedules.md). |
 
-Those ten fields are the whole dataclass — `CeleryManagerConfig` has no
+The fields above are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
 the environment.
 
@@ -51,6 +52,9 @@ your Celery app's own config:
 | `celery_manager_schedule_refresh` | `10` | Seconds between reads of the saved edits. An edit reaches beat within this time. |
 
 See [Editing schedules](schedules.md).
+
+[Data retention](retention.md) is deliberately not a config field: it is
+changed at runtime from the Settings page and stored in the database.
 
 ## Tunables that are *not* config fields
 

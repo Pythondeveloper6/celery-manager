@@ -523,6 +523,31 @@ legitimate name like `Ops & Data`.
     the dashboard for everyone. Every change is still attributed in the
     [audit log](#audit-log).
 
+## Data retention
+
+Rules for deleting old runs, stored in `app_settings` (separately from the
+public branding keys: `GET /api/settings` never shows them). Behaviour and
+what is never deleted are in [Data retention](retention.md).
+
+| Method | Path | Auth | Request | Response |
+|---|---|---|---|---|
+| `GET` | `/api/settings/retention` | required | — | `200 {"default_days": int\|null, "failed_days": int\|null, "audit_days": int\|null, "tasks": {name: int\|null}, "known_tasks": [name], "last_prune": {...}\|null}`. `null` days means keep forever. `known_tasks` is the registered and recorded task names (at most 1000), for a picker. `last_prune` is `{"at", "by", "runs_deleted", "audit_deleted", "by_task", "dry_run"}`. |
+| `PUT` | `/api/settings/retention` | `admin` | Any subset of `default_days`, `failed_days`, `audit_days`, `tasks`. `tasks`, when sent, replaces the whole override map. | `200` — the same document as `GET`. `422 {"detail": "<reason>"}` for a bad value. One audit row (`update` on `retention`) when something changed. |
+| `POST` | `/api/settings/retention/preview` | `viewer` | Optional body like `PUT`'s: the candidate rules, applied over the stored ones. Nothing is saved. | `200 {"runs": int, "audit_log": int, "by_task": {name: int}}` — what a prune would delete now. `422` for a bad candidate. |
+
+Days are whole numbers from 1 to 36500. `failed_days` must be at least
+`default_days` when both are set. There is no endpoint that runs a prune:
+use `celery-manager prune` or the `celery_manager.tasks.prune` Celery task.
+
+## Metrics
+
+| Method | Path | Auth | Response |
+|---|---|---|---|
+| `GET` | `/metrics` | `Authorization: Bearer <metrics_token>` | `200` Prometheus text format. `404` when `metrics_token` is not configured, `401` for a missing or wrong token. |
+
+Not under `/api`, and not cookie-authenticated. The metric list, caching and
+the OpenTelemetry option are in [Metrics](metrics.md).
+
 ## Analytics
 
 Computed on read from `task_runs`; all require a session. `range` is one of
@@ -613,6 +638,8 @@ of another action. Every control action is covered:
 | `cancel_bulk` | `task` | `selection` (by ids) or `filter` | `POST /api/tasks/cancel-bulk` (not on `dry_run`, nor when nothing matched) — `details={"terminate", "revoked", "skipped_finished", "unknown", "filter", "task_ids"}` |
 | `purge` | `queue` | the queue name | `POST /api/queues/{name}/purge` — `details={"messages_removed", "runs_marked_revoked", "task_ids"}` (the runs marked `revoked`) |
 | `update` | `setting` | the setting key (`brand_name`, `brand_accent`, `brand_logo_url`) | `PUT /api/settings` — one row per *changed* key, `details={"old", "new"}` (each truncated to 200 characters, so a data-URI logo doesn't turn the audit log into an image store) |
+| `update` | `retention` | `retention` | `PUT /api/settings/retention` — only when the rules changed, `details={"old", "new"}` |
+| `prune` | `retention` | `task_runs` | `celery-manager prune` (user `cli`), the `celery_manager.tasks.prune` task (user `system`) — only when something was deleted, `details={"runs_deleted", "audit_deleted", "by_task"}` |
 
 A retry records only `retry`, never an additional `start`, even though it
 dispatches through the same `start_task` call underneath.

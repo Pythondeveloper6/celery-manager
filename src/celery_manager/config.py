@@ -73,6 +73,13 @@ class CeleryManagerConfig:
         the edit route answers 409, saved edits are ignored when listing
         upcoming runs, and the dashboard shows the editor disabled with the
         reason. Turn it on in the API process once beat runs that scheduler.
+    metrics_token: bearer token for `GET /metrics` (Prometheus). None, the
+        default, disables the endpoint entirely: it answers 404. When set,
+        scrapers must send `Authorization: Bearer <token>`. Treat it like a
+        password; unlike the dashboard session it is not tied to a user.
+    metrics_cache_seconds: how long the computed metrics snapshot is reused,
+        so many scrapers (or a scrape storm) cost one database pass and one
+        broker round trip per interval. 0 disables the cache.
     """
 
     celery_app: Celery
@@ -86,3 +93,5 @@ class CeleryManagerConfig:
     inspect_timeout_seconds: float = 1.0
     live_poll_interval_seconds: float = 1.0
     schedule_editing: bool = False
+    metrics_token: str | None = None
+    metrics_cache_seconds: float = 5.0

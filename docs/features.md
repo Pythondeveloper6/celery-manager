@@ -121,6 +121,15 @@ In the dashboard: **Queues**. [Read more](queues.md)
 **Purge a queue.** Delete every waiting message in one queue. You type the
 queue name to confirm. [Read more](queues.md#purging-a-queue)
 
+**Data retention.** Delete runs and their logs after a number of days you
+choose, per task, so the database does not grow forever. Off until you set
+it. In the dashboard: **Settings**. [Read more](retention.md)
+
+**Metrics.** A `/metrics` endpoint in the Prometheus format, with run counts,
+runtimes, failure ratios, queue depth, workers online and missed runs, plus an
+optional OpenTelemetry export. Protected by a token you choose.
+[Read more](metrics.md)
+
 ## Share and keep what you find
 
 **Links to a view.** Your filters are part of the page address, so
