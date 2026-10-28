@@ -4,12 +4,6 @@ What we plan to build next. Nothing here has shipped yet, and the order may chan
 Ideas and use cases are welcome in the
 [issue tracker](https://github.com/Pythondeveloper6/celery-manager/issues).
 
-## Know when something goes wrong
-
-**Alerts.** A message to Slack, email or a webhook when a task's failure rate jumps, a
-queue backs up, a worker goes offline, or a periodic task misses its run. Rules are set
-per task or per queue, with a quiet period so one incident sends one message.
-
 ## Teams and access
 
 **Sign in with your app's users.** Use your Django, Flask or FastAPI users, and map them

@@ -603,6 +603,32 @@ broker failures raise `WorkerControlError`.
 Why the two counts differ, what exactly gets marked on purge, and the
 timeouts are in [Queues, purge and bulk cancel](queues.md).
 
+## Alerts
+
+Rules, channels and incidents; see [Alerts](alerts.md). Reads are open to
+every signed-in role, changes need `admin`, and every change writes an audit
+row. Errors carry a `detail` sentence meant for people: `422` bad input,
+`404` unknown id, `409` duplicate name.
+
+Channel URLs and webhook secrets are **write-only**. Responses show a
+channel's URL as scheme and host only (`"https://hooks.slack.com/…"`) and a
+webhook's secret only as `"secret_set": true|false`. On `PATCH`, a `config`
+key left out (or `null`) keeps the stored value; `"secret": ""` removes the
+secret.
+
+| Method | Path | Role | Body / query | Response |
+|---|---|---|---|---|
+| `GET` | `/api/alerts/rules` | any | — | `{"rules": [rule]}`, by name. A rule is `{"id", "name", "kind", "target", "params", "channel_ids", "quiet_period_minutes", "notify_resolved", "enabled", "created_by", "created_at", "updated_at", "last_checked_at", "last_check_error", "state", "firing_keys"}`. `state` is `"firing"` (an incident is open; `firing_keys` lists for what), `"ok"` or `"disabled"`. `last_check_error` says why the evaluator could not judge the rule last time (`null` when it could). |
+| `POST` | `/api/alerts/rules` | `admin` | `{"name", "kind", "target"?, "params"?, "channel_ids"?, "quiet_period_minutes"?, "notify_resolved"?, "enabled"?}` | `201` with the rule. `kind` is `failure_rate`, `queue_backlog`, `worker_offline` or `missed_run`; `params` are checked and filled with defaults (see [Rule kinds](alerts.md#rule-kinds)); unknown parameter names are a `422`. `target` defaults to `"*"`, `quiet_period_minutes` to `60`. |
+| `PATCH` | `/api/alerts/rules/{id}` | `admin` | Any of the `POST` fields | The rule. Fields left out keep their value. Changing `kind` or `target`, or setting `enabled: false`, closes the rule's open incidents without a message. |
+| `DELETE` | `/api/alerts/rules/{id}` | `admin` | — | `{"ok": true}`. Deletes its incidents too. |
+| `GET` | `/api/alerts/channels` | any | — | `{"channels": [channel]}`, by name. A channel is `{"id", "name", "kind", "config", "created_by", "created_at", "last_sent_at", "last_error", "last_error_at", "rule_count"}`. `config` is `{"url"}` (masked) for Slack, `{"url", "secret_set"}` for a webhook, `{"to": [...]}` for email. |
+| `POST` | `/api/alerts/channels` | `admin` | `{"name", "kind", "config"}` | `201` with the channel. `kind` is `slack` (`config: {"url"}`), `webhook` (`{"url", "secret"?}`) or `email` (`{"to": [address, ...]}`, at most 20). URLs must be `http://` or `https://`. |
+| `PATCH` | `/api/alerts/channels/{id}` | `admin` | `{"name"?, "config"?}` | The channel. The kind can't change. |
+| `DELETE` | `/api/alerts/channels/{id}` | `admin` | — | `{"ok": true}`. The channel is taken off every rule that used it. |
+| `POST` | `/api/alerts/channels/{id}/test` | `admin` | — | `{"ok": true}` once the channel accepted a test message; `502` with the channel's answer if not. The outcome is also recorded on the channel (`last_sent_at` / `last_error`). Sent from the API process, so email needs the SMTP options on its config. |
+| `GET` | `/api/alerts/incidents` | any | Query `state` (`firing` \| `resolved`), `rule_id`, `limit` (default 50, at most 500) | `{"incidents": [...]}`, newest first. Each is `{"id", "rule_id", "rule_name", "rule_kind", "key", "state", "opened_at", "last_seen_at", "notified_at", "resolved_at", "details", "delivery_error"}`. `key` is the task, queue, worker or schedule name; `notified_at` is `null` while the quiet period holds the message back. |
+
 ## Audit log
 
 | Method | Path | Auth | Request | Response |

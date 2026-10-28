@@ -117,6 +117,7 @@ nav:
       - Dead letters: dead-letters.md
       - Data retention: retention.md
       - Metrics: metrics.md
+      - Alerts: alerts.md
       - Roles: roles.md
   - Reference:
       - REST API: rest-api.md

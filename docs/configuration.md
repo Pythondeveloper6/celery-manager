@@ -1,7 +1,7 @@
 # Configuration reference
 
-Every celery-manager process — the API app and the `celery-manager events`
-listener — is configured through a single dataclass,
+Every celery-manager process — the API app, the `celery-manager events`
+listener and the `celery-manager alerts` evaluator — is configured through a single dataclass,
 `celery_manager.config.CeleryManagerConfig`:
 
 ```python
@@ -37,6 +37,15 @@ config = CeleryManagerConfig(
 | `metrics_cache_seconds` | `float` | `5.0` | How long the computed metrics snapshot is reused, so many scrapers cost one database pass and one broker round trip per interval. `0` disables the cache. |
 | `inspect_timeout_seconds` | `float` | `1.0` | How long the [Workers page](workers.md) and the worker control endpoints wait for workers to reply to a broadcast (`inspect()`, `pool_grow`, `rate_limit`, ...). The HTTP request blocks for it, so keep it short; raise it only if workers on a slow or distant broker show as missing when they are running. |
 | `schedule_editing` | `bool` | `False` | Lets operators change a schedule's crontab or interval from the dashboard. Leave it off unless beat runs `celery_manager.beat:DatabaseScheduler`: no other scheduler reads the edits, so the dashboard would list runs that never happen. While it's off, `PUT /api/schedules/{name}/schedule` answers `409`, saved edits are ignored when listing upcoming runs, and the dashboard's editor can only preview and revert. See [Editing schedules](schedules.md). |
+| `dashboard_url` | `str \| None` | `None` | The dashboard's public address, e.g. `https://ops.example.com/celery/`. [Alert](alerts.md) messages link to the page about the problem (the task, queue, worker or schedule) under it. Without it, messages carry no link: the alerts evaluator runs outside the web server and can't know the address people use. |
+| `smtp_host` | `str \| None` | `None` | SMTP server for [email alert channels](alerts.md#email). `None` disables email: an email channel's messages fail with that explanation, shown on the channel. |
+| `smtp_port` | `int` | `587` | SMTP port. |
+| `smtp_username` | `str \| None` | `None` | SMTP login. `None` sends without authenticating. |
+| `smtp_password` | `str \| None` | `None` | SMTP password, used with `smtp_username`. Only ever lives here: never in the database, never in an API response, and not in the config's `repr()`. |
+| `smtp_use_tls` | `bool` | `True` | Upgrade the SMTP connection with STARTTLS before logging in. Turn off only for a local relay. |
+| `alert_email_from` | `str \| None` | `None` | From address of alert emails. Required for email channels. |
+| `alert_send_timeout_seconds` | `float` | `10.0` | Time limit for each outbound alert delivery: one Slack post, one webhook call, one SMTP session. A channel that doesn't answer in time is recorded as failed and the other channels are still tried. |
+| `alert_interval_seconds` | `float` | `60.0` | How often the alerts evaluator checks every rule (`celery-manager alerts`, or `events --with-alerts`; `--interval` overrides it). |
 
 The fields above are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
