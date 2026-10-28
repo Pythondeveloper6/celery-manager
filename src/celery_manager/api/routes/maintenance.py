@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
@@ -42,7 +43,7 @@ def list_all(request: Request, username: str = Depends(get_current_user)):
 
 
 @router.post("/preview")
-def preview(request: Request, body: dict = Body(...), username: str = Depends(require_role("viewer"))):
+def preview(request: Request, body: Annotated[dict, Body()], username: str = Depends(require_role("viewer"))):
     """The next five spans (UTC start/end) of the recurrence in the body
     (`days_of_week`, `start_time`, `duration_minutes`, `timezone`), without
     saving anything. A POST only because of the body; any signed-in account
@@ -56,7 +57,7 @@ def preview(request: Request, body: dict = Body(...), username: str = Depends(re
 
 
 @router.post("")
-def create(request: Request, body: dict = Body(...), username: str = Depends(require_operator)):
+def create(request: Request, body: Annotated[dict, Body()], username: str = Depends(require_operator)):
     config = request.app.state.cm_config
     with request.app.state.cm_session_factory() as session:
         try:
@@ -71,7 +72,7 @@ def create(request: Request, body: dict = Body(...), username: str = Depends(req
 
 
 @router.put("/{window_id}")
-def update(window_id: int, request: Request, body: dict = Body(...), username: str = Depends(require_operator)):
+def update(window_id: int, request: Request, body: Annotated[dict, Body()], username: str = Depends(require_operator)):
     config = request.app.state.cm_config
     with request.app.state.cm_session_factory() as session:
         try:
