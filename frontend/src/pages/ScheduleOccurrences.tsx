@@ -255,6 +255,11 @@ export function ScheduleOccurrences() {
                       Will be skipped
                     </span>
                   )}
+                  {o.maintenance_window && state !== "resolved" && (
+                    <span className="cm-occurrence-badge" data-action="skip" title="Skipped automatically by a maintenance window">
+                      Maintenance window: {o.maintenance_window}
+                    </span>
+                  )}
                   {state === "paused" && o.action && (
                     <span className="cm-occurrence-badge" data-action={o.action}>
                       {PAUSED_LABEL[o.action] ?? o.action}

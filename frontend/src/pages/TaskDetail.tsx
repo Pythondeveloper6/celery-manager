@@ -548,6 +548,10 @@ export function TaskDetail() {
                   )}
                 </div>
 
+                {task.status === "skipped" && task.skip_reason && (
+                  <p className="cm-run-hint">Skipped: {task.skip_reason}.</p>
+                )}
+
                 {task.status === "queued" ? (
                   <p className="cm-run-hint">
                     Queued, waiting for a worker to pick this up.

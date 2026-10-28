@@ -33,6 +33,10 @@ export interface Occurrence {
   // `action` keeps reporting any per-occurrence override independently, so
   // resuming shows the per-occurrence skips that are still in place.
   paused: boolean;
+  // Name(s) of the maintenance window this occurrence falls inside (joined
+  // with ", " if several overlap), or null. It will be recorded as skipped
+  // when beat fires it, with no one having to act.
+  maintenance_window: string | null;
 }
 
 export async function listOccurrences(name: string): Promise<Occurrence[]> {
@@ -74,6 +78,9 @@ export interface ScheduleSummary {
   // Scheduled runs from the last 24 hours that were due but never arrived
   // (see `getMissedRuns`); 0 when none or when detection isn't active yet.
   missed_count: number;
+  // Enabled maintenance windows that apply to this schedule; `active` while
+  // one is in progress (its firings are being skipped right now).
+  maintenance_windows: { id: number; name: string; active: boolean }[];
   // The schedule in force: an operator's edit while one applies (and
   // editing is on), otherwise the code's `beat_schedule` entry. Display only.
   // `code_schedule_spec` is always the code's.
