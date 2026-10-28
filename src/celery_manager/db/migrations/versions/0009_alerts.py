@@ -1,7 +1,7 @@
 """alerts: alert_channels, alert_rules, alert_incidents, alert_worker_sightings
 
 Revision ID: 0009
-Revises: 0007
+Revises: 0008
 Create Date: 2026-10-28 11:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0009"
-down_revision = "0007"
+down_revision = "0008"
 branch_labels = None
 depends_on = None
 
