@@ -116,6 +116,17 @@ class PeriodicSchedule(Base):
     # reset the stale pause (`control.schedules.expire_stale_pause`).
     paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # An operator's edit of when this schedule runs (migration 0008): a spec
+    # as canonical JSON (`celery_manager.schedule_specs`), or NULL to run as
+    # the code's `beat_schedule` says. Like the pause, an operator decision
+    # `sync_periodic_schedules` never rewrites; `schedule_spec` above keeps
+    # describing the code's schedule, so "revert to code" has something to
+    # show. Beat applies it only when it runs
+    # `celery_manager.beat:DatabaseScheduler`.
+    schedule_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 class ScheduleOverride(Base):
     __tablename__ = "schedule_overrides"

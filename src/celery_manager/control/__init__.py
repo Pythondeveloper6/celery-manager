@@ -10,10 +10,14 @@ the REST layer.
 
 from celery_manager.control.audit import record
 from celery_manager.control.schedules import (
+    edit_schedule,
+    effective_schedule,
     list_overrides,
     list_periodic_schedules,
     list_upcoming_with_overrides,
     pause_occurrence,
+    preview_schedule,
+    revert_schedule,
     sync_periodic_schedules,
     upcoming_occurrences,
 )
@@ -38,6 +42,8 @@ __all__ = [
     "bulk_retry",
     "cancel_task",
     "count_task_runs",
+    "edit_schedule",
+    "effective_schedule",
     "get_settings",
     "get_task_run",
     "list_overrides",
@@ -46,8 +52,10 @@ __all__ = [
     "list_task_runs",
     "list_upcoming_with_overrides",
     "pause_occurrence",
+    "preview_schedule",
     "record",
     "retry_task",
+    "revert_schedule",
     "start_task",
     "sync_periodic_schedules",
     "upcoming_occurrences",
