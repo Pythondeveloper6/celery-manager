@@ -8,7 +8,7 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [0.1.0a5] — 2026-10-28
 
-Run the migrations after upgrading (`0006` to `0010`; automatic unless
+Run the migrations after upgrading (`0006` to `0011`; automatic unless
 `auto_migrate=False`). To get exact skip matching, run beat with
 `-S celery_manager.beat:Scheduler`. Everyone is signed out once: session
 cookies now carry a password fingerprint, and older cookies have none.
@@ -93,6 +93,37 @@ cookies now carry a password fingerprint, and older cookies have none.
   route doesn't declare a role, so a new route can't be left open to
   viewers by accident.
 
+- **Broker health.** A Broker panel on the Queues page and
+  `GET /api/broker/health`: on Redis, latency, version, memory against
+  `maxmemory`, the eviction policy (a warning for anything but
+  `noeviction`, which can silently drop queued tasks), clients, evicted
+  keys and persistence; on RabbitMQ, latency and server version. The URL's
+  password is masked. New metrics and two alert kinds, `broker_unreachable`
+  and `broker_memory`.
+- **Queue wait time.** How long runs waited in the queue before a worker
+  started them (time waiting for an ETA or countdown left out), as p50/p95
+  per queue on the Queues page, "waited Xs" on a run, a line on a task's
+  Insights page, `celery_manager_queue_wait_seconds`, and a `queue_wait`
+  alert kind. The events listener now records `sent_at`, `received_at` and
+  `eta` (migration `0011`).
+- **Queue depth history.** The events listener samples queue depth every
+  `queue_sample_interval_seconds` (60 by default) into
+  `queue_depth_samples`, kept `queue_sample_retention_days` (14). Queue
+  sparklines show the last 24 hours, with a larger chart on click;
+  `GET /api/queues/{name}/history`; a `queue_growing` alert kind.
+- **Look inside a queue.** Click a queue's name to see the messages waiting
+  in it, in the order workers will take them, without taking them off.
+  Exact on Redis. On RabbitMQ it is approximate and off unless
+  `queue_browser_amqp=True`, because looking marks messages redelivered.
+  `queue_browser_show_args=False` hides arguments. On Redis an admin can
+  delete one waiting message or move it to another known queue (audited;
+  409 if a worker took it meanwhile).
+- **Docker Compose demo.** `examples/django_demo` runs the whole stack with
+  `docker compose up`: Postgres, Redis (or RabbitMQ with a profile), worker,
+  beat, events listener, dashboard, Mailpit, a webhook sink, Prometheus
+  (profile) and generated traffic, with demo users, alert rules and a
+  maintenance window.
+
 ### Fixed
 
 - A skip or cancel no longer misses a firing that starts more than
@@ -104,6 +135,14 @@ cookies now carry a password fingerprint, and older cookies have none.
 - Interval-schedule occurrences are anchored to beat's own send time when
   available, not the last run's start time, so queue delay and manual calls
   no longer shift them.
+
+- Prefork worker processes no longer share the database connection their
+  parent opened in `celery_manager.setup()`; on Postgres that caused
+  `ResourceClosedError`, wrong rows and slow tasks.
+- `register_prune_task(schedule=...)` no longer loses its beat entry when
+  Celery settings come from Django (`CELERY_BEAT_SCHEDULE`).
+- Queue depth on the filesystem transport shows as unavailable instead of
+  0, and purge there is refused with the reason.
 
 ### Changed
 
