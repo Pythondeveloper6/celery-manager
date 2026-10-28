@@ -127,6 +127,21 @@ cookies now carry a password fingerprint, and older cookies have none.
   task a live worker is running. `GET /api/delayed`,
   `POST /api/delayed/cancel`, `GET /api/queues/unacked`,
   `POST /api/queues/unacked/restore`.
+- **RabbitMQ management integration.** Set `rabbitmq_management_url` (and
+  a user with the `monitoring` tag) to get consumers, ready and
+  unacknowledged messages, publish and deliver rates, queue type, max
+  priority and dead-letter settings per queue, plus node memory, disk and
+  alarms, on the Queues page and in `/metrics`. A `rabbitmq_alarm` alert
+  kind fires while any node has a memory or disk alarm. Credentials stay in
+  config and never appear in responses or logs.
+- **RabbitMQ dead-letter queues.** A page listing the queues things are
+  dead-lettered into (from queue arguments, policies and
+  `rabbitmq_dlq_patterns`), their messages with the `x-death` reason and
+  original queue (approximate: looking marks them redelivered), and an
+  admin-only requeue back to where each came from. A message is acked off
+  the dead-letter queue only after the broker confirmed the copy; one that
+  has died more than 3 times is refused unless forced. Audited as
+  `requeue_dead_letters`.
 - **Docker Compose demo.** `examples/django_demo` runs the whole stack with
   `docker compose up`: Postgres, Redis (or RabbitMQ with a profile), worker,
   beat, events listener, dashboard, Mailpit, a webhook sink, Prometheus
