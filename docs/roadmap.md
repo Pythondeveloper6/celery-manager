@@ -27,11 +27,6 @@ django-celery-beat.
 **Maintenance windows.** Pause chosen schedules on a recurring window, for example every
 Sunday from 02:00 to 04:00, without remembering to resume them.
 
-## Failed work
-
-**Dead-letter view.** Runs that used up all their retries, in one place, with "fix the
-arguments and run again" for one run or many.
-
 ## Running it for a long time
 
 **Data retention.** Delete runs and their logs after a number of days you choose, per
