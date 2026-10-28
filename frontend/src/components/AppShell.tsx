@@ -20,6 +20,7 @@ import {
   IconX,
 } from "./icons";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { useAccountSource, useAuthOptions } from "../lib/auth";
 import { roleAllows } from "../lib/role";
 
 /* ==========================================================================
@@ -111,6 +112,8 @@ export function AppShell({
   children: ReactNode;
 }) {
   const { settings } = useBranding();
+  const authOptions = useAuthOptions();
+  const external = useAccountSource() === "external";
   const { pathname } = useLocation();
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -165,6 +168,19 @@ export function AppShell({
       document.body.style.overflow = overflow;
     };
   }, [sheetOpen]);
+
+  // A plain link (logout_url is a GET), but local session cleared first:
+  // otherwise, once signed out of the host, this browser would fall back to
+  // whatever local account it last signed in with.
+  const signOutOfHost = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    const href = event.currentTarget.href;
+    event.preventDefault();
+    if (signingOut) return;
+    setSigningOut(true);
+    void logout()
+      .catch(() => undefined)
+      .finally(() => window.location.assign(href));
+  };
 
   const signOut = () => {
     setSigningOut(true);
@@ -225,24 +241,50 @@ export function AppShell({
               settings screen: it is the one preference someone changes
               because of the room they're in. */}
           <ThemeSwitch />
-          <div className="cm-sidebar-item">
-            <button type="button" className="cm-sidebar-button" onClick={() => setChangingPassword(true)}>
-              <IconKey />
-              <span className="cm-sidebar-label">Change password</span>
-            </button>
-            <span className="cm-tooltip" aria-hidden="true">
-              Change password
-            </span>
-          </div>
-          <div className="cm-sidebar-item">
-            <button type="button" className="cm-sidebar-button" onClick={signOut} disabled={signingOut}>
-              <IconLogOut />
-              <span className="cm-sidebar-label">{signingOut ? "Signing out…" : "Sign out"}</span>
-            </button>
-            <span className="cm-tooltip" aria-hidden="true">
-              Sign out
-            </span>
-          </div>
+          {/* Someone the host app signed in has no password here; theirs
+              is changed in the host app. */}
+          {external || (
+            <div className="cm-sidebar-item">
+              <button type="button" className="cm-sidebar-button" onClick={() => setChangingPassword(true)}>
+                <IconKey />
+                <span className="cm-sidebar-label">Change password</span>
+              </button>
+              <span className="cm-tooltip" aria-hidden="true">
+                Change password
+              </span>
+            </div>
+          )}
+          {/* Signing out of the host app is the host's job. Without a
+              logout_url there is no sign-out here: clearing this dashboard's
+              cookie alone would leave them signed in on the next request. */}
+          {external ? (
+            authOptions.logout_url && (
+              <div className="cm-sidebar-item">
+                <a
+                  className="cm-sidebar-button"
+                  href={authOptions.logout_url}
+                  onClick={signOutOfHost}
+                  aria-disabled={signingOut || undefined}
+                >
+                  <IconLogOut />
+                  <span className="cm-sidebar-label">{signingOut ? "Signing out…" : "Sign out"}</span>
+                </a>
+                <span className="cm-tooltip" aria-hidden="true">
+                  Sign out of {authOptions.provider_name}
+                </span>
+              </div>
+            )
+          ) : (
+            <div className="cm-sidebar-item">
+              <button type="button" className="cm-sidebar-button" onClick={signOut} disabled={signingOut}>
+                <IconLogOut />
+                <span className="cm-sidebar-label">{signingOut ? "Signing out…" : "Sign out"}</span>
+              </button>
+              <span className="cm-tooltip" aria-hidden="true">
+                Sign out
+              </span>
+            </div>
+          )}
           {signOutError && (
             <p role="alert" className="cm-error cm-sidebar-error">
               {signOutError}
@@ -255,10 +297,12 @@ export function AppShell({
             </span>
             <span className="cm-sidebar-label cm-sidebar-user-text">
               <span className="cm-sidebar-user-name">{username}</span>
-              <span className="cm-sidebar-user-note">Signed in &middot; {role}</span>
+              <span className="cm-sidebar-user-note">
+                {external ? `Via ${authOptions.provider_name}` : "Signed in"} &middot; {role}
+              </span>
             </span>
             <span className="cm-tooltip" aria-hidden="true">
-              Signed in as {username} ({role})
+              Signed in as {username} ({role}){external && ` through ${authOptions.provider_name}`}
             </span>
           </div>
         </div>
