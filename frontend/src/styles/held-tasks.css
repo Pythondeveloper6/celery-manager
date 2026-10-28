@@ -1,0 +1,158 @@
+/* Held tasks page (pages/HeldTasks.tsx): delayed and stuck tasks. Shares the
+   task list's table and link styles (tasks.css). */
+
+.cm-held-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--cm-space-3);
+}
+
+.cm-held-lede {
+  margin: 0;
+  max-width: var(--cm-measure);
+  font-size: var(--cm-text-md);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-held-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-4);
+}
+
+.cm-held-reveal,
+.cm-held-force {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-size: var(--cm-text-sm);
+  cursor: pointer;
+}
+
+.cm-held-force {
+  align-items: flex-start;
+  max-width: var(--cm-measure);
+}
+
+/* A second line under a cell's main value: the ETA's wall-clock time, the
+   worker's state, the recorded run status. */
+.cm-held-sub {
+  display: block;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  white-space: nowrap;
+}
+
+.cm-held-mono {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.cm-held-countdown {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cm-held-due {
+  font-weight: 500;
+  color: var(--cm-color-warn);
+  white-space: nowrap;
+}
+
+/* Arguments: one line, cut with an ellipsis; the full text is the title. */
+.cm-held-args {
+  display: block;
+  max-width: 22rem;
+  overflow: hidden;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-held-args-masked {
+  color: var(--cm-color-text-muted);
+}
+
+.cm-held-redelivery {
+  max-width: 22rem;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+/* An orphan kombu won't redeliver for a while is the one to act on. */
+.cm-held-redelivery[data-overdue="true"] {
+  color: var(--cm-color-danger);
+}
+
+/* Inline confirmation, like the queue purge: warning first, then buttons. */
+.cm-held-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-4);
+  background-color: var(--cm-color-danger-bg);
+  border: 1px solid var(--cm-color-danger-border);
+  border-radius: var(--cm-radius-lg);
+}
+
+.cm-held-confirm-text {
+  margin: 0;
+  max-width: var(--cm-measure);
+  font-size: var(--cm-text-md);
+}
+
+.cm-held-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-2);
+}
+
+.cm-held-unheld {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  margin: 0;
+  padding: 0 var(--cm-space-5) var(--cm-space-5);
+  list-style: none;
+}
+
+.cm-held-unheld li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--cm-space-3);
+}
+
+.cm-held-notes {
+  margin: 0;
+  padding-left: var(--cm-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  max-width: var(--cm-measure);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+/* Stacked rows on narrow screens label the cells that are only a number. */
+.cm-held-cell-label {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .cm-held-cell-label {
+    display: block;
+    font-size: var(--cm-text-xs);
+    color: var(--cm-color-text-muted);
+  }
+
+  .cm-held-args,
+  .cm-held-redelivery {
+    max-width: none;
+  }
+}

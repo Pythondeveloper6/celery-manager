@@ -26,10 +26,12 @@ from celery_manager.api.app import (
 )
 from celery_manager.api.deps import require_role
 from celery_manager.api.routes import deadletters as deadletter_routes
+from celery_manager.api.routes import delayed as delayed_routes
 from celery_manager.api.routes import maintenance as maintenance_routes
 from celery_manager.api.routes import queues as queue_routes
 from celery_manager.api.routes import schedules as schedule_routes
 from celery_manager.api.routes import tasks as task_routes
+from celery_manager.api.routes import unacked as unacked_routes
 from celery_manager.api.routes import workers as worker_routes
 from celery_manager.auth.roles import ROLES, role_allows, validate_role
 from celery_manager.auth.users import create_user, get_user_role, set_user_role
@@ -83,6 +85,8 @@ WRITE_ROUTES = [
         {"task_name": "demo.echo", "rate_limit": "10/m"},
         "operator",
     ),
+    ("POST", "/api/delayed/cancel", {"task_ids": ["t1"]}, "operator"),
+    ("POST", "/api/queues/unacked/restore", {"tags": ["tag-1"]}, "operator"),
     ("POST", "/api/workers/w1/shutdown", None, "admin"),
     ("POST", "/api/queues/celery/purge", None, "admin"),
     ("DELETE", "/api/queues/celery/messages/t1", None, "admin"),
@@ -141,6 +145,8 @@ ROUTE_ROLES = {
     ("POST", "/api/workers/{worker}/queues/add"): "operator",
     ("POST", "/api/workers/{worker}/queues/cancel"): "operator",
     ("POST", "/api/tasks/rate-limit"): "operator",
+    ("POST", "/api/delayed/cancel"): "operator",
+    ("POST", "/api/queues/unacked/restore"): "operator",
     ("POST", "/api/workers/{worker}/shutdown"): "admin",
     ("POST", "/api/queues/{name}/purge"): "admin",
     ("DELETE", "/api/queues/{name}/messages/{task_id}"): "admin",
@@ -203,6 +209,8 @@ _STUBBED = {
     maintenance_routes: ["create_window", "update_window", "delete_window"],
     worker_routes: ["shutdown_worker", "resize_pool", "set_consumer", "set_rate_limit"],
     queue_routes: ["purge_queue", "delete_message", "move_message"],
+    delayed_routes: ["cancel_delayed_tasks"],
+    unacked_routes: ["restore_unacked"],
 }
 
 
