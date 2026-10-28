@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from celery import Celery
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
+    from celery_manager.auth.external import ExternalUser
 
 
 @dataclass
@@ -106,6 +113,36 @@ class CeleryManagerConfig:
         rule. Each check costs one worker ping (only with worker_offline
         rules), one broker queue listing (only with queue_backlog rules)
         and a few indexed `task_runs` queries.
+    authenticate_request: sign in with the host application's own users
+        instead of (or as well as) celery-manager's accounts. A callable
+        taking the Starlette ``Request`` and returning
+        ``celery_manager.integrations.ExternalUser(username, role)``, or None
+        when the request isn't signed in to the host. It is asked first, on
+        every request, so the host's answer (including a demotion or a
+        removed user) applies immediately; None falls back to the local
+        ``cm_session`` accounts. ``role=None`` means "a host user with no
+        access" and is a 403; an unknown role, a wrong return type or an
+        exception is a 500 (fail closed, never a fallback). Called from a
+        worker thread, so it may block on an ORM query; an ``async def``
+        works too. Ready-made ones for Django and Flask live in
+        ``celery_manager.integrations``; see docs/integrations.md.
+    local_login_enabled: whether celery-manager's own accounts can still
+        sign in. Set it to False with ``authenticate_request`` to make the
+        host app the only way in: the login form is replaced by a "Sign in
+        with ..." link, ``POST /api/auth/login`` is refused and existing
+        ``cm_session`` cookies stop working. ``create_app()`` refuses False
+        without an authenticator, since nobody could sign in.
+    login_url: where the dashboard sends people to sign in to the host app
+        (a path like ``/accounts/login/?next={next}`` or an http(s) URL).
+        ``{next}`` is replaced with the dashboard's own address, URL-encoded,
+        so the host can send them back. Without it the dashboard can only
+        say "sign in to <host> first".
+    logout_url: where "Sign out" goes for someone signed in through the host
+        (a plain link, so a GET). Without it, those users get no sign-out
+        button in the dashboard: clearing celery-manager's cookie would not
+        sign them out of the host, and they would be straight back in.
+    login_provider_name: what the dashboard calls the host app on the sign-in
+        screen and in the sidebar ("Sign in with Acme Admin").
     """
 
     celery_app: Celery
@@ -131,3 +168,8 @@ class CeleryManagerConfig:
     alert_email_from: str | None = None
     alert_send_timeout_seconds: float = 10.0
     alert_interval_seconds: float = 60.0
+    authenticate_request: Callable[[Request], ExternalUser | None | Awaitable[ExternalUser | None]] | None = None
+    local_login_enabled: bool = True
+    login_url: str | None = None
+    logout_url: str | None = None
+    login_provider_name: str = "your app"

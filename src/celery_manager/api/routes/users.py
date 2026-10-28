@@ -3,7 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict
 
-from celery_manager.api.deps import SESSION_COOKIE, cookie_path, require_admin, require_role
+from celery_manager.api.deps import (
+    SESSION_COOKIE,
+    Principal,
+    cookie_path,
+    require_admin,
+    require_role,
+)
+from celery_manager.auth.external import SOURCE_LOCAL
 from celery_manager.auth.sessions import sign_session
 from celery_manager.auth.users import session_fingerprint
 from celery_manager.control import users as control
@@ -103,12 +110,21 @@ def change_my_password(
     payload: OwnPasswordChange,
     request: Request,
     response: Response,
+    principal: Principal,
     # The lowest role: every signed-in account may change its own password.
     username: str = Depends(require_role("viewer")),
 ):
     """Change the signed-in account's own password. Other sessions of the
     account end; this one stays signed in through a freshly issued cookie."""
     config = request.app.state.cm_config
+    if principal.source != SOURCE_LOCAL:
+        # Someone signed in through the host app has no password here. A
+        # local account that happens to share their name is someone else's
+        # credential, not theirs to change.
+        raise HTTPException(
+            status_code=409,
+            detail=f"Your password is managed by {config.login_provider_name}; change it there.",
+        )
     with request.app.state.cm_session_factory() as session:
         try:
             user = control.change_own_password(session, username, payload.current_password, payload.new_password)

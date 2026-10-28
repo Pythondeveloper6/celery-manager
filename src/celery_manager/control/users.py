@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import secrets
 
+from celery_manager.auth.external import SOURCE_LOCAL
 from celery_manager.auth.roles import ADMIN, validate_role
 from celery_manager.auth.users import (
     create_user,
@@ -38,16 +39,16 @@ from celery_manager.auth.users import (
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import User
 
-# Where an account comes from. Every account today is stored in this
-# deployment's own users table; the field is in the API shape so accounts
-# that come from elsewhere can be listed later without changing it.
-SOURCE_LOCAL = "local"
-
 
 class UserConflict(Exception):
     """The request is well-formed but the current state refuses it."""
 
 
+# `source` says where an account comes from. Everything listed here is stored
+# in this deployment's own users table ("local"). Users signed in through the
+# host app (`CeleryManagerConfig.authenticate_request`) live in the host's
+# database and get their role from it, so there is nothing here to list or
+# manage for them.
 def _entry(username: str, role: str) -> dict:
     return {"username": username, "role": role, "source": SOURCE_LOCAL}
 

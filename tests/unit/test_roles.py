@@ -351,8 +351,8 @@ def test_whoami_and_login_return_the_role(make_app, role):
     app, _ = make_app()
     client = TestClient(app, base_url="https://testserver")
     login = client.post("/api/auth/login", json={"username": role, "password": "pw"})
-    assert login.json() == {"username": role, "role": role}
-    assert client.get("/api/whoami").json() == {"username": role, "role": role}
+    assert login.json() == {"username": role, "role": role, "source": "local"}
+    assert client.get("/api/whoami").json() == {"username": role, "role": role, "source": "local"}
 
 
 def test_role_change_applies_on_the_next_request(make_app):
