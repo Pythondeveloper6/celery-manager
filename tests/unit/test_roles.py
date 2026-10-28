@@ -27,6 +27,7 @@ from celery_manager.api.app import (
 from celery_manager.api.deps import require_role
 from celery_manager.api.routes import deadletters as deadletter_routes
 from celery_manager.api.routes import queues as queue_routes
+from celery_manager.api.routes import maintenance as maintenance_routes
 from celery_manager.api.routes import schedules as schedule_routes
 from celery_manager.api.routes import tasks as task_routes
 from celery_manager.api.routes import workers as worker_routes
@@ -58,6 +59,20 @@ WRITE_ROUTES = [
     ("POST", "/api/schedules/nightly/preview", {"type": "interval", "seconds": 60}, "viewer"),
     ("PUT", "/api/schedules/nightly/schedule", {"type": "interval", "seconds": 60}, "operator"),
     ("DELETE", "/api/schedules/nightly/schedule", None, "operator"),
+    (
+        "POST",
+        "/api/maintenance-windows",
+        {"name": "w", "days_of_week": [6], "start_time": "02:00", "duration_minutes": 120},
+        "operator",
+    ),
+    ("PUT", "/api/maintenance-windows/1", {"name": "w"}, "operator"),
+    ("DELETE", "/api/maintenance-windows/1", None, "operator"),
+    (
+        "POST",
+        "/api/maintenance-windows/preview",
+        {"days_of_week": [6], "start_time": "02:00", "duration_minutes": 120},
+        "viewer",
+    ),
     ("POST", "/api/workers/w1/pool/grow", None, "operator"),
     ("POST", "/api/workers/w1/pool/shrink", None, "operator"),
     ("POST", "/api/workers/w1/queues/add", {"queue": "q"}, "operator"),
@@ -115,6 +130,10 @@ ROUTE_ROLES = {
     ("POST", "/api/schedules/{name}/preview"): "viewer",
     ("PUT", "/api/schedules/{name}/schedule"): "operator",
     ("DELETE", "/api/schedules/{name}/schedule"): "operator",
+    ("POST", "/api/maintenance-windows"): "operator",
+    ("PUT", "/api/maintenance-windows/{window_id}"): "operator",
+    ("DELETE", "/api/maintenance-windows/{window_id}"): "operator",
+    ("POST", "/api/maintenance-windows/preview"): "viewer",
     ("POST", "/api/workers/{worker}/pool/grow"): "operator",
     ("POST", "/api/workers/{worker}/pool/shrink"): "operator",
     ("POST", "/api/workers/{worker}/queues/add"): "operator",
@@ -147,6 +166,7 @@ READ_ROUTES = [
     "/api/tasks/export?format=csv",
     "/api/dead-letters",
     "/api/schedules",
+    "/api/maintenance-windows",
     "/api/audit",
     "/api/settings/retention",
     "/api/analytics/overview",
@@ -175,6 +195,7 @@ _STUBBED = {
         "edit_schedule",
         "revert_schedule",
     ],
+    maintenance_routes: ["create_window", "update_window", "delete_window"],
     worker_routes: ["shutdown_worker", "resize_pool", "set_consumer", "set_rate_limit"],
     queue_routes: ["purge_queue"],
 }

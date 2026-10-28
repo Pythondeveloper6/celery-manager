@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from celery.schedules import maybe_schedule
 
 from celery_manager.control.audit import record as record_audit
+from celery_manager.control.maintenance import enabled_windows, windows_active_at
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride, TaskRun
 from celery_manager.occurrences import CALENDAR_MATCH_WINDOW, is_interval_schedule, next_occurrence_after
 from celery_manager.schedule_specs import (
@@ -568,6 +569,8 @@ def list_upcoming_with_overrides(
     paused_at = periodic.paused_at
     paused_until = _as_aware_utc(periodic.paused_until) if periodic.paused_until is not None else None
 
+    windows = enabled_windows(session)
+
     result = []
     for t in occurrences:
         match = _find_within_tolerance(pool, t, window)
@@ -582,6 +585,10 @@ def list_upcoming_with_overrides(
             # indefinite): it will be recorded as skipped however `action`
             # reads. Occurrences at/after `paused_until` run normally.
             "paused": paused_at is not None and (paused_until is None or t < paused_until),
+            # Name of the maintenance window this firing falls in (it will be
+            # recorded as skipped), else None; several overlapping windows
+            # are joined with ", ".
+            "maintenance_window": ", ".join(w.name for w in windows_active_at(windows, schedule_name, t)) or None,
         })
     return result
 

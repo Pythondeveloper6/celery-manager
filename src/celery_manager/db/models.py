@@ -72,6 +72,10 @@ class TaskRun(Base):
     # Added by migration 0006.
     occurrence_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     beat_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Why a `skipped` run was skipped, in words the dashboard shows as-is
+    # ("schedule paused", "maintenance window: Sunday patching"). NULL for
+    # every other status and for skips recorded before migration 0010.
+    skip_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # When anything on this row last changed — the dashboard's change feed.
     # The API process polls `updated_at > cursor` (see `db/changefeed.py`) to
     # tell connected browsers about writes made by *other* processes (the
@@ -139,6 +143,34 @@ class ScheduleOverride(Base):
     consumed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class MaintenanceWindow(Base):
+    """A recurring window during which chosen schedules' firings are skipped
+    (migration 0010). Nothing is paused and nothing needs resuming: the
+    decorator asks "is this occurrence inside an enabled window?" on every
+    firing (`celery_manager.control.maintenance`), so beat keeps sending.
+
+    The recurrence is a weekly one: `days_of_week` (CSV of 0-6, Monday = 0)
+    each start at `start_time` ("HH:MM") in `timezone` (an IANA name) and last
+    `duration_minutes` of elapsed time, so a window may cross midnight.
+    `applies_to` is JSON: the string "*" or a list of schedule names.
+    """
+
+    __tablename__ = "maintenance_windows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    days_of_week: Mapped[str] = mapped_column(String(32))
+    start_time: Mapped[str] = mapped_column(String(5))
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    timezone: Mapped[str] = mapped_column(String(64))
+    applies_to: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class User(Base):
