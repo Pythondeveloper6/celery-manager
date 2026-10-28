@@ -151,6 +151,11 @@ def _unsupported_reason(transport: str) -> str | None:
         # process's private queues, which no worker ever reads. A confident 0
         # would be a lie, so say so instead.
         return "the in-memory broker is private to each process, so its queues can't be seen from here"
+    if transport == "filesystem":
+        # Same lie, different cause: kombu's filesystem transport doesn't
+        # implement queue_declare's message count, so it answers 0 for a
+        # directory full of messages. A confident 0 would hide a backlog.
+        return "queue depth isn't available on the filesystem transport"
     return None
 
 
@@ -237,12 +242,13 @@ def _probe_broker(celery_app: Celery, names: list[str], include_workers: bool) -
             pass
 
 
-def _run_with_deadline(fn, *args):
+def _run_with_deadline(fn, *args, deadline: float | None = None):
+    deadline = BROKER_DEADLINE if deadline is None else deadline
     future = _executor.submit(fn, *args)
     try:
-        return future.result(timeout=BROKER_DEADLINE)
+        return future.result(timeout=deadline)
     except FutureTimeout:
-        raise QueueBrokerError(f"the broker did not answer within {BROKER_DEADLINE:g}s") from None
+        raise QueueBrokerError(f"the broker did not answer within {deadline:g}s") from None
 
 
 def list_queues(celery_app: Celery, session, include_workers: bool = True) -> dict:

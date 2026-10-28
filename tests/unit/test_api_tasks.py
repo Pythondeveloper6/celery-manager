@@ -10,8 +10,14 @@ from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.models import AuditLog, TaskRun
 
 
+def registered_placeholder(*args, **kwargs):
+    return None
+
+
 def _client_and_session():
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    config.celery_app.task(name="demo.echo", shared=False)(registered_placeholder)
+    config.celery_app.task(name="demo.plain", shared=False)(registered_placeholder)
     app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")
@@ -124,6 +130,8 @@ def test_task_detail_includes_worker_queue_and_timing_fields():
     from datetime import datetime, timezone
 
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    config.celery_app.task(name="demo.echo", shared=False)(registered_placeholder)
+    config.celery_app.task(name="demo.plain", shared=False)(registered_placeholder)
     app, session_factory = create_app(config)
     started = datetime(2026, 8, 15, 6, 0, 0, tzinfo=timezone.utc)
     finished = datetime(2026, 8, 15, 6, 0, 3, tzinfo=timezone.utc)
@@ -164,6 +172,8 @@ def _client_with_history():
     """Four runs across two task names and two eras, one of them carrying
     progress and timing values, one of them a retry of another."""
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    config.celery_app.task(name="demo.echo", shared=False)(registered_placeholder)
+    config.celery_app.task(name="demo.plain", shared=False)(registered_placeholder)
     app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")
@@ -357,6 +367,8 @@ def test_emitted_datetimes_parse_back_to_the_exact_instant_stored():
 
 def test_eta_is_emitted_with_a_utc_offset_too():
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    config.celery_app.task(name="demo.echo", shared=False)(registered_placeholder)
+    config.celery_app.task(name="demo.plain", shared=False)(registered_placeholder)
     app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")
@@ -412,6 +424,8 @@ def test_retry_of_a_run_only_the_events_listener_recorded():
     from celery_manager.events.listener import upsert_task_run
 
     config = CeleryManagerConfig(celery_app=Celery("test"), db_url="sqlite:///:memory:", secret_key="test-secret")
+    config.celery_app.task(name="demo.echo", shared=False)(registered_placeholder)
+    config.celery_app.task(name="demo.plain", shared=False)(registered_placeholder)
     app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")

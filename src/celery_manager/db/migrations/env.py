@@ -20,6 +20,7 @@ from alembic import context
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
+from celery_manager.db.dialect import schema_of
 from celery_manager.db.migrate import VERSION_TABLE
 from celery_manager.db.models import Base
 
@@ -48,6 +49,7 @@ def _configure(**kwargs) -> None:
         # `alembic_version`: celery-manager often shares a database with the
         # host application, which may run its own Alembic history there.
         version_table=VERSION_TABLE,
+        version_table_schema=schema_of(kwargs["connection"]) if "connection" in kwargs else config.attributes.get("db_schema"),
         # SQLite can't ALTER most things in place; batch mode recreates the
         # table instead. On other backends batch operations are plain ALTERs.
         render_as_batch=True,

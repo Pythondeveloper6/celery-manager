@@ -75,8 +75,8 @@ def db(tmp_path):
 # queue behind the gap lock; see the threaded hammer test). So they run on
 # SQLite and PostgreSQL only.
 hook_race = pytest.mark.skipif(
-    os.environ.get("CM_TEST_DB_URL", "").startswith("mysql"),
-    reason="synchronous in-hook competitor self-deadlocks on MySQL gap locks",
+    os.environ.get("CM_TEST_DB_URL", "").startswith(("mysql", "mssql")),
+    reason="synchronous in-hook competitor self-deadlocks on database range locks",
 )
 
 

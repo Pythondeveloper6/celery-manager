@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listQueues, purgeQueue, type QueueInfo, type QueueListing } from "../api/queues";
+import { Link } from "react-router-dom";
+import { BrokerPanel } from "../components/BrokerPanel";
+import { RabbitPanel, RabbitQueueDetails } from "../components/RabbitPanel";
+import {
+  getQueueHistory,
+  listQueues,
+  purgeQueue,
+  type DepthHistory,
+  type QueueInfo,
+  type QueueListing,
+} from "../api/queues";
 import "../styles/queues.css";
+import { DepthChart } from "../components/TrendCharts";
 import { useCan } from "../lib/role";
+import { formatDuration } from "../lib/taskProgress";
 
 const REFRESH_MS = 5000;
 
@@ -9,6 +21,17 @@ const REFRESH_MS = 5000;
 // Session-only and client-side by design — closing the tab forgets it, and
 // nothing is stored on the server.
 const HISTORY_SAMPLES = 60;
+
+// The sparklines show the server's recorded depth over this many hours, and
+// are refetched this often: samples arrive once a minute, so faster is waste.
+const SPARK_HOURS = 24;
+const HISTORY_REFRESH_MS = 60000;
+const CHART_RANGES = [
+  { hours: 1, label: "1 hour" },
+  { hours: 6, label: "6 hours" },
+  { hours: 24, label: "24 hours" },
+  { hours: 168, label: "7 days" },
+];
 
 const SOURCE_LABELS: Record<string, string> = {
   default: "default",
@@ -26,7 +49,7 @@ function asSentence(text: string, capitalise: boolean): string {
   return `${body}.`;
 }
 
-function Sparkline({ values, label }: { values: number[]; label: string }) {
+function Sparkline({ values, label, scope }: { values: number[]; label: string; scope: string }) {
   if (values.length < 2) return <span className="cm-queue-spark cm-queue-spark-empty" aria-hidden="true" />;
   const width = 72;
   const height = 20;
@@ -51,10 +74,64 @@ function Sparkline({ values, label }: { values: number[]; label: string }) {
       role="img"
       aria-label={`${label}: between ${low.toLocaleString()} and ${high.toLocaleString()}`}
     >
-      <title>{`Between ${low.toLocaleString()} and ${high.toLocaleString()} this session`}</title>
+      <title>{`Between ${low.toLocaleString()} and ${high.toLocaleString()} ${scope}`}</title>
       <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <circle cx={lastX} cy={lastY} r="1.75" fill="currentColor" />
     </svg>
+  );
+}
+
+/** Larger chart of one queue's recorded depth, opened from its sparkline. */
+function DepthPanel({ queue }: { queue: string }) {
+  const [hours, setHours] = useState(24);
+  const [data, setData] = useState<DepthHistory | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let current = true;
+    setData(null);
+    setError(null);
+    getQueueHistory(queue, hours)
+      .then((result) => current && setData(result))
+      .catch((err) => current && setError(err instanceof Error ? err.message : "Couldn't load the depth history."));
+    return () => {
+      current = false;
+    };
+  }, [queue, hours]);
+
+  return (
+    <div className="cm-queue-depth-panel">
+      <div className="cm-queue-depth-range" role="group" aria-label={`Time range for ${queue}`}>
+        {CHART_RANGES.map((r) => (
+          <button
+            key={r.hours}
+            type="button"
+            className="cm-btn cm-btn-outline cm-btn-sm"
+            aria-pressed={hours === r.hours}
+            onClick={() => setHours(r.hours)}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <p className="cm-error" role="alert">
+          {error}
+        </p>
+      ) : !data ? (
+        <p className="cm-loading">
+          <span className="cm-live-dot" aria-hidden="true" />
+          Loading depth history&hellip;
+        </p>
+      ) : data.points.length === 0 ? (
+        <p className="cm-empty-state">
+          No depth recorded for {queue} in this period. Depth is sampled by the events listener
+          (<code>celery-manager events</code>) unless <code>queue_sample_interval_seconds</code> is 0.
+        </p>
+      ) : (
+        <DepthChart points={data.points} hours={hours} queue={queue} />
+      )}
+    </div>
   );
 }
 
@@ -154,11 +231,18 @@ export function Queues() {
   const [visible, setVisible] = useState(() => document.visibilityState === "visible");
   const [purging, setPurging] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [charted, setCharted] = useState<string | null>(null);
+  // Server-recorded depth per queue (see control/depth_history.py), used for
+  // the sparklines once there are two points; until then the session samples.
+  const [recorded, setRecorded] = useState<Record<string, number[]>>({});
   const historyRef = useRef(new Map<string, number[]>());
   const requestIdRef = useRef(0);
+  // Bumped on every refresh so the broker panel reloads with the page.
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const refresh = useCallback(async () => {
     const requestId = ++requestIdRef.current;
+    setRefreshToken((n) => n + 1);
     try {
       const next = await listQueues();
       if (requestId !== requestIdRef.current) return;
@@ -176,6 +260,29 @@ export function Queues() {
       setError(err instanceof Error ? err.message : "Couldn't load queues.");
     }
   }, []);
+
+  const queueNames = listing?.queues.map((queue) => queue.name).join("\n") ?? "";
+  useEffect(() => {
+    if (!visible || !queueNames) return;
+    let current = true;
+    const load = () => {
+      for (const name of queueNames.split("\n")) {
+        getQueueHistory(name, SPARK_HOURS)
+          .then((result) => {
+            if (current) setRecorded((prev) => ({ ...prev, [name]: result.points.map((p) => p.depth) }));
+          })
+          .catch(() => {
+            // A sparkline that can't load stays on the session samples.
+          });
+      }
+    };
+    load();
+    const interval = setInterval(load, HISTORY_REFRESH_MS);
+    return () => {
+      current = false;
+      clearInterval(interval);
+    };
+  }, [visible, queueNames]);
 
   useEffect(() => {
     const onVisibility = () => setVisible(document.visibilityState === "visible");
@@ -214,6 +321,9 @@ export function Queues() {
           </div>
         )}
       </header>
+
+      <BrokerPanel refreshToken={refreshToken} />
+      <RabbitPanel meta={listing?.rabbitmq} visible={visible} />
 
       {broker?.error && (
         <p className="cm-alert" role="status">
@@ -271,13 +381,20 @@ export function Queues() {
                       Broker depth
                     </th>
                     <th scope="col" className="cm-col-fit">
-                      <span className="cm-visually-hidden">Depth this session</span>
+                      <span className="cm-visually-hidden">Depth history; select to open the chart</span>
                     </th>
                     <th scope="col" className="cm-col-fit cm-num">
                       Consumers
                     </th>
                     <th scope="col" className="cm-col-fit cm-num" title="Runs celery-manager has recorded as queued">
                       Recorded queued
+                    </th>
+                    <th
+                      scope="col"
+                      className="cm-col-fit cm-num"
+                      title={`How long runs waited in the queue before a worker started them, over the last ${Math.round((listing.wait_window_seconds ?? 900) / 60)} minutes. Time until an ETA or countdown is not counted.`}
+                    >
+                      Wait p50 / p95
                     </th>
                     <th scope="col" className="cm-col-fit">
                       <span className="cm-visually-hidden">Actions</span>
@@ -288,10 +405,17 @@ export function Queues() {
                   <tbody key={q.name}>
                     <tr>
                       <td className="cm-cell-primary">
-                        <span className="cm-queue-name">{q.name}</span>
+                        <Link
+                          to={`/queues/${encodeURIComponent(q.name)}`}
+                          className="cm-queue-name cm-link"
+                          title="See the messages waiting in this queue"
+                        >
+                          {q.name}
+                        </Link>
                         <span className="cm-queue-sources">
                           {q.sources.map((s) => SOURCE_LABELS[s] ?? s).join(" · ")}
                         </span>
+                        <RabbitQueueDetails info={q.rabbitmq} />
                       </td>
                       <td className="cm-col-fit cm-num">
                         <span className="cm-queue-cell-label">Broker depth</span>
@@ -306,10 +430,27 @@ export function Queues() {
                         )}
                       </td>
                       <td className="cm-col-fit cm-queue-spark-cell">
-                        <Sparkline
-                          values={historyRef.current.get(q.name) ?? []}
-                          label={`Depth of ${q.name} over this session`}
-                        />
+                        <button
+                          type="button"
+                          className="cm-queue-spark-btn"
+                          aria-expanded={charted === q.name}
+                          aria-label={`${charted === q.name ? "Hide" : "Show"} the depth chart for ${q.name}`}
+                          onClick={() => setCharted(charted === q.name ? null : q.name)}
+                        >
+                          {(recorded[q.name]?.length ?? 0) >= 2 ? (
+                            <Sparkline
+                              values={recorded[q.name]}
+                              label={`Depth of ${q.name} over the last ${SPARK_HOURS} hours`}
+                              scope={`in the last ${SPARK_HOURS} hours`}
+                            />
+                          ) : (
+                            <Sparkline
+                              values={historyRef.current.get(q.name) ?? []}
+                              label={`Depth of ${q.name} over this session`}
+                              scope="this session"
+                            />
+                          )}
+                        </button>
                       </td>
                       <td className="cm-col-fit cm-num">
                         <span className="cm-queue-cell-label">Consumers</span>
@@ -332,6 +473,20 @@ export function Queues() {
                         <span className="cm-queue-cell-label">Recorded queued</span>
                         {q.recorded_queued.toLocaleString()}
                       </td>
+                      <td className="cm-col-fit cm-num">
+                        <span className="cm-queue-cell-label">Wait p50 / p95</span>
+                        {q.wait ? (
+                          <span
+                            title={`${q.wait.runs.toLocaleString()} run${q.wait.runs === 1 ? "" : "s"}; longest ${formatDuration(q.wait.max)}`}
+                          >
+                            {formatDuration(q.wait.p50)} / {formatDuration(q.wait.p95)}
+                          </span>
+                        ) : (
+                          <span className="cm-queue-unknown" title="No run with a recorded send time started recently">
+                            —
+                          </span>
+                        )}
+                      </td>
                       <td className="cm-col-fit cm-queue-actions">
                         {canPurge && purging !== q.name && (
                           <button
@@ -349,9 +504,16 @@ export function Queues() {
                         )}
                       </td>
                     </tr>
+                    {charted === q.name && (
+                      <tr className="cm-queue-purge-tr">
+                        <td colSpan={7}>
+                          <DepthPanel queue={q.name} />
+                        </td>
+                      </tr>
+                    )}
                     {purging === q.name && (
                       <tr className="cm-queue-purge-tr">
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                           <PurgeConfirm
                             queue={q}
                             onCancel={() => setPurging(null)}
@@ -387,7 +549,16 @@ export function Queues() {
             </li>
           )}
           {broker?.workers_replied === false && <li>No workers answered, so queues only workers know about may be missing.</li>}
-          <li>The sparkline is this browser session only; it starts empty each time you open the page.</li>
+          <li>
+            <strong>Wait</strong> is how long runs sat in the queue before a worker started them (median / 95th
+            percentile, last {Math.round((listing.wait_window_seconds ?? 900) / 60)} minutes). It needs the events
+            listener to have seen the task being sent, and leaves out time spent waiting for an ETA or countdown.
+          </li>
+          <li>
+            The sparkline is the depth recorded by the events listener over the last {SPARK_HOURS} hours; select it for
+            a larger chart. Until two samples exist it shows this browser session instead.
+          </li>
+          <li>Click a queue&rsquo;s name to see the messages waiting in it.</li>
         </ul>
       )}
     </div>

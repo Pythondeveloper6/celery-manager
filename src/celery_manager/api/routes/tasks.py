@@ -5,8 +5,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from celery_manager.api.deps import get_current_user, require_operator
+from celery_manager.api.deps import Principal, get_current_user, require_operator
 from celery_manager.api.serialization import utc, utc_bound
+from celery_manager.auth.roles import role_allows
+from celery_manager.control.latency import wait_seconds
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
     BulkCancelTooLarge,
@@ -92,13 +94,15 @@ def list_tasks(
 
 
 @router.get("/registered")
-def registered(request: Request, username: str = Depends(get_current_user)):
+def registered(request: Request, principal: Principal):
     """Task names registered on the Celery app, for the dashboard's task picker."""
-    return {"items": list_registered_tasks(request.app.state.cm_config.celery_app)}
+    from celery_manager.control.policy import task_allowed
+    config = request.app.state.cm_config
+    return {"items": [t for t in list_registered_tasks(config.celery_app) if task_allowed(config, t["name"], principal)]}
 
 
 @router.get("/{task_id}")
-def get_task(task_id: str, request: Request, username: str = Depends(get_current_user)):
+def get_task(task_id: str, request: Request, principal: Principal):
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         run = get_task_run(session, task_id)
@@ -111,8 +115,14 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
             "args": run.args,
             "kwargs": run.kwargs,
             "exception": run.exception,
+            "skip_reason": run.skip_reason,
             "traceback": run.traceback,
-            "log_output": run.log_output,
+            "log_output": run.log_output if role_allows(principal.role, request.app.state.cm_config.log_view_role) else None,
+            "log_output_truncated": run.log_output_truncated,
+            "logs_restricted": not role_allows(principal.role, request.app.state.cm_config.log_view_role),
+            "result_repr": run.result_repr,
+            "result_truncated": run.result_truncated,
+            "initiator": run.initiator,
             # Operational detail already stored on TaskRun (by the events
             # listener for worker/queue, by the decorator for the timings) but
             # never surfaced here — so the dashboard's detail view could not
@@ -123,6 +133,10 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
             "queue": run.queue,
             "worker": run.worker,
             "eta": utc(run.eta),
+            "sent_at": utc(run.sent_at),
+            "received_at": utc(run.received_at),
+            # started_at - max(sent_at, eta); None without a send time.
+            "wait_seconds": wait_seconds(run.sent_at, run.eta, run.started_at),
             "started_at": utc(run.started_at),
             "finished_at": utc(run.finished_at),
             "runtime_seconds": run.runtime_seconds,
@@ -161,12 +175,13 @@ class StartRequest(BaseModel):
 
 
 @router.post("/start")
-def start(payload: StartRequest, request: Request, username: str = Depends(require_operator)):
+def start(payload: StartRequest, request: Request, principal: Principal, username: str = Depends(require_operator)):
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     # session + username are what make this action land in the audit log,
     # same as the retry route below.
     with session_factory() as session:
+        session.info["cm_principal"] = principal
         task_id = start_task(
             celery_app, payload.task_name, payload.args, payload.kwargs,
             session=session, username=username,
@@ -176,10 +191,14 @@ def start(payload: StartRequest, request: Request, username: str = Depends(requi
 
 
 @router.post("/{task_id}/cancel")
-def cancel(task_id: str, request: Request, terminate: bool = False, username: str = Depends(require_operator)):
+def cancel(task_id: str, request: Request, principal: Principal, terminate: bool = False, force: bool = False, username: str = Depends(require_operator)):
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
+        if force and principal.role != "admin":
+            raise HTTPException(403, "Force cancellation requires the admin role")
+        if not force and get_task_run(session, task_id) is None:
+            raise HTTPException(404, "Unknown task ID; an admin can force cancellation")
         cancel_task(celery_app, task_id, terminate=terminate, session=session, username=username)
     return {"ok": True}
 
@@ -195,6 +214,7 @@ class RetryRequest(BaseModel):
 def retry(
     task_id: str,
     request: Request,
+    principal: Principal,
     payload: RetryRequest | None = None,
     username: str = Depends(require_operator),
 ):
@@ -213,6 +233,7 @@ def retry(
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         try:
+            session.info["cm_principal"] = principal
             new_id = retry_task(
                 celery_app, session, task_id, username=username,
                 args=payload.args if payload else None,
@@ -228,7 +249,7 @@ class BulkRetryRequest(BaseModel):
 
 
 @router.post("/retry-bulk")
-def retry_bulk(payload: BulkRetryRequest, request: Request, username: str = Depends(require_operator)):
+def retry_bulk(payload: BulkRetryRequest, request: Request, principal: Principal, username: str = Depends(require_operator)):
     """Re-dispatch several stored runs. 404 if any of them is unknown.
 
     `bulk_retry` stops at the first unknown id (documented limitation — it is
@@ -239,6 +260,7 @@ def retry_bulk(payload: BulkRetryRequest, request: Request, username: str = Depe
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         try:
+            session.info["cm_principal"] = principal
             new_ids = bulk_retry(celery_app, session, payload.task_ids, username=username)
         except TaskRunNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc))

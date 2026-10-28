@@ -1,0 +1,211 @@
+/* RabbitMQ panel on the Queues page and the dead-letter queues page
+   (components/RabbitPanel.tsx, pages/RabbitDeadLetters.tsx). */
+
+.cm-rabbit-panel,
+.cm-rabbit-setup {
+  margin-bottom: var(--cm-space-4);
+}
+
+.cm-rabbit-setup code,
+.cm-rabbit-hint code {
+  font-family: var(--cm-font-mono);
+  font-size: 0.95em;
+}
+
+.cm-rabbit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+}
+
+.cm-rabbit-version {
+  margin-left: var(--cm-space-2);
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  font-weight: 400;
+  color: var(--cm-color-text-muted);
+}
+
+.cm-rabbit-alarm {
+  background-color: var(--cm-color-danger-bg);
+  border-top: 1px solid var(--cm-color-danger-border);
+  border-bottom: 1px solid var(--cm-color-danger-border);
+  color: var(--cm-color-danger);
+  font-size: var(--cm-text-md);
+}
+
+.cm-rabbit-alarm p {
+  margin: 0;
+}
+
+.cm-rabbit-flag {
+  display: block;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-danger);
+}
+
+.cm-rabbit-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 10rem;
+}
+
+.cm-rabbit-meter-track {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--cm-color-muted);
+  overflow: hidden;
+}
+
+.cm-rabbit-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--cm-color-status-started);
+}
+
+.cm-rabbit-meter[data-alarm] .cm-rabbit-meter-fill {
+  background-color: var(--cm-color-danger);
+}
+
+.cm-rabbit-meter-text {
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-rabbit-meter[data-alarm] .cm-rabbit-meter-text,
+.cm-rabbit-disk[data-alarm] {
+  color: var(--cm-color-danger);
+  font-weight: 500;
+}
+
+.cm-rabbit-disk {
+  font-size: var(--cm-text-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-rabbit-queue {
+  overflow-wrap: anywhere;
+}
+
+/* --- dead-letter queues page ---------------------------------------------- */
+
+.cm-dlq-layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
+  gap: var(--cm-space-4);
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .cm-dlq-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.cm-dlq-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cm-dlq-list li + li {
+  border-top: 1px solid var(--cm-color-border);
+}
+
+.cm-dlq-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  width: 100%;
+  padding: var(--cm-space-3) var(--cm-space-4);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cm-dlq-item:hover {
+  background-color: var(--cm-color-muted-subtle);
+}
+
+.cm-dlq-item[aria-current="true"] {
+  background-color: var(--cm-color-primary-soft);
+}
+
+.cm-dlq-item:focus-visible {
+  outline: 2px solid var(--cm-color-primary);
+  outline-offset: -2px;
+}
+
+.cm-dlq-count {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-dlq-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cm-space-2);
+}
+
+.cm-dlq-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+}
+
+.cm-dlq-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-size: var(--cm-text-md);
+  cursor: pointer;
+}
+
+.cm-dlq-death {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-dlq-reason {
+  font-weight: 600;
+  color: var(--cm-color-status-failed);
+}
+
+.cm-dlq-args {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.cm-dlq-masked {
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  font-style: italic;
+}
+
+.cm-dlq-warn {
+  color: var(--cm-color-warn);
+}
+
+.cm-dlq-result ul {
+  margin: var(--cm-space-1) 0 0;
+  padding-left: 1.25rem;
+}

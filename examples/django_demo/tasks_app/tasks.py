@@ -3,12 +3,13 @@ import random
 import time
 
 from celery import shared_task
+from celery.schedules import crontab
 from demo.celery import app as celery_app
-from django.conf import settings
+from demo.cm import config as cm_config
 
 import celery_manager
 from celery_manager import report_progress
-from celery_manager.config import CeleryManagerConfig
+from celery_manager.tasks import register_prune_task
 
 # This module is imported by the Celery WORKER process, which is where the
 # @celery_manager.track() tasks below actually execute — so this is the
@@ -19,11 +20,16 @@ from celery_manager.config import CeleryManagerConfig
 #
 # celery_manager.setup() is idempotent and does the whole job (engine +
 # create_all + handing the decorator a session factory).
-celery_manager.setup(CeleryManagerConfig(
-    celery_app=celery_app,
-    db_url=settings.CELERY_MANAGER_DB_URL,
-    secret_key=settings.CELERY_MANAGER_SECRET_KEY,
-))
+#
+# The config itself lives in demo/cm.py so the dashboard, this worker and the
+# events process all share one.
+session_factory = celery_manager.setup(cm_config)
+
+
+# Opt-in retention: a daily beat entry ("celery-manager-prune", 03:00) that
+# deletes runs older than the retention rules (see `demo_setup`, which sets
+# 30 days, failed runs 90).
+register_prune_task(celery_app, cm_config, schedule=crontab(hour=3, minute=0))
 
 logger = logging.getLogger(__name__)
 
@@ -87,3 +93,57 @@ def send_report(self):
         raise RuntimeError("report generator flaked (demo failure)")
     time.sleep(2)
     return "report sent"
+
+
+@shared_task(bind=True)
+@celery_manager.track(schedule_name="heartbeat-every-minute")
+def heartbeat(self):
+    """Beat runs this every minute and it never fails: the easy way to see
+    missed runs (stop beat), maintenance windows and schedule edits."""
+    logger.info("heartbeat")
+    time.sleep(0.2)
+    return "ok"
+
+
+@shared_task(
+    bind=True,
+    autoretry_for=(ConnectionError,),
+    max_retries=2,
+    retry_kwargs={"countdown": 3},
+)
+@celery_manager.track(schedule_name="sync-inventory-every-5-minutes")
+def sync_inventory(self):
+    """Fails about 40% of the time with a ConnectionError. Celery retries it
+    twice; a run that fails all three times ends as a dead letter, and the
+    retry chain shows on the run's detail page."""
+    logger.info("syncing inventory (attempt %s)", self.request.retries + 1)
+    time.sleep(1)
+    if random.random() < 0.4:
+        raise ConnectionError("inventory API refused the connection (demo failure)")
+    return "inventory synced"
+
+
+@shared_task(bind=True)
+@celery_manager.track()
+def charge_card(self, customer_id: int, amount: int):
+    """Declines anything over 500. Find the failed run under Dead letters,
+    choose "edit arguments and run again", give it a smaller amount and it
+    succeeds."""
+    logger.info("charging customer %s %s", customer_id, amount)
+    time.sleep(0.5)
+    if amount > 500:
+        raise ValueError(f"card declined: {amount} is over the 500 limit for customer {customer_id}")
+    return f"charged customer {customer_id} {amount}"
+
+
+@shared_task(bind=True)
+@celery_manager.track()
+def rebuild_search_index(self, pages: int = 40):
+    """Slow, with a known total, and routed to the "reports" queue (see
+    CELERY_TASK_ROUTES in settings.py). A burst of these backs the queue up,
+    which is what the queue-backlog alert and the Queues page show."""
+    logger.info("rebuilding the search index, %s pages", pages)
+    for page in range(1, pages + 1):
+        time.sleep(1)
+        report_progress(page, pages, f"page {page} of {pages}")
+    return f"indexed {pages} pages"

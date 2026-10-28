@@ -25,9 +25,14 @@ from celery_manager.api.app import (
     unclassified_write_routes,
 )
 from celery_manager.api.deps import require_role
+from celery_manager.api.routes import deadletters as deadletter_routes
+from celery_manager.api.routes import delayed as delayed_routes
+from celery_manager.api.routes import maintenance as maintenance_routes
 from celery_manager.api.routes import queues as queue_routes
+from celery_manager.api.routes import rabbitmq as rabbitmq_routes
 from celery_manager.api.routes import schedules as schedule_routes
 from celery_manager.api.routes import tasks as task_routes
+from celery_manager.api.routes import unacked as unacked_routes
 from celery_manager.api.routes import workers as worker_routes
 from celery_manager.auth.roles import ROLES, role_allows, validate_role
 from celery_manager.auth.users import create_user, get_user_role, set_user_role
@@ -40,11 +45,19 @@ from celery_manager.db.models import AuditLog, User
 # (method, path, json body, minimum role). One entry per state-changing route;
 # `test_matrix_covers_every_state_changing_route` keeps it complete.
 WRITE_ROUTES = [
+    ("POST", "/api/auth/bridge", None, "viewer"),
+    ("POST", "/api/schedules", {"name":"example", "task":"demo.echo", "schedule":{"type":"interval","seconds":60}}, "admin"),
+    ("PATCH", "/api/schedules/nightly", {"enabled":False}, "operator"),
+    ("DELETE", "/api/schedules/nightly", None, "admin"),
+    ("POST", "/api/schedules/preview", {"type":"interval","seconds":60}, "viewer"),
+    ("POST", "/api/schedules/nightly/skip-next", None, "operator"),
+    ("POST", "/api/schedules/nightly/run-now", None, "operator"),
     ("POST", "/api/tasks/start", {"task_name": "demo.echo"}, "operator"),
     ("POST", "/api/tasks/t1/cancel", None, "operator"),
     ("POST", "/api/tasks/t1/retry", None, "operator"),
     ("POST", "/api/tasks/retry-bulk", {"task_ids": ["t1"]}, "operator"),
     ("POST", "/api/tasks/cancel-bulk", {"task_ids": ["t1"]}, "operator"),
+    ("POST", "/api/dead-letters/rerun", {"task_ids": ["t1"]}, "operator"),
     (
         "POST",
         "/api/schedules/nightly/occurrences/pause",
@@ -53,6 +66,23 @@ WRITE_ROUTES = [
     ),
     ("POST", "/api/schedules/nightly/pause", None, "operator"),
     ("POST", "/api/schedules/nightly/resume", None, "operator"),
+    ("POST", "/api/schedules/nightly/preview", {"type": "interval", "seconds": 60}, "viewer"),
+    ("PUT", "/api/schedules/nightly/schedule", {"type": "interval", "seconds": 60}, "operator"),
+    ("DELETE", "/api/schedules/nightly/schedule", None, "operator"),
+    (
+        "POST",
+        "/api/maintenance-windows",
+        {"name": "w", "days_of_week": [6], "start_time": "02:00", "duration_minutes": 120},
+        "operator",
+    ),
+    ("PUT", "/api/maintenance-windows/1", {"name": "w"}, "operator"),
+    ("DELETE", "/api/maintenance-windows/1", None, "operator"),
+    (
+        "POST",
+        "/api/maintenance-windows/preview",
+        {"days_of_week": [6], "start_time": "02:00", "duration_minutes": 120},
+        "viewer",
+    ),
     ("POST", "/api/workers/w1/pool/grow", None, "operator"),
     ("POST", "/api/workers/w1/pool/shrink", None, "operator"),
     ("POST", "/api/workers/w1/queues/add", {"queue": "q"}, "operator"),
@@ -63,29 +93,96 @@ WRITE_ROUTES = [
         {"task_name": "demo.echo", "rate_limit": "10/m"},
         "operator",
     ),
+    ("POST", "/api/delayed/cancel", {"task_ids": ["t1"]}, "operator"),
+    ("POST", "/api/queues/unacked/restore", {"tags": ["tag-1"]}, "operator"),
     ("POST", "/api/workers/w1/shutdown", None, "admin"),
     ("POST", "/api/queues/celery/purge", None, "admin"),
+    ("DELETE", "/api/queues/celery/messages/t1", None, "admin"),
+    ("POST", "/api/queues/celery/messages/t1/move", {"target": "other"}, "admin"),
+    ("POST", "/api/rabbitmq/dlqs/celery.dlq/requeue", {}, "admin"),
     ("PUT", "/api/settings", {"brand_name": "Acme"}, "admin"),
+    ("PUT", "/api/settings/retention", {"default_days": None}, "admin"),
+    ("POST", "/api/settings/retention/preview", {}, "viewer"),
+    (
+        "POST",
+        "/api/users",
+        {"username": "newbie", "password": "long-enough-pw", "role": "viewer"},
+        "admin",
+    ),
+    ("PATCH", "/api/users/viewer", {"role": "viewer"}, "admin"),
+    ("POST", "/api/users/ghost/password", {"generate": True}, "admin"),
+    ("DELETE", "/api/users/ghost", None, "admin"),
+    # Alerts: an unknown kind (422) or made-up ids (404), so an allowed role
+    # gets past the check without creating anything.
+    ("POST", "/api/alerts/rules", {"name": "r", "kind": "bogus"}, "admin"),
+    ("PATCH", "/api/alerts/rules/999", {"enabled": False}, "admin"),
+    ("DELETE", "/api/alerts/rules/999", None, "admin"),
+    ("POST", "/api/alerts/channels", {"name": "c", "kind": "bogus"}, "admin"),
+    ("PATCH", "/api/alerts/channels/999", {"name": "x"}, "admin"),
+    ("DELETE", "/api/alerts/channels/999", None, "admin"),
+    ("POST", "/api/alerts/channels/999/test", None, "admin"),
+    # A too-short new password: past the role check (so allowed for every
+    # role) without changing anything.
+    (
+        "POST",
+        "/api/me/password",
+        {"current_password": "pw", "new_password": "short"},
+        "viewer",
+    ),
 ]
 
 # The same matrix by route template, as the app declares it.
 ROUTE_ROLES = {
+    ("POST", "/api/auth/bridge"): "viewer",
+    ("POST", "/api/schedules"): "admin",
+    ("PATCH", "/api/schedules/{name}"): "operator",
+    ("DELETE", "/api/schedules/{name}"): "admin",
+    ("POST", "/api/schedules/preview"): "viewer",
+    ("POST", "/api/schedules/{name}/skip-next"): "operator",
+    ("POST", "/api/schedules/{name}/run-now"): "operator",
     ("POST", "/api/tasks/start"): "operator",
     ("POST", "/api/tasks/{task_id}/cancel"): "operator",
     ("POST", "/api/tasks/{task_id}/retry"): "operator",
     ("POST", "/api/tasks/retry-bulk"): "operator",
     ("POST", "/api/tasks/cancel-bulk"): "operator",
+    ("POST", "/api/dead-letters/rerun"): "operator",
     ("POST", "/api/schedules/{name}/occurrences/pause"): "operator",
     ("POST", "/api/schedules/{name}/pause"): "operator",
     ("POST", "/api/schedules/{name}/resume"): "operator",
+    ("POST", "/api/schedules/{name}/preview"): "viewer",
+    ("PUT", "/api/schedules/{name}/schedule"): "operator",
+    ("DELETE", "/api/schedules/{name}/schedule"): "operator",
+    ("POST", "/api/maintenance-windows"): "operator",
+    ("PUT", "/api/maintenance-windows/{window_id}"): "operator",
+    ("DELETE", "/api/maintenance-windows/{window_id}"): "operator",
+    ("POST", "/api/maintenance-windows/preview"): "viewer",
     ("POST", "/api/workers/{worker}/pool/grow"): "operator",
     ("POST", "/api/workers/{worker}/pool/shrink"): "operator",
     ("POST", "/api/workers/{worker}/queues/add"): "operator",
     ("POST", "/api/workers/{worker}/queues/cancel"): "operator",
     ("POST", "/api/tasks/rate-limit"): "operator",
+    ("POST", "/api/delayed/cancel"): "operator",
+    ("POST", "/api/queues/unacked/restore"): "operator",
     ("POST", "/api/workers/{worker}/shutdown"): "admin",
     ("POST", "/api/queues/{name}/purge"): "admin",
+    ("DELETE", "/api/queues/{name}/messages/{task_id}"): "admin",
+    ("POST", "/api/queues/{name}/messages/{task_id}/move"): "admin",
+    ("POST", "/api/rabbitmq/dlqs/{name}/requeue"): "admin",
     ("PUT", "/api/settings"): "admin",
+    ("PUT", "/api/settings/retention"): "admin",
+    ("POST", "/api/settings/retention/preview"): "viewer",
+    ("POST", "/api/users"): "admin",
+    ("PATCH", "/api/users/{target}"): "admin",
+    ("POST", "/api/users/{target}/password"): "admin",
+    ("DELETE", "/api/users/{target}"): "admin",
+    ("POST", "/api/me/password"): "viewer",
+    ("POST", "/api/alerts/rules"): "admin",
+    ("PATCH", "/api/alerts/rules/{rule_id}"): "admin",
+    ("DELETE", "/api/alerts/rules/{rule_id}"): "admin",
+    ("POST", "/api/alerts/channels"): "admin",
+    ("PATCH", "/api/alerts/channels/{channel_id}"): "admin",
+    ("DELETE", "/api/alerts/channels/{channel_id}"): "admin",
+    ("POST", "/api/alerts/channels/{channel_id}/test"): "admin",
 }
 
 READ_ROUTES = [
@@ -94,10 +191,20 @@ READ_ROUTES = [
     "/api/tasks/t1",
     "/api/tasks/t1/workflow",
     "/api/tasks/export?format=csv",
+    "/api/dead-letters",
     "/api/schedules",
+    "/api/maintenance-windows",
     "/api/audit",
+    "/api/settings/retention",
     "/api/analytics/overview",
     "/api/analytics/failures",
+    "/api/alerts/rules",
+    "/api/alerts/channels",
+    "/api/alerts/incidents",
+    "/api/queues/celery/history",
+    "/api/rabbitmq/overview",
+    "/api/rabbitmq/dlqs",
+    "/api/rabbitmq/dlqs/celery.dlq/messages",
 ]
 
 # Control functions the write routes call; stubbed so an allowed request
@@ -110,9 +217,21 @@ _STUBBED = {
         "bulk_retry",
         "bulk_cancel",
     ],
-    schedule_routes: ["pause_occurrence", "pause_schedule", "resume_schedule"],
+    deadletter_routes: ["rerun_with_arguments"],
+    schedule_routes: [
+        "pause_occurrence",
+        "pause_schedule",
+        "resume_schedule",
+        "preview_schedule",
+        "edit_schedule",
+        "revert_schedule",
+    ],
+    maintenance_routes: ["create_window", "update_window", "delete_window"],
     worker_routes: ["shutdown_worker", "resize_pool", "set_consumer", "set_rate_limit"],
-    queue_routes: ["purge_queue"],
+    queue_routes: ["purge_queue", "delete_message", "move_message"],
+    delayed_routes: ["cancel_delayed_tasks"],
+    unacked_routes: ["restore_unacked"],
+    rabbitmq_routes: ["requeue_dlq"],
 }
 
 
@@ -206,7 +325,8 @@ def test_refused_actions_never_reach_the_control_layer(shared, stubbed, role):
     if role == "viewer":
         assert called == []
     elif role == "operator":
-        assert "shutdown_worker" not in called and "purge_queue" not in called
+        assert not {"shutdown_worker", "purge_queue", "delete_message", "move_message"} & set(called)
+        assert "requeue_dlq" not in called
 
 
 @pytest.mark.parametrize("role", ROLES)
@@ -266,8 +386,8 @@ def test_whoami_and_login_return_the_role(make_app, role):
     app, _ = make_app()
     client = TestClient(app, base_url="https://testserver")
     login = client.post("/api/auth/login", json={"username": role, "password": "pw"})
-    assert login.json() == {"username": role, "role": role}
-    assert client.get("/api/whoami").json() == {"username": role, "role": role}
+    assert login.json() == {"username": role, "role": role, "source": "local"}
+    assert client.get("/api/whoami").json() == {"username": role, "role": role, "source": "local"}
 
 
 def test_role_change_applies_on_the_next_request(make_app):

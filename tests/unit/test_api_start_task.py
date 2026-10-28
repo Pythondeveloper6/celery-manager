@@ -32,7 +32,7 @@ def _registered_client():
             raise RuntimeError("no signature for you")
 
     app.tasks["demo.broken"] = Broken()
-    config = CeleryManagerConfig(celery_app=app, db_url="sqlite:///:memory:", secret_key="test-secret")
+    config = CeleryManagerConfig(celery_app=app, db_url="sqlite:///:memory:", secret_key="test-secret", allow_queue_override=True)
     fastapi_app, session_factory = create_app(config)
     with session_factory() as session:
         create_user(session, "alice", "pw")

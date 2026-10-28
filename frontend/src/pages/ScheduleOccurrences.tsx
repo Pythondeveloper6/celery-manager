@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listOccurrences, listSchedules, pauseOccurrence, type Occurrence, type PauseAction, type ScheduleSummary } from "../api/schedules";
 import { IconChevronLeft } from "../components/icons";
+import { MissedRuns } from "../components/MissedRuns";
+import { ScheduleEditor } from "../components/ScheduleEditor";
 import { ScheduleToggle } from "../components/ScheduleToggle";
 import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 import { useCan } from "../lib/role";
@@ -55,6 +57,7 @@ export function ScheduleOccurrences() {
 
   const [schedule, setSchedule] = useState<ScheduleSummary | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!name) return;
@@ -73,6 +76,7 @@ export function ScheduleOccurrences() {
     setNotice(null);
     setSchedule(null);
     setToggleError(null);
+    setEditing(false);
     setRowErrors({});
     refresh();
   }, [refresh]);
@@ -94,6 +98,13 @@ export function ScheduleOccurrences() {
     setSchedule(updated);
     await refresh();
     flashNotice(updated.paused ? "Schedule paused" : "Schedule resumed");
+  }
+
+  async function handleEdited(updated: ScheduleSummary, message: string) {
+    setEditing(false);
+    setSchedule(updated);
+    await refresh();
+    flashNotice(message);
   }
 
   async function handlePause(o: Occurrence, action: "skip" | "cancel") {
@@ -140,11 +151,41 @@ export function ScheduleOccurrences() {
           <p className="cm-page-lede">
             Upcoming runs. Skipping or cancelling one leaves the schedule itself unchanged.
           </p>
+          {schedule && (
+            <p className="cm-schedule-edited">
+              Runs <code>{schedule.schedule_spec}</code>
+              {schedule.schedule_override && (
+                <>
+                  {" "}
+                  &middot; edited {formatPausedBy(schedule.edited_by, schedule.edited_at)}
+                  {!schedule.schedule_editing && " (not applied: schedule editing is off)"}
+                </>
+              )}
+            </p>
+          )}
         </div>
-        {schedule && !schedule.paused && (
-          <ScheduleToggle name={schedule.name} paused={false} size="md" onChange={handleToggled} onError={setToggleError} />
+        {schedule && (
+          <div className="cm-header-actions">
+            {canOperate && (
+              <button
+                type="button"
+                className="cm-btn cm-btn-outline"
+                onClick={() => setEditing(true)}
+                title={schedule.schedule_editing ? undefined : "Schedule editing is off. Open to preview or revert."}
+              >
+                Edit schedule
+              </button>
+            )}
+            {!schedule.paused && (
+              <ScheduleToggle name={schedule.name} paused={false} size="md" onChange={handleToggled} onError={setToggleError} />
+            )}
+          </div>
         )}
       </header>
+
+      {editing && schedule && (
+        <ScheduleEditor schedule={schedule} onClose={() => setEditing(false)} onSaved={handleEdited} />
+      )}
 
       {schedule?.paused && (
         <div className="cm-alert" role="status">
@@ -214,6 +255,11 @@ export function ScheduleOccurrences() {
                       Will be skipped
                     </span>
                   )}
+                  {o.maintenance_window && state !== "resolved" && (
+                    <span className="cm-occurrence-badge" data-action="skip" title="Skipped automatically by a maintenance window">
+                      Maintenance window: {o.maintenance_window}
+                    </span>
+                  )}
                   {state === "paused" && o.action && (
                     <span className="cm-occurrence-badge" data-action={o.action}>
                       {PAUSED_LABEL[o.action] ?? o.action}
@@ -255,6 +301,8 @@ export function ScheduleOccurrences() {
           })}
         </ul>
       )}
+
+      {name && <MissedRuns name={name} />}
     </div>
   );
 }

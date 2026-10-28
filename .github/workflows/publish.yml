@@ -1,20 +1,36 @@
 name: Publish
 
+# Only a successful CI run for a push to main can start publishing.
+# The checkout is the exact commit CI tested, never a newer moving main.
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: publish-main
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      changed: ${{ steps.version.outputs.changed }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -23,32 +39,28 @@ jobs:
           python -m pip install build twine
           python -m build
           twine check --strict dist/*
-      - name: Determine and verify version
+      - name: Publish only a new version
         id: version
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          VERSION=$(python - <<'PY'
-          import glob, os
-          whl = os.path.basename(glob.glob("dist/*.whl")[0])
-          print(whl.split("-")[1])
-          PY
-          )
-          echo "Built version: $VERSION"
-          if [ "$EVENT_NAME" = "release" ]; then
-            if [ "$VERSION" != "${TAG_NAME#v}" ]; then
-              echo "Built version $VERSION does not match tag $TAG_NAME" >&2
-              exit 1
-            fi
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          python - <<'PYTHON'
+          import os, pathlib, subprocess, tomllib
+          current = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          previous = tomllib.loads(subprocess.check_output(["git", "show", "HEAD^:pyproject.toml"], text=True))["project"]["version"]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              from packaging.version import Version
+              if current != previous and Version(current) <= Version(previous):
+                  raise SystemExit("Release version must increase")
+              print(f"version={current}", file=output)
+              print(f"changed={str(current != previous).lower()}", file=output)
+          print(f"Version: {previous} -> {current}; publish={current != previous}")
+          PYTHON
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
   testpypi:
+    if: needs.build.outputs.changed == 'true'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -64,6 +76,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
 
   verify-testpypi:
     needs: [build, testpypi]
@@ -104,21 +117,5 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
-
-  attach:
-    needs: pypi
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
         with:
-          name: dist
-          path: dist/
-      - name: Attach to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" dist/* --clobber
+          skip-existing: true

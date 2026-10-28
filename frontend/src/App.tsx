@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { HashRouter, Link, Route, Routes } from "react-router-dom";
-import { whoami, type CurrentUser } from "./api/client";
-import { RoleContext } from "./lib/role";
+import {
+  DEFAULT_AUTH_OPTIONS,
+  getAuthOptions,
+  NoAccessError,
+  whoami,
+  type AuthOptions,
+  type CurrentUser,
+} from "./api/client";
+import { AuthOptionsContext, SourceContext } from "./lib/auth";
+import { RoleContext, UsernameContext } from "./lib/role";
 import { BrandMark, useBranding } from "./branding";
 import { AppShell } from "./components/AppShell";
-import { Login } from "./pages/Login";
+import { Login, NoAccess } from "./pages/Login";
 import { TaskList } from "./pages/TaskList";
 import { TaskDetail } from "./pages/TaskDetail";
+import { DeadLetters } from "./pages/DeadLetters";
 import { ScheduleList } from "./pages/ScheduleList";
 import { ScheduleOccurrences } from "./pages/ScheduleOccurrences";
 import { AuditLog } from "./pages/AuditLog";
@@ -15,6 +24,11 @@ import { Insights } from "./pages/Insights";
 import { TaskOverview } from "./pages/TaskOverview";
 import { Workers } from "./pages/Workers";
 import { Queues } from "./pages/Queues";
+import { QueueMessages } from "./pages/QueueMessages";
+import { HeldTasks } from "./pages/HeldTasks";
+import { RabbitDeadLetters } from "./pages/RabbitDeadLetters";
+import { Users } from "./pages/Users";
+import { Alerts } from "./pages/Alerts";
 
 // Unmatched hash paths render a real page inside the shell rather than a
 // blank body, which reads as a broken app rather than a bad URL.
@@ -40,19 +54,31 @@ function NotFound() {
 export function App() {
   const { settings } = useBranding();
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [authOptions, setAuthOptions] = useState<AuthOptions>(DEFAULT_AUTH_OPTIONS);
   const [checked, setChecked] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
+  // The host app signed this person in but gave them no role here.
+  const [noAccess, setNoAccess] = useState<string | null>(null);
 
   const runCheck = useCallback(() => {
     setChecked(false);
     setCheckError(null);
-    whoami()
-      .then((user) => {
+    setNoAccess(null);
+    // Together, so the login screen knows whether to show the password form
+    // or a "Sign in with <host>" link before it first paints.
+    Promise.all([whoami(), getAuthOptions()])
+      .then(([user, options]) => {
         setUser(user);
+        setAuthOptions(options);
         setChecked(true);
       })
-      .catch((err) => {
-        setCheckError(err instanceof Error ? err.message : "Could not reach the server.");
+      .catch(async (err) => {
+        if (err instanceof NoAccessError) {
+          setAuthOptions(await getAuthOptions());
+          setNoAccess(err.message);
+        } else {
+          setCheckError(err instanceof Error ? err.message : "Could not reach the server.");
+        }
         setChecked(true);
       });
   }, []);
@@ -62,6 +88,8 @@ export function App() {
   }, [runCheck]);
 
   if (!checked) return null;
+
+  if (noAccess) return <NoAccess message={noAccess} options={authOptions} onRetry={runCheck} />;
 
   if (checkError) {
     return (
@@ -90,7 +118,7 @@ export function App() {
     );
   }
 
-  if (!user) return <Login onSuccess={setUser} />;
+  if (!user) return <Login options={authOptions} onSuccess={setUser} onRetry={runCheck} />;
 
   // HashRouter, not BrowserRouter: the backend serves the built SPA via a
   // plain StaticFiles(html=True) mount with no catch-all fallback route, so
@@ -101,11 +129,17 @@ export function App() {
   // the "#".
   return (
     <HashRouter>
+      <AuthOptionsContext.Provider value={authOptions}>
+      <SourceContext.Provider value={user.source}>
       <RoleContext.Provider value={user.role}>
+        {/* "You" on the Users page means your local account. Someone the
+            host signed in is not the local account that shares their name. */}
+        <UsernameContext.Provider value={user.source === "local" ? user.username : null}>
         <AppShell username={user.username} role={user.role} onSignedOut={() => setUser(null)}>
           <Routes>
             <Route path="/" element={<TaskList />} />
             <Route path="/tasks/:taskId" element={<TaskDetail />} />
+            <Route path="/dead-letters" element={<DeadLetters />} />
             <Route path="/schedules" element={<ScheduleList />} />
             <Route path="/schedules/:name" element={<ScheduleOccurrences />} />
             <Route path="/audit" element={<AuditLog />} />
@@ -114,10 +148,18 @@ export function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/workers" element={<Workers />} />
             <Route path="/queues" element={<Queues />} />
+            <Route path="/queues/:name" element={<QueueMessages />} />
+            <Route path="/held" element={<HeldTasks />} />
+            <Route path="/rabbitmq/dead-letters" element={<RabbitDeadLetters />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/alerts" element={<Alerts />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppShell>
+        </UsernameContext.Provider>
       </RoleContext.Provider>
+      </SourceContext.Provider>
+      </AuthOptionsContext.Provider>
     </HashRouter>
   );
 }

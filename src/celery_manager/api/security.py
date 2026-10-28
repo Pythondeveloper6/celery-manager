@@ -84,8 +84,17 @@ class SecurityMiddleware:
     can't set that header without a CORS preflight this app never approves.
     """
 
-    def __init__(self, app):
+    def __init__(self, app, trusted_origins=(), frame_ancestors=()):
         self.app = app
+        for origin in (*trusted_origins, *frame_ancestors):
+            parts = urlsplit(origin)
+            if (parts.scheme not in ("https", "http") or not parts.netloc or parts.username
+                    or parts.path not in ("", "/") or parts.query or parts.fragment
+                    or not origin.isascii() or any(c in origin for c in " ;'\"\r\n")):
+                raise ValueError("Configure explicit http(s) origins without paths")
+        self.trusted_origins = {o.rstrip("/") for o in trusted_origins}
+        self.security_headers = ([(b"content-security-policy", ("frame-ancestors " + " ".join(frame_ancestors)).encode())]
+                                 if frame_ancestors else _SECURITY_HEADERS)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -100,19 +109,24 @@ class SecurityMiddleware:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 present = {name.lower() for name, _ in headers}
-                headers.extend((name, value) for name, value in _SECURITY_HEADERS if name not in present)
+                headers.extend((name, value) for name, value in self.security_headers if name not in present)
                 message = {**message, "headers": headers}
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
 
-    @staticmethod
-    def _origin_allowed(scope) -> bool:
+    def _origin_allowed(self, scope) -> bool:
         headers = {}
         for name, value in scope.get("headers", []):
             headers.setdefault(name.lower(), value.decode("latin-1"))
         origin = headers.get(b"origin")
         if origin is None:
+            return True
+        # A bearer-only request carries no ambient dashboard credential.
+        authorization = headers.get(b"authorization", "")
+        if authorization.lower().startswith("bearer ") and not headers.get(b"cookie"):
+            return True
+        if origin in self.trusted_origins:
             return True
         parts = urlsplit(origin)
         # `Origin: null` (sandboxed iframes, file://, some redirects) has no

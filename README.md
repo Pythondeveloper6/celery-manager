@@ -106,6 +106,10 @@ without touching your beat schedule or restarting anything.
 </tr>
 </table>
 
+Production adoption: the [0.2 guide](docs/production.md) covers external schedulers,
+OIDC, dispatch policies, bounded logs/results and storage isolation. The
+[requirements roadmap](docs/roadmap.md) tracks the real-project review and follow-ups.
+
 ## What you get
 
 - **Task visibility** — every task run (decorated or not) with status, args,
@@ -266,6 +270,16 @@ are in [`CHANGELOG.md`](https://github.com/Pythondeveloper6/celery-manager/blob/
 
 A complete runnable Django example is in
 [`examples/django_demo/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo/).
+
+## Roadmap
+
+Shipped in 0.1.0a5: alerts, missed-run detection,
+Prometheus/OpenTelemetry metrics, sign-in with your app's users, user management in the
+dashboard, editing schedules from the UI, maintenance windows, a dead-letter view and
+data retention; and for Redis and RabbitMQ: broker health, queue wait time and depth
+history, delayed and stuck tasks, browsing waiting messages, and RabbitMQ management
+and dead-letter queues.
+[Read the roadmap →](https://pythondeveloper6.github.io/celery-manager/roadmap/)
 
 ## Requirements
 

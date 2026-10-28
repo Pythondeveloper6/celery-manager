@@ -1,0 +1,100 @@
+/* Maintenance windows section (components/MaintenanceWindows.tsx) and the
+   per-schedule chip. Builds on users.css (modal) and schedule-editor.css
+   (preview box). Tokens only. */
+
+.cm-mw {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+  margin-top: var(--cm-space-6);
+}
+
+.cm-mw-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+}
+
+.cm-mw-sub {
+  display: block;
+}
+
+.cm-mw-actions {
+  display: flex;
+  gap: var(--cm-space-2);
+}
+
+/* The form is wider than the other dialogs: a day row and a schedule list. */
+.cm-modal:has(.cm-mw-form) {
+  width: min(34rem, 100%);
+}
+
+.cm-mw-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cm-mw-legend {
+  padding: 0;
+  margin-bottom: var(--cm-space-1);
+  font-size: var(--cm-text-md);
+  font-weight: 500;
+}
+
+.cm-mw-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cm-space-1);
+}
+
+/* Doubled class: .cm-btn-outline in tokens.css can load after this file. */
+.cm-mw-day.cm-mw-day[aria-pressed="true"] {
+  background: var(--cm-color-primary);
+  color: var(--cm-color-primary-foreground);
+  border-color: var(--cm-color-primary);
+}
+
+.cm-mw-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--cm-space-3);
+}
+
+.cm-mw-duration {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--cm-space-2);
+}
+
+.cm-mw-check {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-2);
+  font-size: var(--cm-text-md);
+}
+
+.cm-mw-schedules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  max-height: 10rem;
+  overflow-y: auto;
+  padding: var(--cm-space-2);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-mw-active {
+  --cm-status-color: var(--cm-color-status-started);
+}
+
+/* Chip in the schedules table and on a schedule's occurrences. */
+.cm-badge.cm-mw-chip {
+  margin-left: var(--cm-space-2);
+}

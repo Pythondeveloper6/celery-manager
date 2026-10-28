@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "celery-manager"
-version = "0.1.0a5"
+version = "0.2.0a1"
 description = "A dashboard and control API for Celery background tasks."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -61,13 +61,20 @@ Issues = "https://github.com/Pythondeveloper6/celery-manager/issues"
 Changelog = "https://github.com/Pythondeveloper6/celery-manager/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+django = ["Django>=4.2,<7"]
+oidc = ["PyJWT[crypto]>=2.8,<3"]
+redbeat = ["celery-redbeat>=2.3,<3"]
+django-beat = ["django-celery-beat>=2.6,<3"]
+mssql = ["pyodbc>=5,<6"]
 # uvicorn is only needed to *serve* celery-manager standalone (the demo's
 # run_dashboard.py, `uvicorn your_module:app`). Mounting the app into an
 # existing ASGI stack doesn't need it, so it isn't a core dependency.
 # Flask is WSGI; a2wsgi bridges the ASGI dashboard into it. See docs/integrations.md.
 flask = ["a2wsgi>=1.10", "flask>=3.0"]
 standalone = ["uvicorn>=0.29"]
-dev = ["pytest>=8.0", "httpx>=0.27", "ruff>=0.17,<0.18", "uvicorn>=0.29", "flask>=3.0", "a2wsgi>=1.10"]
+# Only for celery_manager.metrics.otel; the /metrics endpoint needs nothing extra.
+otel = ["opentelemetry-api>=1.20"]
+dev = ["Django>=4.2,<7", "pytest>=8.0", "httpx>=0.27", "ruff>=0.17,<0.18", "uvicorn>=0.29", "flask>=3.0", "a2wsgi>=1.10"]
 docs = ["mkdocs-material>=9.5"]
 
 [project.scripts]

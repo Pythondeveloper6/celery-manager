@@ -6,14 +6,117 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
-## [0.1.0a5] — 2026-10-27
+## [0.2.0a1] — 2026-10-28
 
-Run the migrations after upgrading (`0006` and `0007`; automatic unless
-`auto_migrate=False`). To get exact skip matching, run beat with
-`-S celery_manager.beat:Scheduler`.
+One combined production-adoption alpha. Run migrations through `0014` before
+starting application processes, or leave automatic migrations enabled. See
+[production adoption](docs/production.md) and the
+[requirements roadmap](docs/roadmap.md) for configuration and remaining gaps.
 
 ### Added
 
+- Pluggable schedule discovery and CRUD: static, RedBeat and Django Celery Beat
+  backends, lazy optional extras, runtime refresh, preserved removed-entry
+  history, and before/after change audits. Create with natural-language or cron
+  preview in the dashboard; edit timing, delete with confirmation, skip-next
+  and run-now. Advanced argument/options edits are available through PATCH.
+- Stamping schedulers for RedBeat and Django Celery Beat, plus `schedule_from`
+  and `consume_kwargs` for migration from host-provided identity arguments.
+- Deterministic English schedule parsing and optional host-provided AI parsing,
+  with strict schedule validation and preview.
+- OIDC bearer/JWKS authentication, a provider chain alongside existing host
+  authenticators, stable audit subjects, an opt-in short session bridge,
+  configurable session lifetimes, explicit trusted origins and frame ancestors.
+- Configurable dispatch allowlists, strict Pydantic argument schemas, queue
+  override restrictions and retry argument-edit policy shared by task starts,
+  retries, failed-run reruns and schedule run-now. Denials are audited.
+- Bounded log capture with head/tail retention, explicit truncation, logger and
+  level filters, redaction, task-context/thread isolation and log read roles.
+- Bounded task results, result opt-out, listener fallback and task-detail display.
+- Public task-link helper and optional producer hook with after-publish queued
+  recording and initiator headers. Unrecorded deep links wait and recover.
+- Explicit polling mode for WSGI; no stream endpoint or EventSource loop in that mode.
+- Worker event enabling at listener startup and every minute, with an opt-out.
+- SQLAlchemy schema isolation and engine options, SQL Server migration/range
+  locking and UTC server defaults. Schema-aware migration, prune and user CLI.
+- Durable last-seen worker state, advisory stuck/lost-run health, optional beat
+  heartbeat health, and Microsoft Teams Workflows alert channels.
+- Optional-adapter CI and live PostgreSQL/MySQL/SQL Server storage contracts.
+  These integrations require their CI and real-application gates; local SQL
+  compilation alone does not establish live backend compatibility.
+
+### Changed
+
+- Only registered user tasks can be dispatched by default. Queue overrides now
+  require `allow_queue_override=True`. An empty `startable_tasks` disables dispatch.
+- Cancelling an unknown task ID returns 404; explicit forced cancellation is admin-only.
+- Reversed `@track` / `@app.task` placement raises a clear import-time error.
+- CI and docs run after changes reach main. Publishing follows successful main CI,
+  checks the exact tested commit and requires a version increase. PR, manual and
+  release-event triggers are removed.
+- Existing `celery_manager.beat:DatabaseScheduler` keeps its static-editing meaning;
+  the Django integration is `celery_manager.beat:DjangoDatabaseScheduler`.
+
+
+## [0.1.0a5] — 2026-10-28
+
+Run the migrations after upgrading (`0006` to `0011`; automatic unless
+`auto_migrate=False`). To get exact skip matching, run beat with
+`-S celery_manager.beat:Scheduler`. Everyone is signed out once: session
+cookies now carry a password fingerprint, and older cookies have none.
+
+### Added
+
+- **Alerts.** Rules for a task's failure rate, a queue backlog, a worker
+  going offline or a periodic task missing its run, each sent to Slack, a
+  webhook (signed with `X-Celery-Manager-Signature` when it has a secret) or
+  email. One message per incident, a quiet period, and an optional
+  "resolved" message; safe with several evaluators on one database. Run the
+  evaluator with `celery-manager alerts` or `celery-manager events
+  --with-alerts`. New Alerts page, `/api/alerts/*` routes (writes are
+  admin), migration `0009`, and config options `dashboard_url`, `smtp_*`,
+  `alert_email_from`, `alert_send_timeout_seconds` and
+  `alert_interval_seconds`. See `docs/alerts.md`.
+- **Missed-run detection.** Scheduled runs that were due but never arrived,
+  judged from beat's occurrence stamps: a "Missed runs" section on each
+  schedule, a count on the schedule list, `GET /api/schedules/{name}/missed`
+  and `missed_count` on `GET /api/schedules`. New
+  `missed_run_grace_seconds` (default 300).
+- **Prometheus metrics and OpenTelemetry.** `GET /metrics`, off until
+  `metrics_token` is set, then behind `Authorization: Bearer`. Stored runs by
+  task and status, a 15-minute runtime histogram and failure ratio, queue
+  depth, workers online and missed runs. Optional `otel` extra with
+  `celery_manager.metrics.otel.register()`. See `docs/metrics.md`.
+- **Sign in with your app's users.** `authenticate_request` on the config,
+  with ready-made `django_authenticator()` and `flask_authenticator()` in
+  `celery_manager.integrations` that map host users to roles. Also
+  `local_login_enabled`, `login_url`, `logout_url` and
+  `login_provider_name`, and `GET /api/auth/options`. See
+  `docs/integrations.md`.
+- **User management in the dashboard.** An admin-only Users page and
+  `/api/users` routes to add users, change roles, reset passwords and delete
+  accounts, with the last admin protected. Every account can change its own
+  password (`POST /api/me/password`). A password change ends that account's
+  other sessions.
+- **Edit schedules from the dashboard.** Change a crontab or interval, with
+  the next five runs previewed before saving, and revert to the code's
+  schedule. Opt in with `schedule_editing=True` and run beat with
+  `-S celery_manager.beat:DatabaseScheduler` (it reads
+  `celery_manager_db_url` from the Celery config). Migration `0008`. See
+  `docs/schedules.md`.
+- **Maintenance windows.** Skip chosen schedules (or all) on a recurring
+  window, e.g. Sundays 02:00 for two hours, in any IANA timezone. Runs inside
+  a window are recorded as skipped with a reason; nothing needs resuming.
+  Migration `0010` (also adds `task_runs.skip_reason`, now set for pauses and
+  single-run skips too).
+- **Dead-letter view.** Failed runs nobody has retried, grouped by task and
+  exception, with "edit arguments and run again" for one run or many
+  (`GET /api/dead-letters`, `POST /api/dead-letters/rerun`, operator).
+- **Data retention.** Delete runs after a number of days, with per-task
+  overrides, a longer period for failed runs and an optional audit-log
+  period, set on the Settings page. Nothing is deleted until you set it.
+  Prune with `celery-manager prune [--dry-run]` or the opt-in task from
+  `celery_manager.tasks.register_prune_task()`. See `docs/retention.md`.
 - **Explicit occurrence identity for skips.** New beat scheduler
   `celery_manager.beat:Scheduler` (and `StampOccurrencesMixin` for custom
   schedulers) stamps each beat message with `cm_schedule` and
@@ -42,6 +145,61 @@ Run the migrations after upgrading (`0006` and `0007`; automatic unless
   route doesn't declare a role, so a new route can't be left open to
   viewers by accident.
 
+- **Broker health.** A Broker panel on the Queues page and
+  `GET /api/broker/health`: on Redis, latency, version, memory against
+  `maxmemory`, the eviction policy (a warning for anything but
+  `noeviction`, which can silently drop queued tasks), clients, evicted
+  keys and persistence; on RabbitMQ, latency and server version. The URL's
+  password is masked. New metrics and two alert kinds, `broker_unreachable`
+  and `broker_memory`.
+- **Queue wait time.** How long runs waited in the queue before a worker
+  started them (time waiting for an ETA or countdown left out), as p50/p95
+  per queue on the Queues page, "waited Xs" on a run, a line on a task's
+  Insights page, `celery_manager_queue_wait_seconds`, and a `queue_wait`
+  alert kind. The events listener now records `sent_at`, `received_at` and
+  `eta` (migration `0011`).
+- **Queue depth history.** The events listener samples queue depth every
+  `queue_sample_interval_seconds` (60 by default) into
+  `queue_depth_samples`, kept `queue_sample_retention_days` (14). Queue
+  sparklines show the last 24 hours, with a larger chart on click;
+  `GET /api/queues/{name}/history`; a `queue_growing` alert kind.
+- **Look inside a queue.** Click a queue's name to see the messages waiting
+  in it, in the order workers will take them, without taking them off.
+  Exact on Redis. On RabbitMQ it is approximate and off unless
+  `queue_browser_amqp=True`, because looking marks messages redelivered.
+  `queue_browser_show_args=False` hides arguments. On Redis an admin can
+  delete one waiting message or move it to another known queue (audited;
+  409 if a worker took it meanwhile).
+- **Held tasks.** A new page with two tabs. *Delayed*: every task workers
+  hold with an ETA or countdown, with a countdown, cancel and bulk cancel
+  (operator; the run is marked revoked and audited). *Stuck (Redis)*:
+  messages a worker took but never acknowledged, for example after a crash,
+  classed as running, held by a live worker or orphaned, with how long until
+  kombu redelivers them, and a restore (operator, audited) that refuses a
+  task a live worker is running. `GET /api/delayed`,
+  `POST /api/delayed/cancel`, `GET /api/queues/unacked`,
+  `POST /api/queues/unacked/restore`.
+- **RabbitMQ management integration.** Set `rabbitmq_management_url` (and
+  a user with the `monitoring` tag) to get consumers, ready and
+  unacknowledged messages, publish and deliver rates, queue type, max
+  priority and dead-letter settings per queue, plus node memory, disk and
+  alarms, on the Queues page and in `/metrics`. A `rabbitmq_alarm` alert
+  kind fires while any node has a memory or disk alarm. Credentials stay in
+  config and never appear in responses or logs.
+- **RabbitMQ dead-letter queues.** A page listing the queues things are
+  dead-lettered into (from queue arguments, policies and
+  `rabbitmq_dlq_patterns`), their messages with the `x-death` reason and
+  original queue (approximate: looking marks them redelivered), and an
+  admin-only requeue back to where each came from. A message is acked off
+  the dead-letter queue only after the broker confirmed the copy; one that
+  has died more than 3 times is refused unless forced. Audited as
+  `requeue_dead_letters`.
+- **Docker Compose demo.** `examples/django_demo` runs the whole stack with
+  `docker compose up`: Postgres, Redis (or RabbitMQ with a profile), worker,
+  beat, events listener, dashboard, Mailpit, a webhook sink, Prometheus
+  (profile) and generated traffic, with demo users, alert rules and a
+  maintenance window.
+
 ### Fixed
 
 - A skip or cancel no longer misses a firing that starts more than
@@ -53,6 +211,14 @@ Run the migrations after upgrading (`0006` and `0007`; automatic unless
 - Interval-schedule occurrences are anchored to beat's own send time when
   available, not the last run's start time, so queue delay and manual calls
   no longer shift them.
+
+- Prefork worker processes no longer share the database connection their
+  parent opened in `celery_manager.setup()`; on Postgres that caused
+  `ResourceClosedError`, wrong rows and slow tasks.
+- `register_prune_task(schedule=...)` no longer loses its beat entry when
+  Celery settings come from Django (`CELERY_BEAT_SCHEDULE`).
+- Queue depth on the filesystem transport shows as unavailable instead of
+  0, and purge there is refused with the reason.
 
 ### Changed
 
@@ -585,6 +751,7 @@ because anyone who pinned a git SHA during development *will* hit them.
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
 
+[0.2.0a1]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.2.0a1
 [0.1.0a5]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a5
 [0.1.0a4]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a4
 [0.1.0a3]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a3

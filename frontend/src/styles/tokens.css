@@ -1572,6 +1572,22 @@ kbd {
   width: 100%;
 }
 
+/* "or" between the password form and "Sign in with <host app>". */
+.cm-login-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--cm-space-3);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-login-divider::before,
+.cm-login-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--cm-color-border);
+}
+
 /* ==========================================================================
    Brand mark and logo
    ========================================================================== */

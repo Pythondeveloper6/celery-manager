@@ -1,0 +1,52 @@
+/* Data retention card on the Settings page. */
+.cm-retention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--cm-space-4, 1rem);
+}
+
+.cm-retention-days {
+  max-width: 10rem;
+}
+
+.cm-retention-overrides {
+  display: grid;
+  gap: var(--cm-space-2, 0.5rem);
+}
+
+.cm-retention-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2, 0.5rem);
+}
+
+.cm-retention-row .cm-select {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.cm-retention-row .cm-input {
+  width: 6rem;
+}
+
+.cm-retention-forever {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+
+.cm-retention-summary {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.cm-retention-summary dt {
+  font-weight: 600;
+}
+
+.cm-retention-summary dd {
+  margin: 0 0 0.5rem;
+}

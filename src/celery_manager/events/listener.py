@@ -136,7 +136,43 @@ def _merge_call_argument(existing: str | None, incoming, empty: str) -> str | No
     return _normalise_call_argument(incoming)
 
 
-def upsert_task_run(session, event: dict) -> None:
+def _event_time(event: dict) -> datetime | None:
+    """The event's own timestamp (Celery stamps every event with epoch
+    seconds, from the sender's clock), or None if it has none."""
+    value = event.get("timestamp")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        return datetime.fromtimestamp(value, timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _event_eta(event: dict) -> datetime | None:
+    """task-sent / task-received carry `eta` as an ISO string (None when the
+    task has no ETA or countdown)."""
+    value = event.get("eta")
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+
+
+def _earliest(current: datetime | None, incoming: datetime | None) -> datetime | None:
+    """Keep the earlier of two instants. SQLite hands stored datetimes back
+    naive (they were written as UTC), so both sides are made aware first."""
+    if incoming is None:
+        return current
+    if current is None:
+        return incoming
+    current_utc = current.replace(tzinfo=timezone.utc) if current.tzinfo is None else current
+    return incoming if incoming < current_utc else current
+
+
+def upsert_task_run(session, event: dict, config=None) -> None:
     """Apply a single Celery event to the task_runs table.
 
     Pure function over a SQLAlchemy session so it's testable without a
@@ -193,10 +229,38 @@ def upsert_task_run(session, event: dict) -> None:
         run.started_at = datetime.now(timezone.utc)
     if status_applied and event_type in ("task-succeeded", "task-failed"):
         run.finished_at = datetime.now(timezone.utc)
+    # Queue wait inputs. Merged outside the status guard on purpose: a
+    # task-sent processed after the worker already started the run is stale
+    # for *status* but its timestamp is exactly the fact we want. Earliest
+    # wins, so a duplicate or late event can never push the send time later
+    # (which would shrink the wait).
+    stamp = _event_time(event)
+    if event_type == "task-sent":
+        run.sent_at = _earliest(run.sent_at, stamp)
+    elif event_type == "task-received":
+        run.received_at = _earliest(run.received_at, stamp)
+    if event_type in ("task-sent", "task-received"):
+        eta = _event_eta(event)
+        if eta is not None:
+            run.eta = eta
+    elif event_type == "task-retried" and status_applied:
+        # A retry is a new attempt that reuses the task id: the first
+        # attempt's send time (and ETA) would make its wait look like the
+        # whole time since the original send. Forget them; the new attempt's
+        # task-received refills what it can, and a run with no send time is
+        # simply left out of wait statistics.
+        run.sent_at = None
+        run.received_at = None
+        run.eta = None
     if event.get("runtime") is not None:
         run.runtime_seconds = event["runtime"]
     if event.get("exception") is not None:
         run.exception = event["exception"]
+    if (status_applied and event_type == "task-succeeded" and "result" in event
+            and run.result_repr is None and (config is None or config.store_results)):
+        from celery_manager.logcapture import result_fields
+        for key, value in result_fields(event["result"], config).items():
+            setattr(run, key, value)
     if event.get("traceback") is not None:
         run.traceback = event["traceback"]
 
@@ -214,16 +278,49 @@ class EventListener:
         self._config = config
         self._session_factory = session_factory
 
-    def run(self) -> None:
+    def run(self, *, enable_events=True) -> None:
         app = self._config.celery_app
         state = app.events.State()
 
+        import logging
+        import threading
+        import time
+        log = logging.getLogger(__name__)
+        stop = threading.Event()
+        last_heartbeat = [time.monotonic()]
+
+        def enable():
+            try:
+                app.control.enable_events()
+            except Exception:
+                log.warning("celery-manager: could not enable worker events", exc_info=True)
+
+        def maintain():
+            while not stop.wait(60):
+                enable()
+                if time.monotonic() - last_heartbeat[0] > 120:
+                    log.warning("celery-manager: no worker heartbeat received in two minutes")
+
         def on_event(event):
+            if event.get("type") in ("worker-online", "worker-heartbeat"):
+                last_heartbeat[0] = time.monotonic()
             state.event(event)
             with self._session_factory() as session:
-                upsert_task_run(session, event)
+                from celery_manager.events.workers import record_worker_event
+                record_worker_event(session, event)
+                upsert_task_run(session, event, self._config)
                 session.commit()
 
-        with app.connection() as connection:
-            receiver = app.events.Receiver(connection, handlers={"*": on_event})
-            receiver.capture(limit=None, timeout=None, wakeup=True)
+        thread = None
+        if enable_events:
+            enable()
+            thread = threading.Thread(target=maintain, name="cm-enable-events", daemon=True)
+            thread.start()
+        try:
+            with app.connection() as connection:
+                receiver = app.events.Receiver(connection, handlers={"*": on_event})
+                receiver.capture(limit=None, timeout=None, wakeup=True)
+        finally:
+            stop.set()
+            if thread:
+                thread.join(timeout=1)

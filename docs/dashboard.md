@@ -39,6 +39,15 @@ unauthenticated. A simple username/password form:
   an actual login attempt is likewise kept out of the "invalid credentials"
   message.
 
+When your app signs people in (`authenticate_request`, see
+[Sign in with your app's users](integrations.md#sign-in-with-your-apps-users)),
+the screen adds a **Sign in with <your app>** link under the form, going to
+`login_url`; with `local_login_enabled=False` that link is all it shows. Someone
+your app signed in but gave no role sees a **No access** screen naming the
+account instead of the form, with **Sign out of <your app>** when `logout_url`
+is set. For them, the sidebar has no **Change password**, and **Sign out**
+goes to `logout_url` (or is absent without one).
+
 On success, the app switches straight to the task list; there's no
 separate "remember me" control — the session cookie lasts 7 days by
 default (see [Configuration](configuration.md#secret_key-in-production)).
@@ -330,6 +339,10 @@ The list is a pure read of the `periodic_schedules` table, which
 startup**. A schedule added to your beat config while the dashboard process
 is running will not appear until it restarts. Empty state: "No periodic
 schedules configured yet."
+
+A schedule edited from the dashboard shows the edited timing with
+"Edited by *user*, *time*" beside it (hover for what the code says). See
+[Editing schedules](schedules.md).
 
 ## Schedule occurrences (future-schedule view)
 

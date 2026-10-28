@@ -61,6 +61,7 @@ def _select_locked(session, task_id: str) -> TaskRun | None:
     return session.execute(
         select(TaskRun)
         .where(TaskRun.task_id == task_id)
+        .with_hint(TaskRun, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
         .with_for_update()
         .execution_options(populate_existing=True)
     ).scalar_one_or_none()

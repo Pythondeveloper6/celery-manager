@@ -102,6 +102,10 @@ def worker(db_url, monkeypatch):
     Session = _factory(db_url)
     app = Celery("live_updates_test", broker="memory://", backend="cache+memory://")
     app.conf.task_always_eager = True
+    # This fixture exercises legacy process-wide configure(factory), not an
+    # app-owned setup(config) runtime. Reset its paired config as well so a
+    # previously configured application cannot leak into fixture selection.
+    monkeypatch.setattr(decorator_module, "_config", None)
     monkeypatch.setattr(decorator_module, "_session_factory", Session)
     monkeypatch.setattr(decorator_module, "_eta_tolerance_seconds", 60)
     monkeypatch.setattr(progress_module, "_warned_no_task_id", False)

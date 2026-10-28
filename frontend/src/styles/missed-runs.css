@@ -1,0 +1,44 @@
+/* Missed runs section on the schedule page and the badge in the schedule
+   list. Tokens only, so light and dark both follow the theme. */
+
+.cm-missed-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-3);
+}
+
+.cm-missed-list {
+  max-width: var(--cm-measure);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cm-missed-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--cm-space-3);
+  padding: var(--cm-space-3) var(--cm-space-4);
+  border-bottom: 1px solid var(--cm-color-border);
+}
+
+.cm-missed-row:last-child {
+  border-bottom: 0;
+}
+
+.cm-missed-ago {
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-missed-badge {
+  --cm-status-color: var(--cm-color-danger);
+  margin-left: var(--cm-space-2);
+}
+
+/* .cm-badge draws a hollow dot; a missed run gets a filled one. */
+.cm-badge.cm-missed-badge::before {
+  background-color: var(--cm-status-color);
+  box-shadow: none;
+}

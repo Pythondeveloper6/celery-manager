@@ -1,16 +1,42 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from celery.schedules import maybe_schedule
 
 from celery_manager.control.audit import record as record_audit
+from celery_manager.control.maintenance import enabled_windows, windows_active_at
 from celery_manager.db.models import PeriodicSchedule, ScheduleOverride, TaskRun
-from celery_manager.occurrences import is_interval_schedule, next_occurrence_after
+from celery_manager.occurrences import (
+    CALENDAR_MATCH_WINDOW,
+    is_interval_schedule,
+    next_occurrence_after,
+)
+from celery_manager.schedule_specs import (
+    ScheduleSpecError,
+    build_schedule,
+    dump_spec,
+    load_spec,
+    spec_from_schedule,
+    validate_spec,
+)
+from celery_manager.schedulers.service import entries_for
+
+logger = logging.getLogger(__name__)
 
 
-def _entry_schedule(entry: dict):
+def _entry_schedule(entry: dict, override: str | None = None, app=None):
     """The `celery.schedules` object for one `beat_schedule` entry.
+
+    With `override` (a stored `PeriodicSchedule.schedule_override`, see
+    `effective_schedule`) the operator's edit wins over the code. This is
+    the one place a schedule object is made for projecting or matching
+    occurrences, so every reader agrees on which schedule is in force.
+    A stored edit that no longer parses (hand-written, or from a newer
+    version) is logged and ignored: the code's schedule is a better guess
+    than a 500. `app` only reaches an edit's own new schedule object (it
+    sets the crontab's timezone); see below for why the code's is left alone.
 
     Idiomatic Celery config lets `schedule` be a bare number of seconds or a
     `timedelta`, not just a `schedule()`/`crontab()` instance — Celery's own
@@ -26,7 +52,38 @@ def _entry_schedule(entry: dict):
     mutate `.app` on the host's long-lived, shared schedule objects, which
     `upcoming_occurrences` goes out of its way to avoid doing.
     """
+    if override:
+        try:
+            spec = load_spec(override)
+        except ScheduleSpecError:
+            logger.warning("celery-manager: ignoring an unreadable schedule edit: %r", override)
+        else:
+            if spec is not None:
+                try:
+                    return build_schedule(spec, app=app)
+                except ScheduleSpecError:
+                    logger.warning("celery-manager: ignoring an invalid schedule edit: %r", override)
     return maybe_schedule(entry["schedule"])
+
+
+def effective_schedule(session, schedule_name: str, entry: dict, app=None, apply_edits: bool = True):
+    """The schedule in force for `schedule_name`: the operator's saved edit
+    if there is one, else the code's `beat_schedule` entry.
+
+    Use this (not `_entry_schedule(entry)` alone) wherever occurrences are
+    projected or matched. `apply_edits=False` reads the code's schedule even
+    when an edit is stored: the API passes `CeleryManagerConfig.
+    schedule_editing`, since an edit only takes effect when beat runs
+    `celery_manager.beat:DatabaseScheduler`, and projecting an edit beat is
+    not applying would show runs that never happen."""
+    override = None
+    if apply_edits:
+        override = (
+            session.query(PeriodicSchedule.schedule_override)
+            .filter_by(name=schedule_name)
+            .scalar()
+        )
+    return _entry_schedule(entry, override, app=app)
 
 
 def _is_interval_schedule(celery_schedule) -> bool:
@@ -446,7 +503,7 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
     Call once at REST API startup (see Task 10) so the dashboard's list of
     schedules always reflects what's actually configured to run."""
     synced = []
-    for name, entry in celery_app.conf.beat_schedule.items():
+    for name, entry in entries_for(session, celery_app).items():
         row = session.query(PeriodicSchedule).filter_by(name=name).one_or_none()
         if row is None:
             row = PeriodicSchedule(name=name)
@@ -457,7 +514,9 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
         # `paused_at`/`paused_by` are deliberately not touched: they are an
         # operator decision (`pause_schedule`), not part of the beat config,
         # and resetting them here silently un-paused every schedule on each
-        # dashboard restart.
+        # dashboard restart. The same goes for `schedule_override` /
+        # `edited_by` / `edited_at` (`edit_schedule`): `schedule_spec` is
+        # always the code's schedule, the edit sits beside it.
         synced.append(row)
     session.commit()
     return synced
@@ -470,6 +529,7 @@ def list_upcoming_with_overrides(
     count: int = 10,
     from_time: datetime | None = None,
     eta_tolerance_seconds: int = 60,
+    apply_edits: bool = True,
 ) -> list[dict]:
     """The data the dashboard's future-schedule view renders: every
     upcoming occurrence, each annotated with any existing override.
@@ -500,18 +560,21 @@ def list_upcoming_with_overrides(
     two neighboring occurrences at once.
     """
     periodic = session.query(PeriodicSchedule).filter_by(name=schedule_name).one_or_none()
-    entry = celery_app.conf.beat_schedule.get(schedule_name)
-    if periodic is None or entry is None:
+    entry = entries_for(session, celery_app).get(schedule_name)
+    if periodic is None or entry is None or not periodic.enabled:
         return []
 
-    celery_schedule = _entry_schedule(entry)
-    anchor = _last_observed_run_at(session, schedule_name) if _is_interval_schedule(celery_schedule) else None
+    # The operator's edit, if any (and `apply_edits`): see `effective_schedule`.
+    celery_schedule = _entry_schedule(entry, periodic.schedule_override if apply_edits else None, app=celery_app)
+    anchor = (entry.get("last_run_at") or _last_observed_run_at(session, schedule_name)) if _is_interval_schedule(celery_schedule) else None
     occurrences = upcoming_occurrences(periodic, celery_schedule, count=count, from_time=from_time, anchor=anchor)
     pool = [o for o in list_overrides(session, schedule_name) if not o.consumed]
     window = timedelta(seconds=eta_tolerance_seconds)
     _expire_if_stale(session, periodic)
     paused_at = periodic.paused_at
     paused_until = _as_aware_utc(periodic.paused_until) if periodic.paused_until is not None else None
+
+    windows = enabled_windows(session)
 
     result = []
     for t in occurrences:
@@ -527,6 +590,10 @@ def list_upcoming_with_overrides(
             # indefinite): it will be recorded as skipped however `action`
             # reads. Occurrences at/after `paused_until` run normally.
             "paused": paused_at is not None and (paused_until is None or t < paused_until),
+            # Name of the maintenance window this firing falls in (it will be
+            # recorded as skipped), else None; several overlapping windows
+            # are joined with ", ".
+            "maintenance_window": ", ".join(w.name for w in windows_active_at(windows, schedule_name, t)) or None,
         })
     return result
 
@@ -540,3 +607,180 @@ def list_periodic_schedules(session) -> list[PeriodicSchedule]:
     for row in rows:
         _expire_if_stale(session, row, now)
     return rows
+
+
+# --- editing a schedule's timing --------------------------------------------
+
+
+def _schedule_target(session, celery_app, schedule_name: str):
+    """`(row, beat_schedule entry)`, or None if either is missing: an edit
+    needs both the stored row (it holds the edit) and the code's entry (the
+    task it runs, and what "revert to code" goes back to)."""
+    row = get_periodic_schedule(session, schedule_name)
+    entry = entries_for(session, celery_app).get(schedule_name)
+    if row is None or entry is None:
+        return None
+    return row, entry
+
+
+def preview_schedule(
+    session,
+    celery_app,
+    schedule_name: str,
+    data,
+    count: int = 5,
+    from_time: datetime | None = None,
+) -> list[datetime] | None:
+    """The next `count` runs `schedule_name` would have under the spec
+    `data`, without saving anything. None for an unknown schedule;
+    `ScheduleSpecError` (a sentence for a person) for an invalid spec.
+
+    Projected exactly as `list_upcoming_with_overrides` will project it once
+    saved: an interval from the schedule's last observed run, because
+    `DatabaseScheduler` keeps beat's `last_run_at` when it swaps the
+    schedule, so the first run after the edit is "last run + new interval",
+    not "now + new interval"."""
+    target = _schedule_target(session, celery_app, schedule_name)
+    if target is None:
+        return None
+    row, _entry = target
+    _spec, celery_schedule = validate_spec(data, app=celery_app, now=from_time)
+    anchor = _last_observed_run_at(session, schedule_name) if _is_interval_schedule(celery_schedule) else None
+    return upcoming_occurrences(row, celery_schedule, count=count, from_time=from_time, anchor=anchor)
+
+
+def _occurs_at(row, celery_schedule, anchor, t: datetime, window: timedelta) -> bool:
+    first = upcoming_occurrences(row, celery_schedule, count=1, from_time=t - window, anchor=anchor)
+    return bool(first) and abs(first[0] - t) <= window
+
+
+def _unmatched_overrides(session, row, celery_schedule, eta_tolerance_seconds: int) -> list[datetime]:
+    """Future skips/cancels of this schedule that no run of `celery_schedule`
+    lines up with any more (same windows as the decorator's matching), so
+    they will not apply. Reported, not deleted: see `edit_schedule`."""
+    now = datetime.now(timezone.utc)
+    if _is_interval_schedule(celery_schedule):
+        anchor = _last_observed_run_at(session, row.name)
+        window = min(timedelta(seconds=eta_tolerance_seconds), celery_schedule.run_every / 2)
+    else:
+        anchor, window = None, CALENDAR_MATCH_WINDOW
+    unmatched = []
+    for override in list_overrides(session, row.name):
+        target_time = _as_aware_utc(override.target_time)
+        if override.consumed or target_time <= now:
+            continue
+        if not _occurs_at(row, celery_schedule, anchor, target_time, window):
+            unmatched.append(target_time)
+    return unmatched
+
+
+def _stored_spec(row: PeriodicSchedule) -> dict | None:
+    try:
+        return load_spec(row.schedule_override)
+    except ScheduleSpecError:
+        return None
+
+
+def edit_schedule(
+    session,
+    celery_app,
+    schedule_name: str,
+    data,
+    username: str,
+    eta_tolerance_seconds: int = 60,
+):
+    """Save an operator's edit of when `schedule_name` runs.
+
+    Returns `(row, unmatched)` where `unmatched` lists the future
+    skips/cancels that no run of the new schedule lines up with; None for
+    an unknown schedule. Raises `ScheduleSpecError` for an invalid spec
+    (rejected by Celery's own `crontab(...)` parser, a crontab that never
+    fires, an interval under `MIN_INTERVAL_SECONDS`).
+
+    The code's `beat_schedule` stays the default: the edit is stored beside
+    it and `revert_schedule` removes it. Beat applies it only when it runs
+    `celery_manager.beat:DatabaseScheduler`; the API refuses edits unless
+    `CeleryManagerConfig.schedule_editing` says it does.
+
+    Existing skips/cancels are kept, even ones the new schedule no longer
+    has a run for. They then never match (the decorator matches the
+    occurrence beat stamps), so they cannot skip the wrong run, and a
+    revert to code brings them back into force — deleting an operator's
+    decision as a side effect of another edit would be the surprise. Their
+    times are returned and written to the audit row so the dashboard can
+    say so. Saving the same spec again is a no-op with no audit row.
+    """
+    target = _schedule_target(session, celery_app, schedule_name)
+    if target is None:
+        return None
+    row, _entry = target
+    spec, celery_schedule = validate_spec(data, app=celery_app)
+    before = _stored_spec(row)
+    unmatched = _unmatched_overrides(session, row, celery_schedule, eta_tolerance_seconds)
+    if before == spec:
+        return row, unmatched
+    row.schedule_override = dump_spec(spec)
+    row.edited_by = username
+    row.edited_at = datetime.now(timezone.utc)
+    session.commit()
+    record_audit(
+        session, username, "edit_schedule", "schedule", schedule_name,
+        {
+            "before": before,
+            "after": spec,
+            "code": row.schedule_spec,
+            "unmatched_overrides": [t.isoformat() for t in unmatched],
+        },
+    )
+    return row, unmatched
+
+
+def revert_schedule(session, schedule_name: str, username: str) -> PeriodicSchedule | None:
+    """Drop the operator's edit: the schedule runs as the code says again
+    (beat picks it up on its next refresh). None for an unknown schedule.
+    Idempotent: reverting a schedule with no edit writes no audit row."""
+    row = get_periodic_schedule(session, schedule_name)
+    if row is None:
+        return None
+    if row.schedule_override is None:
+        return row
+    details = {
+        "before": _stored_spec(row) or row.schedule_override,
+        "code": row.schedule_spec,
+        "edited_by": row.edited_by,
+        "edited_at": _as_aware_utc(row.edited_at).isoformat() if row.edited_at else None,
+    }
+    row.schedule_override = None
+    row.edited_by = None
+    row.edited_at = None
+    session.commit()
+    record_audit(session, username, "revert_schedule", "schedule", schedule_name, details)
+    return row
+
+
+def schedule_edit_fields(row: PeriodicSchedule, celery_app, apply_edits: bool = True) -> dict:
+    """The editing half of a schedule's API summary.
+
+    `schedule_spec` is the schedule in force (the edit's description while
+    one applies), `code_schedule_spec` always the code's. `code_schedule` is
+    the code's schedule as a spec, to prefill the editor (None for solar and
+    custom schedule kinds, which a spec cannot express)."""
+    entry = celery_app.conf.beat_schedule.get(row.name)
+    if row.source and row.source != "static" and row.definition:
+        import json
+        data = json.loads(row.definition)
+        if data.get("schedule"):
+            entry = {"schedule": build_schedule(data["schedule"], app=celery_app)}
+    spec = _stored_spec(row)
+    code_schedule = spec_from_schedule(_entry_schedule(entry)) if entry is not None else None
+    effective = row.schedule_spec
+    if spec is not None and apply_edits and entry is not None:
+        effective = str(_entry_schedule(entry, row.schedule_override, app=celery_app))
+    return {
+        "schedule_spec": effective,
+        "code_schedule_spec": row.schedule_spec,
+        "code_schedule": code_schedule,
+        "schedule_override": spec,
+        "edited_by": row.edited_by,
+        "edited_at": _as_aware_utc(row.edited_at) if row.edited_at else None,
+    }

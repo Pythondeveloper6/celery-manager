@@ -4,8 +4,12 @@ import { NavLink, useLocation } from "react-router-dom";
 import { logout, type Role } from "../api/client";
 import { BrandMark, ThemeSwitch, useBranding } from "../branding";
 import {
+  IconBell,
   IconCalendarClock,
+  IconKey,
   IconChartLine,
+  IconDeadLetter,
+  IconHourglass,
   IconLayers,
   IconListChecks,
   IconLogOut,
@@ -13,8 +17,12 @@ import {
   IconScrollText,
   IconServer,
   IconSettings,
+  IconUsers,
   IconX,
 } from "./icons";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { useAccountSource, useAuthOptions } from "../lib/auth";
+import { roleAllows } from "../lib/role";
 
 /* ==========================================================================
    App shell: a collapsible sidebar (shadcn's Sidebar, collapsible="icon")
@@ -31,13 +39,24 @@ import {
 const SIDEBAR_STORAGE_KEY = "cm-sidebar";
 const mobileQuery = window.matchMedia("(max-width: 767px)");
 
-const NAV_ITEMS: { to: string; end?: boolean; label: string; icon: ComponentType<{ className?: string }> }[] = [
+const NAV_ITEMS: {
+  to: string;
+  end?: boolean;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  // Hidden from roles below this one (cosmetic; the server enforces).
+  needs?: Role;
+}[] = [
   { to: "/", end: true, label: "Tasks", icon: IconListChecks },
+  { to: "/dead-letters", label: "Dead letters", icon: IconDeadLetter },
   { to: "/schedules", label: "Schedules", icon: IconCalendarClock },
   { to: "/audit", label: "Audit log", icon: IconScrollText },
   { to: "/insights", label: "Insights", icon: IconChartLine },
   { to: "/workers", label: "Workers", icon: IconServer },
   { to: "/queues", label: "Queues", icon: IconLayers },
+  { to: "/held", label: "Held tasks", icon: IconHourglass },
+  { to: "/alerts", label: "Alerts", icon: IconBell },
+  { to: "/users", label: "Users", icon: IconUsers, needs: "admin" },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
 
@@ -70,12 +89,16 @@ function useIsMobile(): boolean {
 }
 
 function sectionLabel(pathname: string): string {
+  if (pathname.startsWith("/dead-letters")) return "Dead letters";
   if (pathname.startsWith("/schedules")) return "Schedules";
   if (pathname.startsWith("/audit")) return "Audit log";
   if (pathname.startsWith("/insights") || pathname.startsWith("/task-types")) return "Insights";
   if (pathname.startsWith("/workers")) return "Workers";
   if (pathname.startsWith("/settings")) return "Settings";
-  if (pathname.startsWith("/queues")) return "Queues";
+  if (pathname.startsWith("/users")) return "Users";
+  if (pathname.startsWith("/queues") || pathname.startsWith("/rabbitmq")) return "Queues";
+  if (pathname.startsWith("/held")) return "Held tasks";
+  if (pathname.startsWith("/alerts")) return "Alerts";
   if (pathname === "/" || pathname.startsWith("/tasks")) return "Tasks";
   return "";
 }
@@ -92,12 +115,15 @@ export function AppShell({
   children: ReactNode;
 }) {
   const { settings } = useBranding();
+  const authOptions = useAuthOptions();
+  const external = useAccountSource() === "external";
   const { pathname } = useLocation();
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const wasOpenRef = useRef(false);
@@ -146,6 +172,19 @@ export function AppShell({
     };
   }, [sheetOpen]);
 
+  // A plain link (logout_url is a GET), but local session cleared first:
+  // otherwise, once signed out of the host, this browser would fall back to
+  // whatever local account it last signed in with.
+  const signOutOfHost = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    const href = event.currentTarget.href;
+    event.preventDefault();
+    if (signingOut) return;
+    setSigningOut(true);
+    void logout()
+      .catch(() => undefined)
+      .finally(() => window.location.assign(href));
+  };
+
   const signOut = () => {
     setSigningOut(true);
     setSignOutError(null);
@@ -186,7 +225,7 @@ export function AppShell({
 
         <nav className="cm-sidebar-content" aria-label="Primary">
           <ul className="cm-sidebar-menu">
-            {NAV_ITEMS.map(({ to, end, label, icon: Icon }) => (
+            {NAV_ITEMS.filter((item) => !item.needs || roleAllows(role, item.needs)).map(({ to, end, label, icon: Icon }) => (
               <li key={to} className="cm-sidebar-item">
                 <NavLink to={to} end={end} className="cm-sidebar-button">
                   <Icon />
@@ -205,15 +244,50 @@ export function AppShell({
               settings screen: it is the one preference someone changes
               because of the room they're in. */}
           <ThemeSwitch />
-          <div className="cm-sidebar-item">
-            <button type="button" className="cm-sidebar-button" onClick={signOut} disabled={signingOut}>
-              <IconLogOut />
-              <span className="cm-sidebar-label">{signingOut ? "Signing out…" : "Sign out"}</span>
-            </button>
-            <span className="cm-tooltip" aria-hidden="true">
-              Sign out
-            </span>
-          </div>
+          {/* Someone the host app signed in has no password here; theirs
+              is changed in the host app. */}
+          {external || (
+            <div className="cm-sidebar-item">
+              <button type="button" className="cm-sidebar-button" onClick={() => setChangingPassword(true)}>
+                <IconKey />
+                <span className="cm-sidebar-label">Change password</span>
+              </button>
+              <span className="cm-tooltip" aria-hidden="true">
+                Change password
+              </span>
+            </div>
+          )}
+          {/* Signing out of the host app is the host's job. Without a
+              logout_url there is no sign-out here: clearing this dashboard's
+              cookie alone would leave them signed in on the next request. */}
+          {external ? (
+            authOptions.logout_url && (
+              <div className="cm-sidebar-item">
+                <a
+                  className="cm-sidebar-button"
+                  href={authOptions.logout_url}
+                  onClick={signOutOfHost}
+                  aria-disabled={signingOut || undefined}
+                >
+                  <IconLogOut />
+                  <span className="cm-sidebar-label">{signingOut ? "Signing out…" : "Sign out"}</span>
+                </a>
+                <span className="cm-tooltip" aria-hidden="true">
+                  Sign out of {authOptions.provider_name}
+                </span>
+              </div>
+            )
+          ) : (
+            <div className="cm-sidebar-item">
+              <button type="button" className="cm-sidebar-button" onClick={signOut} disabled={signingOut}>
+                <IconLogOut />
+                <span className="cm-sidebar-label">{signingOut ? "Signing out…" : "Sign out"}</span>
+              </button>
+              <span className="cm-tooltip" aria-hidden="true">
+                Sign out
+              </span>
+            </div>
+          )}
           {signOutError && (
             <p role="alert" className="cm-error cm-sidebar-error">
               {signOutError}
@@ -226,10 +300,12 @@ export function AppShell({
             </span>
             <span className="cm-sidebar-label cm-sidebar-user-text">
               <span className="cm-sidebar-user-name">{username}</span>
-              <span className="cm-sidebar-user-note">Signed in &middot; {role}</span>
+              <span className="cm-sidebar-user-note">
+                {external ? `Via ${authOptions.provider_name}` : "Signed in"} &middot; {role}
+              </span>
             </span>
             <span className="cm-tooltip" aria-hidden="true">
-              Signed in as {username} ({role})
+              Signed in as {username} ({role}){external && ` through ${authOptions.provider_name}`}
             </span>
           </div>
         </div>
@@ -256,6 +332,7 @@ export function AppShell({
         </header>
         <main className="cm-main">{children}</main>
       </div>
+      {changingPassword && <ChangePasswordDialog onClose={() => setChangingPassword(false)} />}
     </div>
   );
 }

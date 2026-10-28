@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
 import threading
+import weakref
+
+from sqlalchemy.pool import StaticPool
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.session import get_session_factory, init_db
@@ -8,6 +12,29 @@ from celery_manager.decorator import configure as _configure_decorator
 
 _lock = threading.Lock()
 _current: tuple[CeleryManagerConfig, object, object] | None = None
+_engines = weakref.WeakSet()
+
+
+def _drop_inherited_connections() -> None:
+    """In a forked child (a prefork Celery worker process), forget the pooled
+    connections inherited from the parent. Parent and child would otherwise
+    share one database socket, which on Postgres shows up as
+    `ResourceClosedError`, wrong rows and slow tasks. `close=False` leaves the
+    parent's connections alone; the child opens its own on first use. A
+    StaticPool (in-memory SQLite) is the database itself, so it is kept."""
+    for engine in list(_engines):
+        if not isinstance(engine.pool, StaticPool):
+            engine.dispose(close=False)
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_drop_inherited_connections)
+
+
+def session_factory_for(celery_app):
+    """The configured factory for this exact app, or None if not configured."""
+    state = getattr(celery_app, "_cm_runtime_state", None)
+    return state.sessions if state is not None else None
 
 
 def setup(config: CeleryManagerConfig):
@@ -36,19 +63,24 @@ def setup(config: CeleryManagerConfig):
 
     Idempotent: calling it repeatedly with the *same* config object reuses the
     engine and session factory already built for it rather than opening a
-    second engine and re-running `create_all`. Calling it with a *different*
-    config builds a fresh engine and re-points the decorator at it — which is
-    what makes it safe for tests (each builds its own config, often against
-    its own `sqlite:///:memory:` database) and for the rare process that
-    genuinely manages more than one configuration.
+    second engine and re-running migrations. Each Celery app keeps its own
+    runtime: configuring another app never changes storage or policies for
+    tasks already bound to the first app. Configuring the same app with a
+    different config replaces that app's runtime for subsequent invocations.
+    The per-task ContextVar keeps nested and concurrent executions isolated.
     """
     global _current
     with _lock:
-        if _current is not None and _current[0] is config:
-            session_factory = _current[2]
+        record = getattr(config, "_cm_runtime_record", None)
+        if record is not None:
+            session_factory = record[2]
+            _current = record
         else:
             engine = init_db(config)
             session_factory = get_session_factory(engine)
+            session_factory.configure(info={"cm_config": config})
             _current = (config, engine, session_factory)
-        _configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds)
+            config._cm_runtime_record = _current
+            _engines.add(engine)
+        _configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds, config=config)
         return session_factory

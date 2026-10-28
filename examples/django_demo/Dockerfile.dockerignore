@@ -1,0 +1,14 @@
+# An allowlist: the repo root holds venvs, node_modules and built docs that
+# must not be sent to the daemon. (Used because the Dockerfile is named
+# `Dockerfile`; BuildKit picks up `<Dockerfile>.dockerignore` first.)
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!alembic.ini
+!src
+!examples/django_demo
+**/__pycache__
+**/*.pyc
+**/*.db
+**/*.sqlite3

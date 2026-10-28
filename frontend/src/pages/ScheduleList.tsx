@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSchedules, type ScheduleSummary } from "../api/schedules";
+import "../styles/missed-runs.css";
+import "../styles/maintenance.css";
+import { MaintenanceWindows } from "../components/MaintenanceWindows";
+import { BackendSchedules, BackendScheduleActions } from "../components/BackendSchedules";
 import { ScheduleToggle } from "../components/ScheduleToggle";
 import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 
@@ -58,7 +62,7 @@ export function ScheduleList() {
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <h1 className="cm-page-title">Schedules</h1>
-          <p className="cm-page-lede">Periodic tasks. Open one to skip or cancel an upcoming run.</p>
+          <p className="cm-page-lede">Periodic tasks. Open one to skip or cancel an upcoming run, or to change when it runs.</p>
         </div>
       </header>
 
@@ -68,6 +72,7 @@ export function ScheduleList() {
         </p>
       )}
 
+      <BackendSchedules onChanged={refresh} />
       <div className="cm-card cm-card-flush">
         {error ? (
           // Same error treatment as TaskList and the audit log: the server's
@@ -90,7 +95,7 @@ export function ScheduleList() {
           </div>
         ) : schedules.length === 0 ? (
           <p className="cm-empty-state">
-            No periodic schedules configured yet. Add one to your Celery beat schedule and it appears here.
+            No schedules found. Create one with a writable backend or add one to your Celery configuration.
           </p>
         ) : (
           <div className="cm-table-scroll">
@@ -115,9 +120,36 @@ export function ScheduleList() {
                       <Link to={`/schedules/${encodeURIComponent(s.name)}`} className="cm-schedule-link">
                         {s.name}
                       </Link>
+                      {s.maintenance_windows.map((w) => (
+                        <span
+                          key={w.id}
+                          className="cm-badge cm-mw-chip"
+                          title={w.active ? `Maintenance window in progress: runs are being skipped` : `Maintenance window: ${w.name}`}
+                        >
+                          {w.active ? `In ${w.name}` : w.name}
+                        </span>
+                      ))}
+                      {s.missed_count > 0 && (
+                        <span
+                          className="cm-badge cm-missed-badge"
+                          title={`${s.missed_count} run${s.missed_count === 1 ? "" : "s"} due in the last 24 hours never arrived`}
+                        >
+                          {s.missed_count} missed
+                        </span>
+                      )}
                     </td>
                     <td>{s.task_name}</td>
-                    <td>{s.schedule_spec}</td>
+                    <td>
+                      {s.schedule_spec}
+                      {s.schedule_override && (
+                        // Edited from the dashboard (ScheduleEditor, opened from the
+                        // schedule's own page): say so, and by whom.
+                        <span className="cm-pause-state-by cm-schedule-edited" title={`In the code: ${s.code_schedule_spec}`}>
+                          Edited {formatPausedBy(s.edited_by, s.edited_at)}
+                          {!s.schedule_editing && " (not applied)"}
+                        </span>
+                      )}
+                    </td>
                     <td className="cm-col-fit">
                       {s.paused ? (
                         <span className="cm-pause-state">
@@ -138,6 +170,7 @@ export function ScheduleList() {
                           onChange={handleChange}
                           onError={(m) => handleRowError(s.name, m)}
                         />
+                        <BackendScheduleActions schedule={s} onChanged={refresh} onError={(m) => handleRowError(s.name, m)} />
                         {rowErrors[s.name] && (
                           <p className="cm-error" role="alert">
                             {rowErrors[s.name]}
@@ -152,6 +185,8 @@ export function ScheduleList() {
           </div>
         )}
       </div>
+
+      <MaintenanceWindows scheduleNames={(schedules ?? []).map((s) => s.name)} onChanged={refresh} />
     </div>
   );
 }

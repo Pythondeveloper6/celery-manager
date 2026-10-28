@@ -37,6 +37,10 @@ def env(monkeypatch):
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, expire_on_commit=False)
 
+    # This fixture exercises legacy process-wide configure(factory), not an
+    # app-owned setup(config) runtime. Reset its paired config as well so a
+    # previously configured application cannot leak into fixture selection.
+    monkeypatch.setattr(decorator_module, "_config", None)
     monkeypatch.setattr(decorator_module, "_session_factory", Session)
     monkeypatch.setattr(decorator_module, "_eta_tolerance_seconds", 60)
     # The warn-once flags are process-global by design (one WARNING per

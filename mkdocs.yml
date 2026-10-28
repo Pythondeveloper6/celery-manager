@@ -107,12 +107,19 @@ nav:
   - Guide:
       - Quickstart: quickstart.md
       - Integrating with your app: integrations.md
+      - Production adoption: production.md
       - The decorator: decorator.md
+      - Editing schedules: schedules.md
       - Live progress: progress.md
       - Dashboard: dashboard.md
       - Insights: insights.md
       - Workers and rate limits: workers.md
       - Queues, purge and bulk cancel: queues.md
+      - RabbitMQ: rabbitmq.md
+      - Dead letters: dead-letters.md
+      - Data retention: retention.md
+      - Metrics: metrics.md
+      - Alerts: alerts.md
       - Roles: roles.md
   - Reference:
       - REST API: rest-api.md
@@ -121,3 +128,4 @@ nav:
       - Working on celery-manager: contributing.md
       - Changelog: changelog.md
       - Security: security.md
+      - Roadmap: roadmap.md

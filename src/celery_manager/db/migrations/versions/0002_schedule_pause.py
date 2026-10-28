@@ -32,16 +32,16 @@ def upgrade() -> None:
     # versioned.
     existing = set()
     if not op.get_context().as_sql:
-        existing = {c['name'] for c in sa.inspect(op.get_bind()).get_columns('periodic_schedules')}
+        existing = {c['name'] for c in sa.inspect(op.get_bind()).get_columns('periodic_schedules', schema=op.get_context().opts.get("version_table_schema"))}
     missing = [column for column in _columns() if column.name not in existing]
     if not missing:
         return
-    with op.batch_alter_table('periodic_schedules', schema=None) as batch_op:
+    with op.batch_alter_table('periodic_schedules', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         for column in missing:
             batch_op.add_column(column)
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('periodic_schedules', schema=None) as batch_op:
+    with op.batch_alter_table('periodic_schedules', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_column('paused_by')
         batch_op.drop_column('paused_at')

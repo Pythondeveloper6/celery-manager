@@ -185,3 +185,50 @@ export const IconChevronRight = (p: IconProps) => (
     <path d="m9 18 6-6-6-6" />
   </Icon>
 );
+
+export const IconUsers = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </Icon>
+);
+
+export const IconKey = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m21 2-9.6 9.6" />
+    <circle cx="7.5" cy="15.5" r="5.5" />
+    <path d="m15.5 7.5 3 3L22 7l-3-3" />
+  </Icon>
+);
+
+// lucide "mail-warning": a message that never got delivered.
+export const IconDeadLetter = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M22 10.5V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h12.5" />
+    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    <path d="M20 14v4" />
+    <path d="M20 22v.01" />
+  </Icon>
+);
+
+// lucide "bell-ring": alert rules and the messages they send.
+export const IconBell = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+    <path d="M22 8c0-2.3-.8-4.3-2-6" />
+    <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+    <path d="M4 2C2.8 3.7 2 5.7 2 8" />
+  </Icon>
+);
+
+// lucide "hourglass": tasks held before they run (delayed or stuck).
+export const IconHourglass = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 22h14" />
+    <path d="M5 2h14" />
+    <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+    <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+  </Icon>
+);

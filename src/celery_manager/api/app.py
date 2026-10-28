@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 
 from celery_manager.api.deps import REQUIRED_ROLE_ATTR, get_current_user
+from celery_manager.api.routes import (
+    alerts as alert_routes,
+)
 from celery_manager.api.routes import (
     analytics as analytics_routes,
 )
@@ -18,10 +22,31 @@ from celery_manager.api.routes import (
     auth as auth_routes,
 )
 from celery_manager.api.routes import (
+    broker as broker_routes,
+)
+from celery_manager.api.routes import (
+    deadletters as deadletter_routes,
+)
+from celery_manager.api.routes import (
+    delayed as delayed_routes,
+)
+from celery_manager.api.routes import (
     export as export_routes,
 )
 from celery_manager.api.routes import (
+    maintenance as maintenance_routes,
+)
+from celery_manager.api.routes import (
+    metrics as metrics_routes,
+)
+from celery_manager.api.routes import (
     queues as queue_routes,
+)
+from celery_manager.api.routes import (
+    rabbitmq as rabbitmq_routes,
+)
+from celery_manager.api.routes import (
+    retention as retention_routes,
 )
 from celery_manager.api.routes import (
     schedules as schedule_routes,
@@ -33,6 +58,12 @@ from celery_manager.api.routes import (
     tasks as task_routes,
 )
 from celery_manager.api.routes import (
+    unacked as unacked_routes,
+)
+from celery_manager.api.routes import (
+    users as user_routes,
+)
+from celery_manager.api.routes import (
     workers as worker_routes,
 )
 from celery_manager.api.routes import (
@@ -41,7 +72,7 @@ from celery_manager.api.routes import (
 from celery_manager.api.security import SecurityMiddleware
 from celery_manager.api.sse import EventBus, sse_stream
 from celery_manager.config import CeleryManagerConfig
-from celery_manager.control.schedules import sync_periodic_schedules
+from celery_manager.metrics import MetricsCollector
 from celery_manager.runtime import setup as setup_runtime
 
 # The placeholder `CeleryManagerConfig.secret_key` ships with. It is public —
@@ -118,6 +149,37 @@ def unclassified_write_routes(app: FastAPI) -> list[tuple[str, str]]:
     return missing
 
 
+def _check_link(name: str, url: str | None) -> None:
+    """`login_url` / `logout_url` end up in an `<a href>`. Only a same-site
+    path or an http(s) URL: a `javascript:` URL there would run in the
+    dashboard's origin for everyone who clicks it."""
+    if url is None:
+        return
+    # Browsers read `\` as `/` (so `/\evil.example` is another host) and
+    # drop tabs and newlines inside URLs, so neither may appear at all.
+    if isinstance(url, str) and url.isprintable() and "\\" not in url and " " not in url:
+        parts = urlsplit(url)
+        if (parts.scheme in ("http", "https") and parts.netloc) or (
+            # A path, but not `//evil.example` (scheme-relative: another host).
+            not parts.scheme and not parts.netloc and url.startswith("/") and not url.startswith("//")
+        ):
+            return
+    raise ValueError(f"CeleryManagerConfig.{name} must be a path starting with '/' or an http(s) URL, not {url!r}")
+
+
+def _check_sign_in_options(config: CeleryManagerConfig) -> None:
+    if config.authenticate_request is not None and not callable(config.authenticate_request):
+        raise ValueError("CeleryManagerConfig.authenticate_request must be a callable taking the request")
+    if not config.local_login_enabled and config.authenticate_request is None and not config.principal_providers:
+        raise ValueError(
+            "CeleryManagerConfig.local_login_enabled is False but no authenticate_request is set, "
+            "so nobody could sign in. Set authenticate_request (see celery_manager.integrations) "
+            "or leave local login on."
+        )
+    _check_link("login_url", config.login_url)
+    _check_link("logout_url", config.logout_url)
+
+
 def create_app(config: CeleryManagerConfig):
     """Build the celery-manager FastAPI app. Returns (app, session_factory)
     — callers that need direct DB access (tests, the events listener CLI)
@@ -134,6 +196,8 @@ def create_app(config: CeleryManagerConfig):
             '`python -c "import secrets; print(secrets.token_urlsafe(32))"`.'
         )
 
+    _check_sign_in_options(config)
+
     # Single shared entry point for "wire celery-manager into this process"
     # (init_db + session factory + decorator configure) rather than an inline
     # copy of it, so the API process and the worker process — which must call
@@ -141,32 +205,69 @@ def create_app(config: CeleryManagerConfig):
     # can never drift out of sync.
     session_factory = setup_runtime(config)
 
-    with session_factory() as session:
-        sync_periodic_schedules(session, config.celery_app)
+    from celery_manager.schedulers.service import ScheduleService
+    config._schedule_service = ScheduleService(config, session_factory)
+    config._schedule_service.refresh(force=True)
 
     app = FastAPI(title="celery-manager")
+    from celery_manager.control.policy import DispatchDenied
+
+    @app.exception_handler(DispatchDenied)
+    async def denied(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+
     app.state.cm_config = config
     app.state.cm_session_factory = session_factory
     # The bus polls the DB change feed for writes made by other processes
     # (events listener, workers); see api/sse.py.
     app.state.cm_event_bus = EventBus(session_factory, poll_interval=config.live_poll_interval_seconds)
-    app.add_middleware(SecurityMiddleware)
+    # Shared by /metrics and the optional OpenTelemetry export, so both read
+    # one cached snapshot. Built even when metrics are disabled: it does no
+    # work until something asks.
+    app.state.cm_metrics = MetricsCollector(config, session_factory)
+    if config.live_stream not in ("sse", "poll"):
+        raise ValueError("live_stream must be 'sse' or 'poll'")
+    from celery_manager.auth.roles import validate_role
+    validate_role(config.log_view_role)
+    app.add_middleware(SecurityMiddleware, trusted_origins=config.trusted_origins, frame_ancestors=config.frame_ancestors)
+    if config.trusted_origins:
+        from starlette.middleware.cors import CORSMiddleware
+        app.add_middleware(CORSMiddleware, allow_origins=list(config.trusted_origins),
+                           allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                           allow_headers=["Authorization", "Content-Type"])
 
+    from celery_manager.api.routes.health import router as health_router
+    app.include_router(health_router)
     app.include_router(auth_routes.router)
     # Before task_routes: /api/tasks/export must win over /api/tasks/{task_id}.
     app.include_router(export_routes.router)
     app.include_router(task_routes.router)
+    app.include_router(deadletter_routes.router)
+    from celery_manager.api.routes.schedule_backend import (
+        router as schedule_backend_router,
+    )
+    app.include_router(schedule_backend_router)
     app.include_router(schedule_routes.router)
+    app.include_router(maintenance_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
+    app.include_router(retention_routes.router)
+    app.include_router(metrics_routes.router)
+    app.include_router(user_routes.router)
     app.include_router(analytics_routes.router)
     app.include_router(worker_routes.router)
+    app.include_router(delayed_routes.router)
+    app.include_router(unacked_routes.router)
     app.include_router(queue_routes.router)
+    app.include_router(broker_routes.router)
+    app.include_router(rabbitmq_routes.router)
     app.include_router(workflow_routes.router)
+    app.include_router(alert_routes.router)
 
-    @app.get("/api/stream")
-    def stream(request: Request, username: str = Depends(get_current_user)):
-        return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
+    if config.live_stream == "sse":
+        @app.get("/api/stream")
+        def stream(request: Request, username: str = Depends(get_current_user)):
+            return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
 
     # Fail closed: a new state-changing route that forgot `require_role`
     # would otherwise be open to every signed-in viewer. Refuse to build the

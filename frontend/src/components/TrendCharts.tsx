@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Bucket, Overview } from "../api/analytics";
+import type { DepthPoint } from "../api/queues";
 import { formatBucket, niceMax } from "../lib/insights";
 import { statusLabel } from "../lib/status";
 import { formatDuration } from "../lib/taskProgress";
@@ -285,6 +286,99 @@ export function RuntimeChart({ data }: { data: Overview }) {
                   <td>{formatDuration(b.runtime_p50)}</td>
                   <td>{formatDuration(b.runtime_p95)}</td>
                   <td>{b.success_rate === null ? "—" : `${Math.round(b.success_rate * 100)}%`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </figure>
+  );
+}
+
+function formatDepthTime(value: string, hours: number): string {
+  const d = new Date(value);
+  if (hours <= 24) return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" });
+}
+
+/** Queue depth over time (one line, highest depth per interval). Reuses the
+ *  chart frame, grid and table-alternative of the Insights charts. */
+export function DepthChart({ points, hours, queue }: { points: DepthPoint[]; hours: number; queue: string }) {
+  const [ref, width] = useWidth();
+  const [hover, setHover] = useState<number | null>(null);
+  const maxV = Math.max(0, ...points.map((p) => p.depth));
+  const yMax = niceMax(maxV);
+  const plotW = width - MARGIN.left - MARGIN.right;
+  const plotH = HEIGHT - MARGIN.top - MARGIN.bottom;
+  const x = (i: number) => MARGIN.left + (points.length === 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
+  const y = (v: number) => MARGIN.top + plotH - (v / yMax) * plotH;
+  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)} ${y(p.depth).toFixed(1)}`).join("");
+  const latest = points[points.length - 1];
+  const summary = `Depth of ${queue}: now ${latest.depth.toLocaleString()}, highest ${maxV.toLocaleString()} over the last ${hours} hour${hours === 1 ? "" : "s"}.`;
+  const hovered = hover !== null ? points[hover] : null;
+
+  return (
+    <figure className="cm-chart">
+      <figcaption className="cm-chart-title">Queue depth</figcaption>
+      <p className="cm-chart-readout" aria-hidden="true">
+        {hovered ? `${formatDepthTime(hovered.at, hours)}: ${hovered.depth.toLocaleString()} waiting` : "Hover the chart for details."}
+      </p>
+      <div ref={ref} className="cm-chart-frame">
+        <svg
+          width={width}
+          height={HEIGHT}
+          role="img"
+          aria-label={`Line chart of queue depth. ${summary}`}
+          onPointerLeave={() => setHover(null)}
+          onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const fraction = (e.clientX - rect.left - MARGIN.left) / plotW;
+            const i = Math.round(fraction * (points.length - 1));
+            setHover(points.length > 0 && i >= 0 && i < points.length ? i : null);
+          }}
+        >
+          {[0, 0.5, 1].map((f) => (
+            <g key={f}>
+              <line className="cm-ch-grid" x1={MARGIN.left} x2={width - MARGIN.right} y1={y(yMax * f)} y2={y(yMax * f)} />
+              <text className="cm-ch-tick" x={MARGIN.left - 6} y={y(yMax * f)} textAnchor="end" dominantBaseline="middle">
+                {Math.round(yMax * f).toLocaleString()}
+              </text>
+            </g>
+          ))}
+          {hover !== null && <line className="cm-ch-cursor" x1={x(hover)} x2={x(hover)} y1={MARGIN.top} y2={MARGIN.top + plotH} />}
+          <path className="cm-ch-line cm-ch-line-p95" d={d} />
+          {points.length <= 40 &&
+            points.map((p, i) => <circle key={p.at} className="cm-ch-dot" cx={x(i)} cy={y(p.depth)} r={2.5} />)}
+          {xTickIndexes(points.length, width).map((i) => (
+            <text
+              key={i}
+              className="cm-ch-tick"
+              x={x(i)}
+              y={HEIGHT - 6}
+              textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}
+            >
+              {formatDepthTime(points[i].at, hours)}
+            </text>
+          ))}
+        </svg>
+      </div>
+      <p className="cm-chart-summary">{summary}</p>
+      <details className="cm-chart-table">
+        <summary>View depths as a table</summary>
+        <div className="cm-table-scroll">
+          <table className="cm-table">
+            <thead>
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col">Waiting messages</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...points].reverse().map((p) => (
+                <tr key={p.at}>
+                  <th scope="row">{formatDepthTime(p.at, hours)}</th>
+                  <td>{p.depth.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

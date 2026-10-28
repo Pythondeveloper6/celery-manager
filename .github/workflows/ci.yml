@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -117,3 +116,80 @@ jobs:
       - run: pip install build twine
       - run: python -m build
       - run: twine check dist/*
+
+  adapters:
+    name: Optional auth and scheduler adapters
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev,oidc,redbeat,django-beat]' 'fakeredis[lua]'
+      - run: pytest -q tests/unit/test_oidc_provider.py tests/unit/test_optional_scheduler_adapters.py
+
+  database-contracts:
+    name: Storage (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: PostgreSQL 16
+            image: postgres:16
+            port: 5432
+            health: pg_isready -U postgres
+            url: postgresql+psycopg://postgres:CmTest_pass123!@localhost:5432/celery_manager_test
+            schema: cm_release_contract
+          - name: MySQL 8
+            image: mysql:8.4
+            port: 3306
+            health: mysqladmin ping -h127.0.0.1 -pCmTest_pass123! --silent
+            url: mysql+pymysql://root:CmTest_pass123!@localhost:3306/celery_manager_test
+            schema: ""
+          - name: SQL Server 2022
+            image: mcr.microsoft.com/mssql/server:2022-latest
+            port: 1433
+            health: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P CmTest_pass123! -C -Q 'SELECT 1'
+            url: mssql+pyodbc://sa:CmTest_pass123!@localhost:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+            schema: cm_release_contract
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          POSTGRES_PASSWORD: CmTest_pass123!
+          POSTGRES_DB: celery_manager_test
+          MYSQL_ROOT_PASSWORD: CmTest_pass123!
+          MYSQL_DATABASE: celery_manager_test
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: CmTest_pass123!
+          MSSQL_PID: Developer
+        ports:
+          - ${{ matrix.port }}:${{ matrix.port }}
+        options: >-
+          --health-cmd "${{ matrix.health }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CM_STORAGE_DB_URL: ${{ matrix.url }}
+      CM_STORAGE_SCHEMA: ${{ matrix.schema }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install ODBC 18
+        if: matrix.port == 1433
+        run: |
+          curl -sSL -O https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+      - run: pip install -e '.[dev]' 'psycopg[binary]' pymysql pyodbc
+      - run: pytest -q tests/integration/test_storage_backends.py
+      - run: pytest -q tests/unit/test_races.py
+        env:
+          CM_TEST_DB_URL: ${{ matrix.url }}

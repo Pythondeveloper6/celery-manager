@@ -28,11 +28,24 @@ export interface TaskDetail extends TaskSummary {
   args: string;
   kwargs: string;
   exception: string | null;
+  // Why a skipped run was skipped ("schedule paused", "maintenance window:
+  // <name>"); null for other statuses and for skips recorded before it existed.
+  skip_reason: string | null;
   traceback: string | null;
   log_output: string | null;
+  log_output_truncated: boolean;
+  logs_restricted: boolean;
+  result_repr: string | null;
+  result_truncated: boolean;
+  initiator: string | null;
   queue: string | null;
   worker: string | null;
   eta: string | null;
+  // From the task-sent / task-received events; null when never seen.
+  sent_at: string | null;
+  received_at: string | null;
+  // started_at - max(sent_at, eta): time spent waiting in the queue.
+  wait_seconds: number | null;
   // Both directions of the retry chain. `retried_by` is a list because an
   // operator can retry the same failed run more than once.
   retried_from_id: string | null;
@@ -75,15 +88,18 @@ export async function listTasks(params: TaskQuery = {}): Promise<TaskPage> {
   return response.json();
 }
 
+export class TaskNotRecorded extends Error {}
+
 export async function getTask(taskId: string): Promise<TaskDetail> {
   const response = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}`, { credentials: "include" });
-  if (!response.ok) throw new Error(response.status === 404 ? "Task not found." : "Couldn't load this task.");
+  if (response.status === 404) throw new TaskNotRecorded("Waiting for a task record. Check the task ID if it does not appear.");
+  if (!response.ok) throw new Error("Couldn't load this task.");
   return response.json();
 }
 
 // FastAPI reports validation failures as `detail: [{loc, msg}]` and other
 // refusals as `detail: "text"`; either way the operator should see words.
-async function errorMessage(response: Response, fallback: string): Promise<string> {
+export async function errorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json();
     const detail = body?.detail;
@@ -239,7 +255,7 @@ export interface TaskEvent {
 /** "connecting" until the first open, "connected" while the stream is up,
  *  "reconnecting" from the moment it drops until it is back. Callers use it
  *  to decide whether to poll instead, and to show an honest "Live" badge. */
-export type StreamState = "connecting" | "connected" | "reconnecting";
+export type StreamState = "connecting" | "connected" | "reconnecting" | "polling";
 
 // How long to wait before rebuilding a stream the browser gave up on.
 const RECONNECT_DELAY_MS = 5000;
@@ -283,7 +299,14 @@ export function subscribeToUpdates(
   };
 
   onState?.("connecting");
-  connect();
+  fetch(`${BASE}/auth/options`, { credentials: "include" })
+    .then((response) => response.json())
+    .then((options) => {
+      if (closed) return;
+      if (options.live_stream === "poll") onState?.("polling");
+      else connect();
+    })
+    .catch(() => { if (!closed) connect(); });
   return () => {
     closed = true;
     if (retryTimer !== null) clearTimeout(retryTimer);

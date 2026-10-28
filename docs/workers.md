@@ -94,6 +94,47 @@ The list only contains tasks registered in the process that serves the
 dashboard. If it is empty or missing tasks, import your task modules (or call
 `app.autodiscover_tasks()`) in that process.
 
+## Delayed tasks
+
+A task sent with `countdown=` or `eta=` doesn't wait on the broker. The first
+worker to see it takes it off the queue straight away and keeps it in memory
+until it is due. Queue depth no longer counts it, and nothing runs it until the
+ETA, so the only place it can be seen is the worker holding it.
+
+**Held tasks → Delayed** in the sidebar lists every such task the workers
+report (`inspect().scheduled()`), soonest first: task, a countdown to its ETA,
+the worker holding it, queue, priority, its arguments and the status
+celery-manager has recorded for the run. It refreshes every 5 seconds while the
+tab is visible. Like the worker list, it only shows what workers that answer
+within `inspect_timeout_seconds` report.
+
+**Arguments are masked.** The list shows each argument's type and the keyword
+names (`(str, int) {user_id: int}`), never the values. Operators can tick
+**Show argument values** (`?reveal_args=true` on the API); viewers can't.
+
+Below the list, runs celery-manager recorded as `queued` with an ETA still in
+the future that no answering worker holds are listed separately. Such a run is
+still waiting on the queue (nothing consumes it yet), held by a worker that
+didn't answer, or lost. On Redis, check
+[Stuck and lost tasks](queues.md#stuck-and-lost-tasks-redis).
+
+### Cancelling
+
+Operators can cancel one delayed task or a selection. This sends the same
+`control.revoke` broadcast as the Tasks page's cancel, and also marks the
+recorded run `revoked` immediately. A worker only drops a revoked ETA task, and
+only then emits `task-revoked`, when the ETA arrives, so without this a task
+cancelled today with a week-long countdown would show `queued` for a week. A
+cancelled task stays in the list, marked "dropped at the ETA", until then.
+Task ids with no recorded run are revoked too. Each cancel writes a `cancel`
+(one task) or `cancel_bulk` (several) audit row with `"delayed": true`.
+
+!!! warning "Revokes live in worker memory"
+    A worker keeps its list of revoked task ids in memory. If it restarts
+    before the ETA, it forgets the cancel, gets the task back from the broker
+    and runs it. To make revokes survive restarts, run workers with
+    `--statedb` (for example `celery worker --statedb=/var/run/celery/worker.state`).
+
 ## API
 
 See [REST API → Workers](rest-api.md#workers) for the endpoints, request

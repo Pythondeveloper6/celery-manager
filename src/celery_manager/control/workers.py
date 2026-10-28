@@ -16,10 +16,18 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 
 from celery import Celery
 
 from celery_manager.control.audit import record as record_audit
+from celery_manager.control.masking import mask_call
+from celery_manager.control.tasks import (
+    _REVOKE_CHUNK,
+    MAX_BULK_CANCEL,
+    BulkCancelTooLarge,
+)
+from celery_manager.db.models import TaskRun
 
 logger = logging.getLogger(__name__)
 
@@ -248,3 +256,207 @@ def list_task_rate_limits(celery_app: Celery) -> list[dict]:
         limit = getattr(task, "rate_limit", None)
         rows.append({"task_name": name, "rate_limit": str(limit) if limit not in (None, "") else None})
     return rows
+
+
+# --- live task index (shared with the stuck-task view) ---------------------
+
+
+def live_task_index(celery_app: Celery, timeout: float) -> tuple[list[str], dict[str, dict]]:
+    """Which live worker holds which task id, and in what state.
+
+    Returns `(workers_that_replied, {task_id: {"worker", "state"}})` where
+    state is `active` (executing now), `reserved` (prefetched, waiting for a
+    pool slot) or `scheduled` (held until its ETA). Same ping-then-addressed
+    follow-ups as `inspect_workers`, so it costs about one `timeout`.
+
+    If two replies disagree about one id (a redelivered message landing on a
+    second worker while the first still runs it), `active` wins, because
+    "something is running this" is the fact the callers act on.
+    """
+    try:
+        pings = celery_app.control.inspect(timeout=timeout).ping() or {}
+        names = sorted(pings)
+        if not names:
+            return [], {}
+        follow_up = celery_app.control.inspect(destination=names, timeout=timeout, limit=len(names))
+        scheduled = follow_up.scheduled() or {}
+        reserved = follow_up.reserved() or {}
+        active = follow_up.active() or {}
+    except Exception as exc:  # broker errors come in many types
+        raise _broker_error(exc) from exc
+
+    index: dict[str, dict] = {}
+    # Least to most decisive, so a later state overwrites an earlier one.
+    for state, replies in (("scheduled", scheduled), ("reserved", reserved), ("active", active)):
+        for worker, items in replies.items():
+            for item in items or []:
+                request = (item.get("request") or {}) if state == "scheduled" else item
+                task_id = request.get("id") if isinstance(request, dict) else None
+                if task_id:
+                    index[task_id] = {"worker": worker, "state": state}
+    return names, index
+
+
+# --- delayed (ETA / countdown) tasks ---------------------------------------
+
+# Runs `list_delayed_tasks` reports as "recorded with a future ETA but held by
+# no worker". A cap, not a page: the list exists to make the operator look,
+# and past a hundred the count says as much as the rows would.
+MAX_UNHELD_LISTED = 100
+
+
+def _iso_utc(value) -> str | None:
+    """A worker's ETA (ISO 8601, in whatever zone the worker's app uses) as
+    UTC ISO 8601, so the dashboard compares like with like and a string sort
+    is a time sort. A naive value means UTC, this codebase's convention;
+    anything unparseable is passed through rather than dropped."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return str(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def list_delayed_tasks(celery_app: Celery, session, timeout: float, reveal_args: bool = False) -> dict:
+    """Every ETA/countdown task live workers are holding, soonest ETA first,
+    merged with what `task_runs` knows about each.
+
+    A countdown or ETA task does not wait on the broker: the first worker to
+    see it takes it off the queue at once and keeps it in memory until it is
+    due. So the only place these are visible is the workers' own
+    `inspect().scheduled()` — a worker that doesn't answer in time holds
+    tasks this list can't show.
+
+    Arguments are masked (`control.masking`) unless `reveal_args` is set;
+    the REST layer only sets it for operators.
+
+    `unheld_runs` lists runs recorded as `queued` with an ETA still in the
+    future that no replying worker holds: still on the queue (nothing
+    consumes it yet), held by a worker that didn't answer, or lost.
+
+    Raises `WorkerControlError` if the broker can't be reached.
+    """
+    try:
+        pings = celery_app.control.inspect(timeout=timeout).ping() or {}
+        names = sorted(pings)
+        scheduled = {}
+        if names:
+            follow_up = celery_app.control.inspect(destination=names, timeout=timeout, limit=len(names))
+            scheduled = follow_up.scheduled() or {}
+    except Exception as exc:  # broker errors come in many types
+        raise _broker_error(exc) from exc
+
+    tasks: list[dict] = []
+    for worker in sorted(scheduled):
+        for entry in scheduled.get(worker) or []:
+            request = entry.get("request") or {}
+            task_id = request.get("id")
+            if not task_id:
+                continue
+            delivery = request.get("delivery_info") or {}
+            args, kwargs = request.get("args"), request.get("kwargs")
+            priority = entry.get("priority")
+            tasks.append({
+                "task_id": task_id,
+                "task_name": request.get("name") or request.get("type"),
+                "eta": _iso_utc(entry.get("eta")),
+                "worker": worker,
+                "queue": delivery.get("routing_key"),
+                "priority": priority if priority is not None else delivery.get("priority"),
+                "args_masked": mask_call(args, kwargs),
+                "args": args if reveal_args else None,
+                "kwargs": kwargs if reveal_args else None,
+                "run": None,
+            })
+
+    ids = [t["task_id"] for t in tasks]
+    runs = {r.task_id: r for r in session.query(TaskRun).filter(TaskRun.task_id.in_(ids)).all()} if ids else {}
+    for task in tasks:
+        run = runs.get(task["task_id"])
+        if run is None:
+            continue
+        task["run"] = {"status": run.status, "schedule_name": run.schedule_name}
+        task["queue"] = task["queue"] or run.queue
+        task["task_name"] = task["task_name"] or run.task_name
+    # A missing ETA (shouldn't happen for a scheduled entry) sorts last.
+    tasks.sort(key=lambda t: (t["eta"] is None, t["eta"] or "", t["task_id"]))
+
+    held = set(ids)
+    unheld_query = (
+        session.query(TaskRun)
+        .filter(TaskRun.status == "queued", TaskRun.eta.isnot(None), TaskRun.eta > datetime.now(timezone.utc))
+        .order_by(TaskRun.eta)
+    )
+    unheld = []
+    truncated = False
+    # Over-fetch by the held count so the ones filtered out below can't
+    # starve the page; one row more than the cap says "there are more".
+    for run in unheld_query.limit(MAX_UNHELD_LISTED + len(held) + 1).all():
+        if run.task_id in held:
+            continue
+        if len(unheld) == MAX_UNHELD_LISTED:
+            truncated = True
+            break
+        eta = run.eta if run.eta.tzinfo else run.eta.replace(tzinfo=timezone.utc)
+        unheld.append({"task_id": run.task_id, "task_name": run.task_name, "eta": eta.isoformat(), "queue": run.queue})
+
+    return {"tasks": tasks, "workers_replied": names, "unheld_runs": unheld, "unheld_truncated": truncated}
+
+
+def cancel_delayed_tasks(celery_app: Celery, session, username: str, task_ids: list[str]) -> dict:
+    """Revoke delayed tasks and mark their runs `revoked` straight away.
+
+    The same `control.revoke` broadcast `cancel_task`/`bulk_cancel` send,
+    with one difference that is the reason this exists: a worker holding a
+    revoked ETA task only drops it — and only then emits `task-revoked` —
+    when the ETA arrives. Left to the events listener, a task cancelled
+    today with a countdown of a week would read `queued` for a week. So the
+    run is marked here, the way `purge_queue` marks what it removed. If the
+    revoke somehow doesn't take and the task runs anyway, its outcome event
+    overwrites `revoked` (later terminal status wins in the listener).
+
+    Ids with no recorded run are still revoked (a delayed task sent while
+    the listener was down is exactly what this view surfaces); only runs
+    still `queued`/`retried` are marked, never a finished one.
+
+    Revokes live in each worker's memory: a worker restarted before the ETA
+    forgets them and runs the task, unless workers run with `--statedb`.
+
+    Raises `ValueError` for an empty selection, `BulkCancelTooLarge` above
+    `MAX_BULK_CANCEL` ids and `WorkerControlError` if the broadcast fails —
+    nothing is marked or audited in any of those cases.
+    """
+    ids = list(dict.fromkeys(t for t in task_ids if t))  # de-dupe, keep order
+    if not ids:
+        raise ValueError("send at least one task id")
+    if len(ids) > MAX_BULK_CANCEL:
+        raise BulkCancelTooLarge(len(ids))
+    for start in range(0, len(ids), _REVOKE_CHUNK):
+        _broadcast(celery_app.control.revoke, ids[start:start + _REVOKE_CHUNK])
+
+    now = datetime.now(timezone.utc)
+    marked = []
+    for run in session.query(TaskRun).filter(TaskRun.task_id.in_(ids)).all():
+        if run.status in ("queued", "retried"):
+            run.status = "revoked"
+            run.finished_at = now
+            marked.append(run.task_id)
+    session.commit()
+
+    # The same audit actions as the Tasks page's cancel and bulk cancel, so
+    # "who cancelled what" stays one filter in the audit log; `delayed` says
+    # where it came from.
+    if len(ids) == 1:
+        record_audit(session, username, "cancel", "task", ids[0], {
+            "terminate": False, "delayed": True, "run_marked_revoked": bool(marked),
+        })
+    else:
+        record_audit(session, username, "cancel_bulk", "task", "delayed", {
+            "terminate": False, "delayed": True, "revoked": len(ids),
+            "runs_marked_revoked": len(marked), "task_ids": ids,
+        })
+    return {"revoked": len(ids), "runs_marked_revoked": len(marked)}

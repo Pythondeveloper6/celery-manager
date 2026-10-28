@@ -1,7 +1,6 @@
 # The documentation site (MkDocs Material), published to GitHub Pages.
 #
-# Pull requests that touch the docs build with --strict so a broken link or a
-# page missing from the nav fails review; only a push to main deploys.
+# Build and deploy only after changes reach main.
 name: Docs
 
 on:
@@ -13,13 +12,6 @@ on:
       - "SECURITY.md"
       - "CHANGELOG.md"
       - ".github/workflows/docs.yml"
-  pull_request:
-    paths:
-      - "docs/**"
-      - "mkdocs.yml"
-      - "SECURITY.md"
-      - ".github/workflows/docs.yml"
-  workflow_dispatch:
 
 concurrency:
   group: pages
@@ -51,7 +43,6 @@ jobs:
         run: mkdocs build --strict
 
       - name: Upload the site
-        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: site
@@ -59,7 +50,7 @@ jobs:
   deploy:
     name: deploy
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       pages: write

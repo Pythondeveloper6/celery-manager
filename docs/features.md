@@ -57,6 +57,10 @@ In the dashboard: the buttons on a run's page.
 **Retry with changes** to edit them first. Select several failed runs to
 retry them together.
 
+**Dead letters.** Runs that failed after their last retry, in one list,
+grouped by task and exception. Fix the arguments and run one or many again.
+[Read more](dead-letters.md)
+
 **Bulk cancel.** Cancel the runs you've selected, or every waiting or
 running task that matches your current filters. You see the count before
 you confirm. [Read more](queues.md#bulk-cancel)
@@ -79,6 +83,26 @@ it, or until a time you choose (1 hour, tomorrow 9:00, or a custom time).
 Resuming picks up from now: it doesn't catch up on the runs it missed.
 In the dashboard: **Pause schedule** on the Schedules page.
 [Read more](dashboard.md#pausing-a-whole-schedule)
+
+**Edit a schedule.** Change a schedule's crontab or interval from the
+dashboard, see its next five runs before you save, and revert to the
+schedule in your code at any time. Needs beat to run
+`celery_manager.beat:DatabaseScheduler` and `schedule_editing=True`.
+In the dashboard: **Edit schedule** on a schedule's page.
+[Read more](schedules.md)
+
+**Maintenance windows.** Skip chosen schedules, or all of them, on a
+recurring window such as every Sunday from 02:00 for two hours, in any
+timezone. Runs inside the window are recorded as skipped with the reason;
+there is nothing to resume afterwards.
+In the dashboard: **Schedules**, under the schedule list.
+[Read more](schedules.md#maintenance-windows)
+
+**Missed runs.** A scheduled run that was due but never arrived (beat was
+down, the message was lost) is listed on the schedule's page and counted on
+the schedule list, instead of going unnoticed.
+In the dashboard: **Schedules**, then a schedule's name.
+[Read more](decorator.md#missed-run-detection)
 
 ## Understand trends and failures
 
@@ -117,6 +141,23 @@ In the dashboard: **Queues**. [Read more](queues.md)
 **Purge a queue.** Delete every waiting message in one queue. You type the
 queue name to confirm. [Read more](queues.md#purging-a-queue)
 
+**Data retention.** Delete runs and their logs after a number of days you
+choose, per task, so the database does not grow forever. Off until you set
+it. In the dashboard: **Settings**. [Read more](retention.md)
+
+**Metrics.** A `/metrics` endpoint in the Prometheus format, with run counts,
+runtimes, failure ratios, queue depth, workers online and missed runs, plus an
+optional OpenTelemetry export. Protected by a token you choose.
+[Read more](metrics.md)
+## Know when something goes wrong
+
+**Alerts.** A message to Slack, a webhook or email when a task's failure
+rate jumps, a queue backs up, a worker goes offline, or a periodic task
+misses its run. Rules are set per task, queue, worker or schedule (or a
+pattern), with a quiet period so one incident sends one message, and a
+"resolved" message when it's over.
+In the dashboard: **Alerts**. [Read more](alerts.md)
+
 ## Share and keep what you find
 
 **Links to a view.** Your filters are part of the page address, so
@@ -150,11 +191,21 @@ step, run `celery-manager migrate`.
 There is no default account: you create the first one yourself.
 [Read more](quickstart.md#create-your-first-dashboard-user)
 
+**Sign in with your app's users.** Mounted in Django, Flask or FastAPI, the
+dashboard can let your app's own users in and take their role from your app
+(Django staff and superusers out of the box), with no second set of accounts.
+[Read more](integrations.md#sign-in-with-your-apps-users)
+
 **Roles.** Give each account `viewer` (look, don't touch), `operator`
 (retry, cancel, pause, worker controls) or `admin` (also purge queues,
 shut down workers, change branding). The server enforces it; the dashboard
 hides what you can't use.
 [Read more](roles.md)
+
+**Manage users in the dashboard.** Admins add accounts, change roles, reset
+passwords and delete accounts from the **Users** page; everyone can change
+their own password. A password change signs that account out everywhere
+else. [Read more](roles.md#from-the-dashboard)
 
 **Themes and branding.** Light, dark or follow the system, chosen per
 browser. Set the product name, accent colour and logo once for everyone.
