@@ -25,6 +25,7 @@ from celery_manager.api.app import (
     unclassified_write_routes,
 )
 from celery_manager.api.deps import require_role
+from celery_manager.api.routes import deadletters as deadletter_routes
 from celery_manager.api.routes import queues as queue_routes
 from celery_manager.api.routes import schedules as schedule_routes
 from celery_manager.api.routes import tasks as task_routes
@@ -45,6 +46,7 @@ WRITE_ROUTES = [
     ("POST", "/api/tasks/t1/retry", None, "operator"),
     ("POST", "/api/tasks/retry-bulk", {"task_ids": ["t1"]}, "operator"),
     ("POST", "/api/tasks/cancel-bulk", {"task_ids": ["t1"]}, "operator"),
+    ("POST", "/api/dead-letters/rerun", {"task_ids": ["t1"]}, "operator"),
     (
         "POST",
         "/api/schedules/nightly/occurrences/pause",
@@ -92,6 +94,7 @@ ROUTE_ROLES = {
     ("POST", "/api/tasks/{task_id}/retry"): "operator",
     ("POST", "/api/tasks/retry-bulk"): "operator",
     ("POST", "/api/tasks/cancel-bulk"): "operator",
+    ("POST", "/api/dead-letters/rerun"): "operator",
     ("POST", "/api/schedules/{name}/occurrences/pause"): "operator",
     ("POST", "/api/schedules/{name}/pause"): "operator",
     ("POST", "/api/schedules/{name}/resume"): "operator",
@@ -116,6 +119,7 @@ READ_ROUTES = [
     "/api/tasks/t1",
     "/api/tasks/t1/workflow",
     "/api/tasks/export?format=csv",
+    "/api/dead-letters",
     "/api/schedules",
     "/api/audit",
     "/api/analytics/overview",
@@ -132,6 +136,7 @@ _STUBBED = {
         "bulk_retry",
         "bulk_cancel",
     ],
+    deadletter_routes: ["rerun_with_arguments"],
     schedule_routes: ["pause_occurrence", "pause_schedule", "resume_schedule"],
     worker_routes: ["shutdown_worker", "resize_pool", "set_consumer", "set_rate_limit"],
     queue_routes: ["purge_queue"],

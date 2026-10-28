@@ -18,6 +18,9 @@ from celery_manager.api.routes import (
     auth as auth_routes,
 )
 from celery_manager.api.routes import (
+    deadletters as deadletter_routes,
+)
+from celery_manager.api.routes import (
     export as export_routes,
 )
 from celery_manager.api.routes import (
@@ -159,6 +162,7 @@ def create_app(config: CeleryManagerConfig):
     # Before task_routes: /api/tasks/export must win over /api/tasks/{task_id}.
     app.include_router(export_routes.router)
     app.include_router(task_routes.router)
+    app.include_router(deadletter_routes.router)
     app.include_router(schedule_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
