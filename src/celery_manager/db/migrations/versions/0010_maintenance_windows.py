@@ -1,7 +1,7 @@
 """maintenance_windows table; task_runs.skip_reason
 
 Revision ID: 0010
-Revises: 0008
+Revises: 0009
 Create Date: 2026-10-28 11:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0010"
-down_revision = "0008"
+down_revision = "0009"
 branch_labels = None
 depends_on = None
 
