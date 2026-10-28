@@ -1,8 +1,9 @@
 # Queues, purge and bulk cancel
 
 The dashboard's **Queues** page shows how much work is waiting on the broker
-for each queue, lets you purge a queue, and the task list can cancel many
-runs at once. All three are thin wrappers over Celery/kombu primitives; this
+for each queue, lets you look at the messages waiting in one, delete or move
+a single message, and purge a queue; the task list can cancel many runs at
+once. All of these are thin wrappers over Celery/kombu primitives; this
 page is about what they actually do, and where they can't see.
 
 ## Which queues are listed
@@ -197,6 +198,85 @@ deadline as the queue list and never raises: an unreachable broker is
 masked, and the same masking is applied to error text. The panel refreshes
 with the page. The numbers are also in [`/metrics`](metrics.md) and drive the
 `broker_unreachable` and `broker_memory` [alert kinds](alerts.md).
+
+## Looking inside a queue
+
+Click a queue's name on the **Queues** page to see the messages waiting in
+it, next to run first: position, task name and id (linked to the run when
+celery-manager has recorded it), priority, age, ETA, retries, size and the
+arguments. `GET /api/queues/{name}/messages?limit=50&offset=0` returns the
+same list. Any role can look.
+
+### Redis: exact, and nothing is taken
+
+Kombu keeps a Redis queue as plain lists, one per priority step (`0`, `3`,
+`6`, `9` by default; the queue's own name for `0` and `<name>\x06\x163` and so
+on for the others, under any `global_keyprefix`). Producers push at the head
+and workers pop from the tail, step `0` first. **On Redis a lower priority
+number runs sooner**, the opposite of RabbitMQ. celery-manager reads the
+lists in that same order with `LRANGE`, which takes nothing off the queue,
+so the order shown is the order workers will take them, as of that moment.
+
+### RabbitMQ: approximate, off by default
+
+RabbitMQ has no way to read a message without handing it out. The only way
+to look is to take messages without acknowledging them (`basic_get`) and
+reject them back onto the queue. That has side effects:
+
+- while they are being read (milliseconds), workers can't take them;
+- RabbitMQ marks every message read as **redelivered**;
+- a message put back may land at a different place, usually the front, so
+  the order shown can change just by looking.
+
+So browsing RabbitMQ is off until you set `queue_browser_amqp=True`. With it
+on, the dashboard says the view is approximate and lists these side effects,
+the API returns `approximate: true` and `side_effects`, and at most 20
+messages are read per look, whatever page size is asked for. Queue depth is
+unchanged afterwards. With it off, and on any transport other than Redis and
+RabbitMQ, the answer is `supported: false` with the reason.
+
+### Arguments
+
+Arguments follow the same rule as task runs: every role sees them (see
+[Roles](roles.md#what-viewers-can-see)). They come from the `argsrepr` and
+`kwargsrepr` headers the producer wrote (already shortened by Celery's
+`argsrepr_maxsize`), or, for messages without them, from the body if it is
+JSON and under 64 KB. Pickled bodies are never decoded: unpickling would run
+whatever code the message names inside the dashboard process. Long arguments
+are cut to 2,000 characters, and the raw body is never sent to the browser.
+
+If your task arguments carry secrets, set `queue_browser_show_args=False`.
+The arguments are then left out of the response for every role, not just
+hidden on the page.
+
+**Age** is only known for some messages: Celery doesn't put a send time on a
+message. It is shown for messages beat sent through celery-manager's
+stamping scheduler (`cm_sent_at` header) and for runs that record when they
+were sent.
+
+### Deleting or moving one message (Redis)
+
+Admins get **Delete** and **Move** on each message, each with a confirmation.
+
+- **Delete** removes that one message for good. If celery-manager recorded
+  its run as `queued`, the run is marked `revoked`, as a purge does, because
+  no worker will ever report on it. Audited as `delete_message`.
+- **Move** sends it to the end of another queue, keeping its priority, and
+  records the run's new queue. The target must be a queue celery-manager
+  knows (configured, routed, seen on a run, or consumed by a worker), so a
+  typo can't create a queue nobody reads. The message's own routing fields
+  are updated too, so if a worker takes it and then dies, Redis puts it back
+  on the new queue, not the old one. Audited as `move_message`.
+
+Both find the exact stored message by task id and remove that exact entry
+in one Redis transaction (`WATCH` on the list, then `LREM` and, for a move,
+`LPUSH`). If a worker takes the message in between, the transaction does
+nothing and the answer is `409` "already taken by a worker": the message is
+never both run and moved, and a delete is never reported for a message that
+ran. A message that isn't waiting there at all is a `404`.
+
+These need Redis. On RabbitMQ a single message can't be taken out of the
+middle of a queue, so delete and move answer `409`.
 
 ## Purging a queue
 

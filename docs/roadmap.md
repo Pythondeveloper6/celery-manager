@@ -20,15 +20,6 @@ cancel.
 example after a crash, with how long they have been held and a way to put them back
 on the queue.
 
-## Look inside a queue
-
-**Browse waiting messages.** Task name, id, arguments (masked) and age of the messages
-waiting in a queue, without taking them off it. Exact on Redis; approximate on
-RabbitMQ, where reading a message changes its position.
-
-**Delete or move a single message (Redis).** Remove one waiting message, or move it to
-another queue, with an audit entry.
-
 ## RabbitMQ
 
 **Management integration.** Consumers and unacknowledged messages per queue, publish
