@@ -12,13 +12,13 @@ import pytest
 flask = pytest.importorskip("flask")
 pytest.importorskip("a2wsgi")
 
-from a2wsgi import ASGIMiddleware  # noqa: E402
-from celery import Celery  # noqa: E402
-from werkzeug.middleware.dispatcher import DispatcherMiddleware  # noqa: E402
+from a2wsgi import ASGIMiddleware
+from celery import Celery
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
-from celery_manager.api.app import create_app  # noqa: E402
-from celery_manager.config import CeleryManagerConfig  # noqa: E402
-from celery_manager.integrations.flask import flask_authenticator  # noqa: E402
+from celery_manager.api.app import create_app
+from celery_manager.config import CeleryManagerConfig
+from celery_manager.integrations.flask import flask_authenticator
 
 
 class FakeUser:
