@@ -88,19 +88,13 @@ def lock_task_run(session, task_id: str, seed: dict | None = None) -> TaskRun:
     values["task_id"] = task_id
     dialect_name = session.get_bind().dialect.name
 
-    # Ordering differs by dialect for a reason, not by accident:
-    #
-    # - SQLite: insert first. Its locking is database-wide; the INSERT takes
-    #   the write lock up front, so the SELECT and the caller's UPDATE that
-    #   follow run serialised against every other writer (they wait on the
-    #   busy timeout rather than interleaving and losing updates). Cheap, too:
-    #   a conflicting DO NOTHING burns no rowid.
-    # - Everything else: select first. A conflicting ON CONFLICT / ON
-    #   DUPLICATE KEY still consumes a sequence / auto-increment value, and
-    #   the listener alone writes ~5 events per task — inserting first would
-    #   burn ids several times faster than rows are created. The row lock
-    #   from FOR UPDATE provides the serialisation instead.
-    if dialect_name != "sqlite":
+    # SQLite takes its database write lock with the insert. InnoDB must also
+    # insert first: concurrent SELECT FOR UPDATE reads of the same missing
+    # key can hold compatible gap locks, then deadlock upgrading for INSERT.
+    # Native ON DUPLICATE KEY UPDATE acquires the write lock directly.
+    # PostgreSQL and other backends select first to avoid consuming a sequence
+    # value on every update; SQL Server needs its absent-key range lock.
+    if dialect_name not in ("sqlite", "mysql", "mariadb"):
         run = _select_locked(session, task_id)
         if run is not None:
             return run

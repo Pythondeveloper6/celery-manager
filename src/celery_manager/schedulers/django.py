@@ -45,12 +45,20 @@ class DjangoCeleryBeatBackend:
         return fields
 
     def create(self, entry):
+        from django.core.exceptions import ValidationError
         from django.db import IntegrityError, transaction
         try:
             with transaction.atomic():
                 model = self.Model.objects.create(name=entry.name, **self._fields(entry))
-        except IntegrityError as exc:
-            raise FileExistsError(entry.name) from exc
+        except (IntegrityError, ValidationError) as exc:
+            # PeriodicTask.save() validates uniqueness before INSERT. Normalise
+            # both that path and a concurrent database uniqueness violation,
+            # without mislabelling unrelated validation/storage errors.
+            if self.Model.objects.filter(name=entry.name).exists():
+                raise FileExistsError(entry.name) from exc
+            if isinstance(exc, ValidationError):
+                raise ValueError(str(exc)) from exc  # noqa: TRY004 — invalid model values, not a Python argument type
+            raise
         return self._convert(model)
 
     def update(self, name, **changes):

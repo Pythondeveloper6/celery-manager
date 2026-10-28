@@ -6,6 +6,17 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Django schedule creation consistently reports duplicate names, including
+  pre-save validation failures, while preserving unrelated storage errors.
+- MySQL/MariaDB task-run creation uses insert-first upserts to avoid the
+  missing-key gap-lock deadlock between concurrent writers.
+- Development installs include Celery's Redis transport dependencies so
+  broker-related tests collect on clean Python environments.
+- Django scheduler adapter tests now exercise the scheduler-owned entry cache
+  that the real beat tick/sync lifecycle persists.
+
 ## [0.2.0a1] — 2026-10-28
 
 One combined production-adoption alpha. Run migrations through `0014` before
