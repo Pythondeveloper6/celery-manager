@@ -121,3 +121,4 @@ nav:
       - Working on celery-manager: contributing.md
       - Changelog: changelog.md
       - Security: security.md
+      - Roadmap: roadmap.md

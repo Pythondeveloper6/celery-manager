@@ -267,6 +267,13 @@ are in [`CHANGELOG.md`](https://github.com/Pythondeveloper6/celery-manager/blob/
 A complete runnable Django example is in
 [`examples/django_demo/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo/).
 
+## Roadmap
+
+Next up: alerts, missed-run detection, Prometheus/OpenTelemetry metrics, sign-in with
+your app's users, user management in the dashboard, editing schedules from the UI,
+maintenance windows, a dead-letter view and data retention.
+[Read the roadmap →](https://pythondeveloper6.github.io/celery-manager/roadmap/)
+
 ## Requirements
 
 Python 3.10+, Celery 5.x. Storage defaults to SQLite with zero configuration
