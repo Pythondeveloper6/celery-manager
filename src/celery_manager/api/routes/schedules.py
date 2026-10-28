@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -8,6 +8,11 @@ from pydantic import BaseModel
 
 from celery_manager.api.deps import get_current_user, require_operator
 from celery_manager.api.serialization import utc
+from celery_manager.control.missed import (
+    first_stamped_occurrence,
+    list_missed_runs,
+    missed_run_counts,
+)
 from celery_manager.control.schedules import (
     is_paused,
     list_periodic_schedules,
@@ -67,6 +72,27 @@ def occurrences(name: str, request: Request, username: str = Depends(get_current
         return list_upcoming_with_overrides(session, celery_app, name, eta_tolerance_seconds=eta_tolerance_seconds)
 
 
+@router.get("/{name}/missed")
+def missed(name: str, request: Request, username: str = Depends(get_current_user)):
+    """Scheduled runs of this schedule that were due but never arrived (last
+    7 days, newest detection rules in `control/missed.py`). `active` is false
+    until beat has stamped a run for it, i.e. detection is not yet possible."""
+    config = request.app.state.cm_config
+    if name not in (config.celery_app.conf.beat_schedule or {}):
+        raise HTTPException(status_code=404, detail="Unknown schedule.")
+    with request.app.state.cm_session_factory() as session:
+        tracking_since = first_stamped_occurrence(session, name)
+        runs = list_missed_runs(
+            session, config.celery_app, name, grace_seconds=config.missed_run_grace_seconds
+        )
+    return {
+        "active": tracking_since is not None,
+        "tracking_since": utc(tracking_since),
+        "grace_seconds": config.missed_run_grace_seconds,
+        "missed": [{"due_at": utc(r["due_at"])} for r in runs],
+    }
+
+
 def _schedule_summary(s) -> dict:
     return {
         "name": s.name,
@@ -122,5 +148,15 @@ def resume_whole_schedule(name: str, request: Request, username: str = Depends(r
 @router.get("")
 def list_schedules(request: Request, username: str = Depends(get_current_user)):
     session_factory = request.app.state.cm_session_factory
+    config = request.app.state.cm_config
     with session_factory() as session:
-        return [_schedule_summary(s) for s in list_periodic_schedules(session)]
+        counts = missed_run_counts(
+            session,
+            config.celery_app,
+            datetime.now(timezone.utc) - timedelta(hours=24),
+            grace_seconds=config.missed_run_grace_seconds,
+        )
+        return [
+            {**_schedule_summary(s), "missed_count": counts.get(s.name, 0)}
+            for s in list_periodic_schedules(session)
+        ]

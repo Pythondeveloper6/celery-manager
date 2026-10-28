@@ -30,6 +30,11 @@ class CeleryManagerConfig:
         no occurrence headers from a beat that has never stamped one (an
         older beat during an upgrade) is it still compared with "now", the
         previous behaviour.
+    missed_run_grace_seconds: how long after a scheduled run was due it may
+        still arrive before the dashboard reports it as missed. Detection
+        needs beat to run the stamping scheduler
+        (`celery_manager.beat:Scheduler`); see the decorator docs. Raise it
+        if your broker or workers are routinely slow to start a run.
     export_max_rows: hard cap on rows in one `GET /api/tasks/export` download.
         Larger results are cut off (newest first) and flagged with an
         `X-Export-Truncated: true` header.
@@ -64,6 +69,7 @@ class CeleryManagerConfig:
     db_url: str = "sqlite:///celery_manager.db"
     secret_key: str = "change-me"
     eta_tolerance_seconds: int = 60
+    missed_run_grace_seconds: int = 300
     cookie_secure: bool = True
     export_max_rows: int = 50_000
     auto_migrate: bool = True
