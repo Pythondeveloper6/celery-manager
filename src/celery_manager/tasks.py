@@ -48,7 +48,13 @@ def register_prune_task(
             )
 
     if schedule is not None:
-        entries = dict(celery_app.conf.beat_schedule or {})
-        entries[PRUNE_BEAT_ENTRY] = {"task": name, "schedule": schedule}
-        celery_app.conf.beat_schedule = entries
+        entry = {"task": name, "schedule": schedule}
+        entries = celery_app.conf.beat_schedule
+        if isinstance(entries, dict) and entries:
+            # Add to the dict in place: with settings loaded under a namespace
+            # (Django's CELERY_BEAT_SCHEDULE), assigning `beat_schedule` is
+            # shadowed by the namespaced key and silently ignored.
+            entries[PRUNE_BEAT_ENTRY] = entry
+        else:
+            celery_app.conf.beat_schedule = {PRUNE_BEAT_ENTRY: entry}
     return prune

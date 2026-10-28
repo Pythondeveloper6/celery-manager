@@ -292,6 +292,19 @@ def test_prune_task_is_opt_in_and_runs_the_prune(tmp_path):
     assert _ids(url) == {"new"}
 
 
+def test_prune_schedule_survives_django_style_namespaced_settings(tmp_path):
+    # With settings loaded under the CELERY namespace (Django), assigning
+    # `conf.beat_schedule` is shadowed by CELERY_BEAT_SCHEDULE and lost.
+    class Settings:
+        CELERY_BEAT_SCHEDULE = {"heartbeat": {"task": "demo.heartbeat", "schedule": 60.0}}  # noqa: RUF012
+
+    app = Celery("t")
+    app.config_from_object(Settings, namespace="CELERY")
+    config = CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / 'cm.db'}")
+    register_prune_task(app, config, schedule=3600.0)
+    assert set(app.conf.beat_schedule) == {"heartbeat", PRUNE_BEAT_ENTRY}
+
+
 # --- API ---------------------------------------------------------------------
 
 
