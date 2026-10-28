@@ -149,13 +149,80 @@ def prune_command(db_url: str, *, dry_run: bool = False, batch_size: int = 1000)
         engine.dispose()
 
 
+def _load_config(config_path: str | None, celery_app_path: str | None, db_url: str | None) -> CeleryManagerConfig:
+    """The config for a long-running command: either an importable
+    CeleryManagerConfig (`--config module:attr`, the only way to give the
+    SMTP settings and dashboard_url, which have no flags of their own: a
+    password on the command line is visible to every local user in `ps`),
+    or one built from `--celery-app` and `--db-url`."""
+    if config_path:
+        config = load_celery_app(config_path)
+        if not isinstance(config, CeleryManagerConfig):
+            raise SystemExit(f"error: {config_path} is not a CeleryManagerConfig")
+        if db_url:
+            config.db_url = db_url
+        if celery_app_path:
+            config.celery_app = load_celery_app(celery_app_path)
+        return config
+    if not celery_app_path or not db_url:
+        raise SystemExit("error: give --config, or both --celery-app and --db-url")
+    # No secret_key: these processes never sign or verify a session, so the
+    # config default is fine here (create_app() is what refuses it).
+    return CeleryManagerConfig(celery_app=load_celery_app(celery_app_path), db_url=db_url)
+
+
+def alerts_command(config: CeleryManagerConfig, interval: float | None, once: bool) -> int:
+    """`celery-manager alerts`. Returns the process exit code (only with --once;
+    otherwise it runs until interrupted)."""
+    from celery_manager.alerts import evaluate_once, run_forever
+
+    engine = init_db(config)
+    session_factory = get_session_factory(engine)
+    try:
+        if once:
+            sent = evaluate_once(session_factory, config.celery_app, config)
+            for entry in sent:
+                failed = f" ({len(entry['errors'])} channel(s) failed)" if entry["errors"] else ""
+                print(f"{entry['event']}: rule {entry['rule_id']}, {entry['key']}{failed}")
+            print(f"{len(sent)} message(s) sent.")
+            return 0
+        run_forever(session_factory, config.celery_app, config, interval)
+        return 0
+    finally:
+        engine.dispose()
+
+
+def _add_config_args(parser: argparse.ArgumentParser, *, required: bool) -> None:
+    parser.add_argument(
+        "--celery-app", "--app", dest="celery_app", required=required, help="import path, e.g. demo.celery:app"
+    )
+    parser.add_argument("--db-url", required=required)
+    parser.add_argument(
+        "--config",
+        help="import path of a CeleryManagerConfig, e.g. myproject.cm:config "
+        "(for SMTP and dashboard_url; --celery-app/--db-url then override it)",
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="celery-manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     events_parser = subparsers.add_parser("events", help="run the events listener")
-    events_parser.add_argument("--celery-app", required=True, help="import path, e.g. demo.celery:app")
-    events_parser.add_argument("--db-url", required=True)
+    _add_config_args(events_parser, required=False)
+    events_parser.add_argument(
+        "--with-alerts",
+        action="store_true",
+        help="also evaluate alert rules in this process, on a background thread",
+    )
+    events_parser.add_argument("--alerts-interval", type=float, help="seconds between alert checks")
+
+    alerts_parser = subparsers.add_parser("alerts", help="evaluate alert rules and send messages")
+    _add_config_args(alerts_parser, required=False)
+    alerts_parser.add_argument(
+        "--interval", type=float, help="seconds between checks (default: alert_interval_seconds, 60)"
+    )
+    alerts_parser.add_argument("--once", action="store_true", help="check every rule once and exit")
 
     migrate_parser = subparsers.add_parser(
         "migrate", help="upgrade the database schema to the latest revision"
@@ -214,14 +281,20 @@ def main() -> None:
     if args.command == "migrate":
         sys.exit(migrate(args.db_url, check=args.check))
 
-    if args.command == "events":
-        celery_app = load_celery_app(args.celery_app)
+    if args.command == "alerts":
+        config = _load_config(args.config, args.celery_app, args.db_url)
+        sys.exit(alerts_command(config, args.interval, args.once))
 
-        # No secret_key: the listener never signs or verifies a session, so
-        # the config default is fine here (create_app() is what refuses it).
-        config = CeleryManagerConfig(celery_app=celery_app, db_url=args.db_url)
+    if args.command == "events":
+        config = _load_config(args.config, args.celery_app, args.db_url)
         engine = init_db(config)
         session_factory = get_session_factory(engine)
+        if args.with_alerts:
+            # Same process, own thread and own sessions: the listener's
+            # capture loop blocks, and a slow webhook must not delay events.
+            from celery_manager.alerts import start_in_background
+
+            start_in_background(session_factory, config.celery_app, config, args.alerts_interval)
         EventListener(config, session_factory).run()
 
 
