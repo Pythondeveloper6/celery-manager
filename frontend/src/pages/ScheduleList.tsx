@@ -59,7 +59,7 @@ export function ScheduleList() {
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <h1 className="cm-page-title">Schedules</h1>
-          <p className="cm-page-lede">Periodic tasks. Open one to skip or cancel an upcoming run.</p>
+          <p className="cm-page-lede">Periodic tasks. Open one to skip or cancel an upcoming run, or to change when it runs.</p>
         </div>
       </header>
 
@@ -126,7 +126,17 @@ export function ScheduleList() {
                       )}
                     </td>
                     <td>{s.task_name}</td>
-                    <td>{s.schedule_spec}</td>
+                    <td>
+                      {s.schedule_spec}
+                      {s.schedule_override && (
+                        // Edited from the dashboard (ScheduleEditor, opened from the
+                        // schedule's own page): say so, and by whom.
+                        <span className="cm-pause-state-by cm-schedule-edited" title={`In the code: ${s.code_schedule_spec}`}>
+                          Edited {formatPausedBy(s.edited_by, s.edited_at)}
+                          {!s.schedule_editing && " (not applied)"}
+                        </span>
+                      )}
+                    </td>
                     <td className="cm-col-fit">
                       {s.paused ? (
                         <span className="cm-pause-state">

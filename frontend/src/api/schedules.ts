@@ -74,6 +74,90 @@ export interface ScheduleSummary {
   // Scheduled runs from the last 24 hours that were due but never arrived
   // (see `getMissedRuns`); 0 when none or when detection isn't active yet.
   missed_count: number;
+  // The schedule in force: an operator's edit while one applies (and
+  // editing is on), otherwise the code's `beat_schedule` entry. Display only.
+  // `code_schedule_spec` is always the code's.
+  code_schedule_spec: string;
+  // The code's schedule as an editable spec (prefills the editor); null for
+  // kinds a spec can't express (solar, custom classes).
+  code_schedule: ScheduleSpec | null;
+  // The saved edit, or null when the schedule runs as the code says.
+  schedule_override: ScheduleSpec | null;
+  edited_by: string | null;
+  edited_at: string | null;
+  // `CeleryManagerConfig.schedule_editing`: false means beat won't apply
+  // edits, so saving is refused (409) and the editor is shown disabled.
+  schedule_editing: boolean;
+}
+
+// An operator's edit of when a schedule runs. Crontab fields are Celery's
+// own syntax ("*", "0", "*/15", "mon-fri"); the server parses them with
+// `crontab(...)` and answers 422 with a sentence when one is wrong.
+export type ScheduleSpec =
+  | {
+      type: "crontab";
+      minute: string;
+      hour: string;
+      day_of_week: string;
+      day_of_month: string;
+      month_of_year: string;
+    }
+  | { type: "interval"; seconds: number };
+
+async function detailMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    if (typeof body?.detail === "string" && body.detail.trim()) return body.detail.trim();
+  } catch {
+    // Not JSON; fall through.
+  }
+  return fallback;
+}
+
+// The next five runs under `spec`, without saving it. Any signed-in role.
+export async function previewSchedule(name: string, spec: ScheduleSpec, signal?: AbortSignal): Promise<string[]> {
+  const response = await fetch(`${BASE}/schedules/${encodeURIComponent(name)}/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(spec),
+    signal,
+  });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
+  if (!response.ok) throw new Error(await detailMessage(response, "Couldn't preview this schedule."));
+  const body: { occurrences: string[] } = await response.json();
+  return body.occurrences;
+}
+
+export interface SavedSchedule extends ScheduleSummary {
+  // Future skips/cancels the new schedule has no run for. They are kept
+  // (and apply again if the schedule is changed back) but won't fire now.
+  unmatched_overrides: string[];
+}
+
+// Save an edit (operator). 409 when editing is off, 422 for a bad spec;
+// both carry a sentence in `detail`, shown as-is.
+export async function saveSchedule(name: string, spec: ScheduleSpec): Promise<SavedSchedule> {
+  const response = await fetch(`${BASE}/schedules/${encodeURIComponent(name)}/schedule`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(spec),
+  });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
+  if (!response.ok) throw new Error(await detailMessage(response, "Couldn't save the schedule."));
+  return response.json();
+}
+
+// Drop the edit: the schedule runs as the code says again (operator).
+export async function revertSchedule(name: string): Promise<ScheduleSummary> {
+  const response = await fetch(`${BASE}/schedules/${encodeURIComponent(name)}/schedule`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
+  if (!response.ok) throw new Error(await detailMessage(response, "Couldn't revert the schedule."));
+  return response.json();
 }
 
 export async function listSchedules(): Promise<ScheduleSummary[]> {

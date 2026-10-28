@@ -1,0 +1,47 @@
+/* Edit-schedule sheet (ScheduleEditor). Builds on task-call.css's sheet. Tokens only. */
+
+.cm-schedule-cron {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--cm-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cm-schedule-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-2);
+  padding: var(--cm-space-3);
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  background: var(--cm-color-muted-subtle);
+}
+
+.cm-schedule-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cm-space-1);
+  margin: 0;
+  padding-left: var(--cm-space-4);
+  font-size: var(--cm-text-md);
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--cm-duration-base) var(--cm-ease);
+}
+
+/* A newer preview is on its way: keep the old one readable but quieter. */
+.cm-schedule-preview-list[data-stale] {
+  opacity: 0.55;
+}
+
+/* Revert sits apart from Cancel/Save: it undoes the saved edit, not the form. */
+.cm-sheet-footer .cm-schedule-revert {
+  margin-right: auto;
+}
+
+.cm-schedule-edited {
+  display: block;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
