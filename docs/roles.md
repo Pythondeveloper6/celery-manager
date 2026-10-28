@@ -10,7 +10,7 @@ the role before it can.
 | Role | For | Can |
 |---|---|---|
 | `viewer` | People who watch: support, on-call shadowing, managers | See everything. Change nothing. |
-| `operator` | People who run things day to day | Everything a viewer can, plus retry, cancel and terminate tasks, start a task, pause and resume schedules and single runs, and the worker controls you can undo from the dashboard. |
+| `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause and resume schedules and single runs, and the worker controls you can undo from the dashboard. |
 | `admin` | People who own the deployment | Everything, including purging queues, shutting down workers and changing branding. |
 
 The server checks the role on every request that changes something. A
@@ -29,6 +29,7 @@ The server check is the real one.
 | Retry a task (with or without edited arguments) | `POST /api/tasks/{id}/retry` | `operator` |
 | Retry many tasks | `POST /api/tasks/retry-bulk` | `operator` |
 | Cancel many tasks | `POST /api/tasks/cancel-bulk` | `operator` |
+| Run dead letters again (with or without edited arguments) | `POST /api/dead-letters/rerun` | `operator` |
 | Skip or cancel one schedule run | `POST /api/schedules/{name}/occurrences/pause` | `operator` |
 | Pause or resume a schedule | `POST /api/schedules/{name}/pause`, `.../resume` | `operator` |
 | Add or remove a worker pool process | `POST /api/workers/{worker}/pool/grow`, `.../shrink` | `operator` |

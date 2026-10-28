@@ -28,6 +28,14 @@ interface Props {
   onClose: () => void;
   // Called with the id of the newly dispatched run.
   onDone: (taskId: string) => void;
+  // Retry mode only. Wording and dispatch for callers that edit arguments but
+  // send them somewhere other than `POST /tasks/{id}/retry`, like the
+  // dead-letter page. `dispatch` returns the id handed to `onDone`; a caller
+  // that dispatches several runs keeps the rest in its own closure.
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  dispatch?: (args: unknown[], kwargs: Record<string, unknown>) => Promise<string>;
 }
 
 /** Pretty JSON when the stored text parses, otherwise the raw text so the
@@ -97,7 +105,16 @@ function signatureHint(sig: SignatureParam[] | null): string | null {
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function TaskCallDialog({ mode, retryOf, onClose, onDone }: Props) {
+export function TaskCallDialog({
+  mode,
+  retryOf,
+  onClose,
+  onDone,
+  title: titleOverride,
+  description,
+  submitLabel,
+  dispatch,
+}: Props) {
   const isRetry = mode === "retry";
   const uid = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -218,7 +235,9 @@ export function TaskCallDialog({ mode, retryOf, onClose, onDone }: Props) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      if (isRetry && retryOf) {
+      if (isRetry && dispatch) {
+        onDone(await dispatch(argsResult.value, kwargsResult.value));
+      } else if (isRetry && retryOf) {
         const { new_task_id } = await retryTask(retryOf.taskId, {
           args: argsResult.value,
           kwargs: kwargsResult.value,
@@ -243,7 +262,7 @@ export function TaskCallDialog({ mode, retryOf, onClose, onDone }: Props) {
 
   const hint = signatureHint(signature);
   const required = realParams(signature).filter((p) => p.required && p.kind === "positional");
-  const title = isRetry ? "Retry with changes" : "Start a task";
+  const title = titleOverride ?? (isRetry ? "Retry with changes" : "Start a task");
   const showPicker = !isRetry && !taskName;
   const exactMatch = registered?.some((t) => t.name === query.trim());
 
@@ -263,9 +282,10 @@ export function TaskCallDialog({ mode, retryOf, onClose, onDone }: Props) {
               {title}
             </h2>
             <p className="cm-sheet-desc">
-              {isRetry
-                ? "Edit the arguments, then dispatch a new run. The original run is kept and linked."
-                : "Dispatch a registered task now or later. The action is recorded in the audit log."}
+              {description ??
+                (isRetry
+                  ? "Edit the arguments, then dispatch a new run. The original run is kept and linked."
+                  : "Dispatch a registered task now or later. The action is recorded in the audit log.")}
             </p>
           </div>
           <button type="button" className="cm-btn cm-btn-ghost cm-btn-icon" onClick={onClose} aria-label="Close">
@@ -481,7 +501,7 @@ export function TaskCallDialog({ mode, retryOf, onClose, onDone }: Props) {
               Cancel
             </button>
             <button type="submit" className="cm-btn cm-btn-primary" disabled={!canSubmit} aria-busy={submitting}>
-              {submitting ? "Dispatching…" : isRetry ? "Retry with these arguments" : "Start task"}
+              {submitting ? "Dispatching…" : isRetry ? (submitLabel ?? "Retry with these arguments") : "Start task"}
             </button>
           </footer>
         </form>
