@@ -171,6 +171,11 @@ step, run `celery-manager migrate`.
 There is no default account: you create the first one yourself.
 [Read more](quickstart.md#create-your-first-dashboard-user)
 
+**Sign in with your app's users.** Mounted in Django, Flask or FastAPI, the
+dashboard can let your app's own users in and take their role from your app
+(Django staff and superusers out of the box), with no second set of accounts.
+[Read more](integrations.md#sign-in-with-your-apps-users)
+
 **Roles.** Give each account `viewer` (look, don't touch), `operator`
 (retry, cancel, pause, worker controls) or `admin` (also purge queues,
 shut down workers, change branding). The server enforces it; the dashboard

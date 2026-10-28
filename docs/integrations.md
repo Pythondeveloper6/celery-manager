@@ -128,8 +128,276 @@ The events listener needs Celery task events switched on; see
 
 Create a dashboard user with `celery-manager create-user NAME --role admin --db-url ...`
 or `celery_manager.auth.users.create_user`; both demos include a `create_user.py`
-script. The embedded dashboard keeps its own accounts and [roles](roles.md); there
-is no hook to reuse your app's login.
+script. Or skip separate accounts altogether and let people sign in with your app's
+own users: see the next section.
+
+## Sign in with your app's users
+
+Instead of keeping a second set of accounts, the dashboard can ask your Django,
+Flask or FastAPI app who a request belongs to, and which [role](roles.md) they get.
+Set `authenticate_request` on the config to a function that takes the Starlette
+`Request` and returns an `ExternalUser(username, role)`, or `None` when the request
+isn't signed in to your app:
+
+```python
+from celery_manager.integrations import ExternalUser
+
+def authenticate(request) -> ExternalUser | None:
+    user = my_app_user_from(request)          # your cookie or token, your user table
+    if user is None:
+        return None                           # not signed in to my app
+    return ExternalUser(username=user.email, role=role_for(user))
+
+config = CeleryManagerConfig(
+    ...,
+    authenticate_request=authenticate,
+    login_url="/login?next={next}",           # where "Sign in with ..." goes
+    logout_url="/logout",                     # where "Sign out" goes
+    login_provider_name="Acme",               # "Sign in with Acme"
+    local_login_enabled=False,                # optional: no dashboard passwords at all
+)
+```
+
+Ready-made authenticators for Django and Flask are below. For FastAPI you write the
+function yourself, usually a few lines around the code you already use to check a
+user.
+
+### How a request is signed in
+
+On **every** request, in this order:
+
+1. **Your app is asked first.** If it returns an `ExternalUser`, that is who the
+   request belongs to, even if the browser also has an older dashboard session for a
+   local account.
+    - `role` is `"viewer"`, `"operator"` or `"admin"`: signed in with that role.
+    - `role` is `None`: a real user of your app who may not use the dashboard. Every
+      request gets `403` and the dashboard shows a "No access" page naming the
+      account. There is no fallback to a local account in the same browser.
+2. **It returned `None`** (not signed in to your app): the dashboard's own accounts
+   and `cm_session` cookie are tried, as before. With `local_login_enabled=False`
+   that step is skipped and the request is a `401`.
+
+Because the role comes from your app on each request, demoting someone, removing
+their access or deactivating them in your app applies on their next request.
+
+**It fails closed.** A role that isn't one of the three (a typo such as `"Admin"`,
+a role from your own app such as `"superuser"`), anything that isn't an
+`ExternalUser`, an empty or over-long username, or an exception from your function
+is a `500` with the reason in the server log ("authenticate_request returned role
+'superuser' for 'dana' ..."). It is never turned into access, and never into "not
+signed in", which would hide the bug behind the login page. An `HTTPException`
+raised by your function (say, a dependency that raises its own `401`) is passed
+through unchanged.
+
+Your function runs in FastAPI's worker threadpool, so it may block: a database query
+or an ORM call is fine. An `async def` function works too. It is called once per
+request, so keep it as cheap as your app's own per-request user lookup.
+
+The dashboard reports where the account came from: `GET /api/whoami` returns
+`"source": "external"` for your app's users and `"local"` for its own accounts.
+
+### Django
+
+```python
+from celery_manager.integrations.django import django_authenticator
+
+config = CeleryManagerConfig(
+    celery_app=celery_app,
+    db_url=settings.CELERY_MANAGER_DB_URL,
+    secret_key=settings.CELERY_MANAGER_SECRET_KEY,
+    authenticate_request=django_authenticator(),
+    login_url="/admin/login/?next={next}",
+    login_provider_name="the Django admin",
+)
+```
+
+It reads Django's session cookie (`SESSION_COOKIE_NAME`, `sessionid` by default),
+loads the session with your `SESSION_ENGINE` and the user with the backend that
+signed them in, and checks the session's auth hash the way `django.contrib.auth`
+does, so changing a password in Django ends their dashboard access too. Inactive
+users get no access. It only ever reads the session: it never re-keys or flushes it,
+since a changed session cookie can't be delivered from the dashboard's response and
+would sign the person out of your Django site.
+
+Requirements:
+
+- **Django must be set up in the dashboard's process** with the same settings
+  (database, `SECRET_KEY`, session engine): mount the dashboard in your ASGI
+  application, or call `django.setup()` before `create_app()` the way
+  `examples/django_demo/run_dashboard.py` does.
+- **The browser must send Django's cookie to the dashboard**, which it does when
+  both are served under the same host name: mounted in the same app, or behind one
+  reverse proxy. Cookies don't depend on the port, so `localhost:8000` (Django) and
+  `localhost:8001` (the dashboard) share them in development.
+
+**Roles.** By default superusers are `admin`, other staff (`is_staff`) are `operator`,
+and everyone else has no access. To use permissions instead, define them on any
+model of yours and use `permission_roles`; each user gets the highest role they hold
+a permission for, directly or through a group:
+
+```python
+from celery_manager.integrations.django import django_authenticator, permission_roles
+
+class OpsSettings(models.Model):          # any model works; this one can be empty
+    class Meta:
+        permissions = [
+            ("celery_manager_admin", "Can administer celery-manager"),
+            ("celery_manager_operate", "Can operate celery-manager"),
+            ("celery_manager_view", "Can view celery-manager"),
+        ]
+
+authenticate_request = django_authenticator(
+    role_for=permission_roles(
+        admin="ops.celery_manager_admin",
+        operator="ops.celery_manager_operate",
+        viewer="ops.celery_manager_view",
+    ),
+)
+```
+
+Active superusers hold every permission, so they are always admins under this
+mapping. Any other rule is a function of the user, for example by group:
+
+```python
+def role_for(user):
+    groups = set(user.groups.values_list("name", flat=True))
+    if "SRE" in groups:
+        return "admin"
+    if "Support" in groups:
+        return "viewer"
+    return None
+
+authenticate_request = django_authenticator(role_for=role_for, username_for=lambda u: u.email)
+```
+
+**Signing out.** Django's `LogoutView` accepts only `POST` (since Django 5.0), and the
+dashboard's sign-out is a plain link, so point `logout_url` at a page of yours that
+has a sign-out button, or at a small view that logs out on `GET`. Without a
+`logout_url`, people signed in through Django get no sign-out item in the dashboard.
+
+### Flask
+
+For the dashboard mounted in your Flask process (a2wsgi + `DispatcherMiddleware`, as
+in [Flask (WSGI)](#flask-wsgi)), where the browser sends Flask's session cookie with
+every dashboard request:
+
+```python
+from celery_manager.integrations.flask import flask_authenticator
+
+app = Flask(__name__)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+dashboard, _ = create_app(CeleryManagerConfig(
+    ...,
+    authenticate_request=flask_authenticator(
+        app,
+        load_user=load_user,
+        role_for=lambda user: {"sre": "admin", "dev": "operator"}.get(user.team),
+    ),
+    login_url="/login?next={next}",
+    logout_url="/logout",
+))
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/celery-manager": ASGIMiddleware(dashboard)})
+```
+
+It opens Flask's session through your app's own session interface (so the cookie's
+signature is checked with your `SECRET_KEY`, and a server-side session extension
+works the same way), takes the user id from `session["_user_id"]` (where Flask-Login
+keeps it; change it with `user_id_key=`), and calls your `load_user` inside a request
+context of your app, so `db.session` and other extensions work there. `role_for` is
+required, since Flask has no built-in notion of staff. The username shown and
+audited is the user's `username`, else `email`, else `get_id()`; pass
+`username_for=` to choose. Users with `is_active = False` get no access.
+
+Flask-Login's "remember me" cookie is not used: restoring a session from it means
+writing a new session cookie, which only your app's response can do. Someone signed
+in only by that cookie is sent to `login_url` and comes back with a session.
+
+Flask doesn't set `SameSite` on its session cookie unless you do. The helper logs a
+warning if `SESSION_COOKIE_SAMESITE` is unset; see [Security notes](#security-notes)
+for why the dashboard is still protected and why you should set it anyway.
+
+### FastAPI and Starlette
+
+There is no single way FastAPI apps sign people in, so you write the function. Reuse
+whatever your own routes use to find the user:
+
+```python
+from celery_manager.integrations import ExternalUser
+
+def authenticate(request):
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+    claims = verify_jwt(token)                 # your own verification
+    if claims is None:
+        return None
+    role = {"platform": "admin", "oncall": "operator"}.get(claims.get("team"))
+    return ExternalUser(username=claims["sub"], role=role)
+
+dashboard, _ = create_app(CeleryManagerConfig(
+    ...,
+    authenticate_request=authenticate,
+    login_url="/login?next={next}",
+))
+app.mount("/celery-manager", dashboard)
+```
+
+An `async def` function is fine, for an async database or token service. Reading an
+`Authorization: Bearer ...` header works too, for scripts calling the
+[REST API](rest-api.md); a bearer header isn't sent by the browser on its own, so it
+can't be used for cross-site request forgery.
+
+### Sign-in screen and sign-out
+
+| Option | Default | What it does |
+|---|---|---|
+| `login_url` | `None` | Where "Sign in with ..." links to. `{next}` is replaced with the dashboard's own address (URL-encoded), so your login page can send people back. A path (`/accounts/login/`) or an `http(s)` URL; anything else (`javascript:`, `//other-host`) makes `create_app()` refuse to start. Without it, the login screen asks people to sign in to your app and come back. |
+| `logout_url` | `None` | Where "Sign out" goes for people signed in through your app (a plain link, so a `GET`). The dashboard clears its own cookie first. Without it they get no sign-out item: clearing only the dashboard's cookie would not sign them out of your app. |
+| `login_provider_name` | `"your app"` | What the screens call your app: "Sign in with Acme". |
+| `local_login_enabled` | `True` | `False` makes your app the only way in: the password form is replaced by the "Sign in with ..." link, `POST /api/auth/login` is refused with `403`, and existing dashboard sessions stop working. `create_app()` refuses `False` without an `authenticate_request`. |
+
+With local login on, the login screen shows the password form and, if `login_url` is
+set, a "Sign in with ..." link under it. Keeping one local admin account is a good
+break-glass for when your app's sign-in is down.
+
+People signed in through your app have no password here: the dashboard hides
+**Change password** for them and `POST /api/me/password` answers `409`. The
+[Users page](roles.md#managing-accounts) still manages local accounts and is titled
+**Local accounts** while an authenticator is configured. Your app's users are not
+listed there, because their roles live in your app.
+
+### Security notes
+
+- **Cross-site request forgery is still blocked.** The dashboard's CSRF defence is the
+  `Origin` check on every `POST`/`PUT`/`PATCH`/`DELETE` (see
+  [REST API: auth](rest-api.md#auth)). It runs before any sign-in check and doesn't
+  depend on which cookie would have signed the request in, so a request from another
+  site, or from a sibling subdomain, is refused with `403` before your authenticator
+  is even called. That matters because your app's cookie may be weaker than the
+  dashboard's own: `cm_session` is always `SameSite=Lax`, Django's `sessionid` is `Lax`
+  by default, but Flask's session cookie has no `SameSite` unless you set
+  `SESSION_COOKIE_SAMESITE`. Every current browser sends `Origin` on cross-origin
+  writes, so the check holds regardless; set `SameSite=Lax` on your own cookie anyway,
+  as the second layer `cm_session` has. Your app's own CSRF middleware (Django's
+  `CsrfViewMiddleware`, Flask-WTF) does not cover the mounted dashboard, and doesn't
+  need to.
+- **Your app's session is now a dashboard credential.** Anything that can steal or
+  ride your app's session (an XSS hole anywhere on the same host) can use the
+  dashboard with that user's role. Give dashboard roles to the accounts you would trust
+  with them, not to every signed-in customer: the default Django mapping admits staff
+  only, and `None` is always "no access".
+- **The audit log records the username your function returns**, as is, the same as
+  for a local account. Choose a username people recognise (an email address is
+  unambiguous). If you keep local accounts too, don't give them names your app's
+  users have, or the audit log can't tell the two apart.
+- **The dashboard never writes to your app's session.** The helpers only read it, so
+  signing in to the dashboard can't sign anyone out of your app or extend their
+  session.
 
 ## Cookies, `cookie_secure` and the mount prefix
 

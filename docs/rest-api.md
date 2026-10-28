@@ -15,7 +15,16 @@ All auth is cookie-based: `POST /api/auth/login` sets an `httponly`,
 set to the app's mount point — `/` unless it is mounted under a prefix);
 every other endpoint below reads that cookie via the `get_current_user`
 dependency and returns **`401`** if it's missing, invalid, expired, or names
-a user that no longer exists. There are no API keys or bearer tokens.
+a user that no longer exists. There are no API keys or bearer tokens of
+celery-manager's own.
+
+**Signed in by your app.** With `CeleryManagerConfig.authenticate_request` set
+(see [Sign in with your app's users](integrations.md#sign-in-with-your-apps-users)),
+your app is asked first on every request, from whatever it reads (its own
+session cookie, a bearer token): its user is signed in with the role it gives,
+gets **`403`** if it gives none, and a request it doesn't recognise falls back
+to `cm_session` (unless `local_login_enabled=False`, then it is a `401`). An
+unusable answer from your app is a **`500`**, never access.
 
 **Roles.** Every `POST`/`PUT` below except login and logout also needs a
 minimum [role](roles.md): `operator` for day-to-day controls, `admin` for
@@ -24,8 +33,8 @@ A signed-in account below the needed role gets
 **`403 {"detail": "Not allowed: this action needs the admin role (you are operator)."}`**
 and nothing happens. The full table is on the [Roles](roles.md) page.
 
-Besides login and logout, only [`GET /api/settings`](#settings-branding) is
-not behind that dependency, and **on purpose** — the login screen has to
+Besides login, logout and `GET /api/auth/options`, only
+[`GET /api/settings`](#settings-branding) is not behind that dependency, and **on purpose** — the login screen has to
 render this deployment's branding before anyone has signed in.
 
 **Cross-origin writes are refused.** Any `POST`/`PUT`/`PATCH`/`DELETE`
@@ -47,9 +56,10 @@ framed by another site.
 
 | Method | Path | Auth | Request body | Response |
 |---|---|---|---|---|
-| `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str, "role": str}` on success; `401 {"detail": "invalid credentials"}` on bad username/password. Sets the `cm_session` cookie. |
+| `GET` | `/api/auth/options` | none | — | `200 {"local_login": bool, "external": bool, "provider_name": str, "login_url": str \| null, "logout_url": str \| null}`: how this deployment signs people in, for the login screen. `external` is true when `authenticate_request` is set; `login_url` may contain `{next}`. Unauthenticated, like `GET /api/settings`; it holds nothing secret. |
+| `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str, "role": str, "source": "local"}` on success; `401 {"detail": "invalid credentials"}` on bad username/password; `403` with a sentence naming your app when `local_login_enabled=False`. Sets the `cm_session` cookie. |
 | `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires or the account's password changes; see the [security model](configuration.md#security-model). |
-| `GET` | `/api/whoami` | required | — | `200 {"username": str, "role": "viewer" \| "operator" \| "admin"}` if authenticated; `401` otherwise. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
+| `GET` | `/api/whoami` | required | — | `200 {"username": str, "role": "viewer" \| "operator" \| "admin", "source": "local" \| "external"}` if authenticated (`external`: signed in by your app); `401` otherwise; `403 {"detail": "Your <app> account (<name>) has no access to this dashboard."}` for a user of your app who has no role here. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
 
 ## Users
 
@@ -60,12 +70,12 @@ rule (duplicate username, last admin, deleting yourself).
 
 | Method | Path | Role | Body | Response |
 |---|---|---|---|---|
-| `GET` | `/api/users` | `admin` | none | `{"users": [{"username", "role", "source"}]}`. `source` is `"local"` for accounts celery-manager stores itself. |
+| `GET` | `/api/users` | `admin` | none | `{"users": [{"username", "role", "source"}]}`. `source` is `"local"` for accounts celery-manager stores itself; users signed in by your app are not listed. |
 | `POST` | `/api/users` | `admin` | `{"username", "password", "role"?}` (role defaults to `viewer`) | `201` with the new user entry. |
 | `PATCH` | `/api/users/{username}` | `admin` | `{"role"}` | The updated entry. Refused with `409` if it would leave no admin. |
 | `POST` | `/api/users/{username}/password` | `admin` | `{"password"}` or `{"generate": true}` | `{"username", "generated_password"}`; the generated password is only in this response. Signs the user out everywhere. |
 | `DELETE` | `/api/users/{username}` | `admin` | none | `{"ok": true}`. |
-| `POST` | `/api/me/password` | `viewer` (any account) | `{"current_password", "new_password"}` | `{"ok": true}` and a fresh `cm_session` cookie; the account's other sessions end. `403` if the current password is wrong. |
+| `POST` | `/api/me/password` | `viewer` (any account) | `{"current_password", "new_password"}` | `{"ok": true}` and a fresh `cm_session` cookie; the account's other sessions end. `403` if the current password is wrong; `409` for someone signed in by your app, whose password is your app's. |
 
 ## Tasks
 

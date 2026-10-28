@@ -46,6 +46,11 @@ config = CeleryManagerConfig(
 | `alert_email_from` | `str \| None` | `None` | From address of alert emails. Required for email channels. |
 | `alert_send_timeout_seconds` | `float` | `10.0` | Time limit for each outbound alert delivery: one Slack post, one webhook call, one SMTP session. A channel that doesn't answer in time is recorded as failed and the other channels are still tried. |
 | `alert_interval_seconds` | `float` | `60.0` | How often the alerts evaluator checks every rule (`celery-manager alerts`, or `events --with-alerts`; `--interval` overrides it). |
+| `authenticate_request` | callable or `None` | `None` | Sign people in with your Django, Flask or FastAPI app's users. Takes the Starlette `Request`, returns `ExternalUser(username, role)` or `None` (not signed in to your app). Asked first on every request; `None` falls back to local accounts. `role=None` is a `403`; an unknown role, a wrong return type or an exception is a `500`, never access. Ready-made: `celery_manager.integrations.django.django_authenticator()` and `celery_manager.integrations.flask.flask_authenticator(...)`. See [Sign in with your app's users](integrations.md#sign-in-with-your-apps-users). |
+| `local_login_enabled` | `bool` | `True` | Whether celery-manager's own accounts can sign in. `False` (only with `authenticate_request`) replaces the password form with "Sign in with ...", refuses `POST /api/auth/login` and ignores existing `cm_session` cookies. `create_app()` refuses `False` without an authenticator. |
+| `login_url` | `str` or `None` | `None` | Your app's login page, for the "Sign in with ..." link. `{next}` is replaced with the dashboard's address. A path or an `http(s)` URL; anything else makes `create_app()` refuse to start. |
+| `logout_url` | `str` or `None` | `None` | Your app's sign-out page, linked from "Sign out" for people your app signed in. Without it they get no sign-out item. Same rules as `login_url`. |
+| `login_provider_name` | `str` | `"your app"` | What the sign-in screen and sidebar call your app ("Sign in with Acme"). |
 
 The fields above are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
@@ -265,6 +270,13 @@ it:
 - **Upgrading makes every existing account `admin`**, because before roles
   every account could do everything. Demote accounts afterwards with
   `celery-manager set-role`.
+- **With `authenticate_request`, your app's session is a dashboard
+  credential.** Whoever is signed in to your app gets the role your
+  `role_for` gives them, so map roles deliberately (the Django default admits
+  staff only) and treat an XSS hole anywhere on the same host as a dashboard
+  hole. The `Origin` check below still blocks cross-site writes made with your
+  app's cookie, whatever its `SameSite` setting; see
+  [Security notes](integrations.md#security-notes).
 - **There is no login rate limiting or lockout.** Put a rate limit on
   `POST /api/auth/login` at your reverse proxy (e.g. nginx `limit_req`,
   Traefik `RateLimit`, a cloud WAF rule). bcrypt makes each guess cost

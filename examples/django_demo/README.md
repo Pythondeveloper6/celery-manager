@@ -50,6 +50,12 @@ as you'd run celery-manager against a production Django app.
    create_user(Session(), 'admin', 'admin')
    "
    ```
+   Or sign in with a Django user instead: `python manage.py createsuperuser`,
+   sign in at http://localhost:8000/admin/, then open http://localhost:8001.
+   `run_dashboard.py` passes `authenticate_request=django_authenticator()`, so
+   Django superusers are dashboard admins and other staff are operators,
+   with no separate dashboard account (see the docs' "Sign in with your
+   app's users").
 7. Visit http://localhost:8001 and sign in as `admin` / `admin`. The task
    list is empty until something runs, so trigger `send_welcome_email` —
    see [Triggering a task](#triggering-a-task) below — and watch it appear
