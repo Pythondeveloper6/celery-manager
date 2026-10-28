@@ -28,6 +28,7 @@ from celery_manager.api.routes import (
 )
 from celery_manager.api.routes import (
     metrics as metrics_routes,
+    maintenance as maintenance_routes,
 )
 from celery_manager.api.routes import (
     queues as queue_routes,
@@ -178,6 +179,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(task_routes.router)
     app.include_router(deadletter_routes.router)
     app.include_router(schedule_routes.router)
+    app.include_router(maintenance_routes.router)
     app.include_router(audit_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(retention_routes.router)

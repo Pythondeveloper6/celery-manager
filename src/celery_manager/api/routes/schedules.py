@@ -13,6 +13,7 @@ from celery_manager.control.missed import (
     list_missed_runs,
     missed_run_counts,
 )
+from celery_manager.control.maintenance import applies_to_schedule, enabled_windows, window_span_at
 from celery_manager.control.schedules import (
     edit_schedule,
     is_paused,
@@ -176,8 +177,20 @@ def list_schedules(request: Request, username: str = Depends(get_current_user)):
             grace_seconds=config.missed_run_grace_seconds,
             apply_edits=config.schedule_editing,
         )
+        windows = enabled_windows(session)
+        now = datetime.now(timezone.utc)
         return [
-            {**_schedule_summary(s, config), "missed_count": counts.get(s.name, 0)}
+            {
+                **_schedule_summary(s, config),
+                "missed_count": counts.get(s.name, 0),
+                # Enabled maintenance windows that apply to this schedule,
+                # for the list's chip; `active` is true while one is in progress.
+                "maintenance_windows": [
+                    {"id": w.id, "name": w.name, "active": window_span_at(w, now) is not None}
+                    for w in windows
+                    if applies_to_schedule(w, s.name)
+                ],
+            }
             for s in list_periodic_schedules(session)
         ]
 

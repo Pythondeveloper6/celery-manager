@@ -241,6 +241,18 @@ def _schedule_is_paused(session, schedule_name: str) -> bool:
     return False
 
 
+def _maintenance_window_reason(session, schedule_name: str, at: datetime) -> str | None:
+    """The skip reason if `at` (the firing's occurrence time) falls inside an
+    enabled maintenance window that applies to this schedule, else None.
+    Names every window when several overlap."""
+    from celery_manager.control.maintenance import active_windows
+
+    windows = active_windows(session, schedule_name, at)
+    if not windows:
+        return None
+    return "maintenance window: " + ", ".join(w.name for w in windows)
+
+
 def _safe_json(value) -> str:
     """Serialize a run's args/kwargs for `task_runs`, without ever raising.
 
@@ -455,7 +467,10 @@ def track(schedule_name: str | None = None):
     Checks for a matching schedule_overrides entry before running; if found
     and action is skip/cancel, records the run as 'skipped' and does not
     call the wrapped function. Does the same if the whole schedule is
-    paused (`PeriodicSchedule.paused_at` set via `pause_schedule`). Otherwise it writes a `started` row, runs the
+    paused (`PeriodicSchedule.paused_at` set via `pause_schedule`) or the
+    firing falls inside an enabled maintenance window
+    (`celery_manager.control.maintenance`); the run's `skip_reason` says
+    which. Otherwise it writes a `started` row, runs the
     task with log capture on, and rewrites that row with the outcome —
     `succeeded`, `failed`, or `retried` if the body raised Celery's `Retry`
     to schedule another attempt.
@@ -496,6 +511,7 @@ def track(schedule_name: str | None = None):
             # rather than raising out of the wrapper and failing a task that
             # celery-manager was only meant to observe.
             skipped = False
+            skip_reason: str | None = None
             try:
                 with _session_factory() as session:
                     override = _find_matching_override(session, control_schedule_name, beat_occurrence)
@@ -510,6 +526,7 @@ def track(schedule_name: str | None = None):
                         override.consumed = True
                         session.commit()
                         skipped = True
+                        skip_reason = "occurrence skipped by an operator"
                     # Whole-schedule pause. Checked *after* the occurrence
                     # override on purpose: an override aimed at this firing
                     # is consumed whether or not the schedule is also paused.
@@ -520,6 +537,15 @@ def track(schedule_name: str | None = None):
                     # to keep stepping around.
                     if not skipped and _schedule_is_paused(session, control_schedule_name):
                         skipped = True
+                        skip_reason = "schedule paused"
+                    # Maintenance windows last, by the same code path: the
+                    # firing is judged at its scheduled time (the stamped
+                    # occurrence, so a late-delivered message is still
+                    # judged by when it was due), or now when unstamped.
+                    if not skipped:
+                        at = beat_occurrence.occurrence if beat_occurrence else datetime.now(timezone.utc)
+                        skip_reason = _maintenance_window_reason(session, control_schedule_name, at)
+                        skipped = skip_reason is not None
             except Exception:  # deliberate fail-open: see _persist_run's docstring
                 logger.exception(
                     "celery-manager: schedule-override check failed for %r; "
@@ -538,6 +564,7 @@ def track(schedule_name: str | None = None):
                     schedule_name=effective_schedule_name,
                     started_at=now,
                     finished_at=now,
+                    skip_reason=skip_reason,
                     **occurrence_fields,
                 )
                 return None

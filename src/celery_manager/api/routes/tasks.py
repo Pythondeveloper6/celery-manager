@@ -111,6 +111,7 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
             "args": run.args,
             "kwargs": run.kwargs,
             "exception": run.exception,
+            "skip_reason": run.skip_reason,
             "traceback": run.traceback,
             "log_output": run.log_output,
             # Operational detail already stored on TaskRun (by the events
