@@ -487,3 +487,21 @@ def test_listener_upgrades_empty_default_and_legacy_repr_args(db):
         session.commit()
         assert (get_task_run(session, "a-3").args, get_task_run(session, "a-3").kwargs) == ("[1]", '{"z": 0}')
         assert get_task_run(session, "a-4").args == '["x"]'
+
+
+@pytest.mark.parametrize("dialect", ["mysql", "mariadb"])
+def test_innodb_upserts_before_any_missing_key_lock(dialect, monkeypatch):
+    """A SELECT FOR UPDATE before INSERT creates the CI deadlock's gap lock."""
+    session = MagicMock()
+    session.get_bind.return_value.dialect.name = dialect
+    statement = object()
+    existing = object()
+    monkeypatch.setattr(runs_module, "_insert_if_absent", lambda name, values: statement)
+
+    def select_after_upsert(s, task_id):
+        s.execute.assert_called_once_with(statement)
+        return existing
+
+    monkeypatch.setattr(runs_module, "_select_locked", select_after_upsert)
+    assert lock_task_run(session, "concurrent", {"task_name": "task", "status": "queued"}) is existing
+    session.rollback.assert_not_called()

@@ -61,6 +61,7 @@ Issues = "https://github.com/Pythondeveloper6/celery-manager/issues"
 Changelog = "https://github.com/Pythondeveloper6/celery-manager/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+redis = ["celery[redis]>=5.3,<6.0"]
 django = ["Django>=4.2,<7"]
 oidc = ["PyJWT[crypto]>=2.8,<3"]
 redbeat = ["celery-redbeat>=2.3,<3"]
@@ -74,7 +75,7 @@ flask = ["a2wsgi>=1.10", "flask>=3.0"]
 standalone = ["uvicorn>=0.29"]
 # Only for celery_manager.metrics.otel; the /metrics endpoint needs nothing extra.
 otel = ["opentelemetry-api>=1.20"]
-dev = ["Django>=4.2,<7", "pytest>=8.0", "httpx>=0.27", "ruff>=0.17,<0.18", "uvicorn>=0.29", "flask>=3.0", "a2wsgi>=1.10"]
+dev = ["celery[redis]>=5.3,<6.0", "Django>=4.2,<7", "pytest>=8.0", "httpx>=0.27", "ruff>=0.17,<0.18", "uvicorn>=0.29", "flask>=3.0", "a2wsgi>=1.10"]
 docs = ["mkdocs-material>=9.5"]
 
 [project.scripts]
