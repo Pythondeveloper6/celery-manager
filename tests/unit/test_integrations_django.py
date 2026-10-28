@@ -14,7 +14,11 @@ from fastapi.testclient import TestClient
 
 from celery_manager.api.app import create_app
 from celery_manager.config import CeleryManagerConfig
-from celery_manager.integrations.django import django_authenticator, permission_roles, staff_roles
+from celery_manager.integrations.django import (
+    django_authenticator,
+    permission_roles,
+    staff_roles,
+)
 
 
 def _user(*, superuser=False, staff=False, perms=()):
