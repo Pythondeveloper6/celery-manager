@@ -174,6 +174,7 @@ READ_ROUTES = [
     "/api/alerts/rules",
     "/api/alerts/channels",
     "/api/alerts/incidents",
+    "/api/queues/celery/history",
 ]
 
 # Control functions the write routes call; stubbed so an allowed request

@@ -86,6 +86,13 @@ export function TaskOverview() {
             <Kpi label="Slowest run" value={formatDuration(stats.runtime.max)} />
             <Kpi label="Failures" value={stats.totals.failed.toLocaleString()} tone={stats.totals.failed > 0 ? "danger" : undefined} />
           </div>
+          {stats.wait && (
+            <p className="cm-chart-summary">
+              Queue wait before starting: median {formatDuration(stats.wait.p50)}, p95 {formatDuration(stats.wait.p95)}, longest{" "}
+              {formatDuration(stats.wait.max)} across {stats.wait.runs.toLocaleString()} run{stats.wait.runs === 1 ? "" : "s"} in this
+              period. Time until an ETA or countdown is not counted.
+            </p>
+          )}
 
           {stats.totals.runs > 0 && (
             <>

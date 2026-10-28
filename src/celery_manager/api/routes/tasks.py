@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from celery_manager.api.deps import get_current_user, require_operator
 from celery_manager.api.serialization import utc, utc_bound
+from celery_manager.control.latency import wait_seconds
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
     BulkCancelTooLarge,
@@ -124,6 +125,10 @@ def get_task(task_id: str, request: Request, username: str = Depends(get_current
             "queue": run.queue,
             "worker": run.worker,
             "eta": utc(run.eta),
+            "sent_at": utc(run.sent_at),
+            "received_at": utc(run.received_at),
+            # started_at - max(sent_at, eta); None without a send time.
+            "wait_seconds": wait_seconds(run.sent_at, run.eta, run.started_at),
             "started_at": utc(run.started_at),
             "finished_at": utc(run.finished_at),
             "runtime_seconds": run.runtime_seconds,

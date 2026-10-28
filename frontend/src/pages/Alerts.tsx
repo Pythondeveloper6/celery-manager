@@ -40,6 +40,8 @@ const KIND_LABEL: Record<RuleKind, string> = {
   missed_run: "Missed run",
   broker_unreachable: "Broker unreachable",
   broker_memory: "Broker memory high",
+  queue_wait: "Queue wait time",
+  queue_growing: "Queue growing",
 };
 
 // About the one broker, not a named thing: no target field, the server pins it to "*".
@@ -52,6 +54,8 @@ const TARGET_LABEL: Record<RuleKind, string> = {
   missed_run: "Schedule name",
   broker_unreachable: "Broker",
   broker_memory: "Broker",
+  queue_wait: "Queue name",
+  queue_growing: "Queue name",
 };
 
 const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
@@ -61,6 +65,8 @@ const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
   missed_run: "e.g. nightly-report",
   broker_unreachable: "*",
   broker_memory: "*",
+  queue_wait: "e.g. emails",
+  queue_growing: "e.g. celery",
 };
 
 // Per kind, the threshold fields in the order shown. Mirrors RULE_PARAMS in
@@ -90,6 +96,16 @@ const PARAM_FIELDS: Record<
   broker_memory: [
     { key: "ratio", label: "Memory used (%)", hint: "Redis only. Fire when used memory reaches this share of maxmemory. Never fires when maxmemory is 0 (no limit).", fallback: 0.8, min: 1, max: 100, percent: true },
   ],
+  queue_wait: [
+    { key: "seconds", label: "Wait (seconds)", hint: "Fire when the chosen percentile of queue wait is at least this long. Time until an ETA or countdown doesn't count.", fallback: 60, min: 0.001, max: 86400 },
+    { key: "quantile", label: "Percentile", hint: "95 judges the slowest 5% of runs (p95); 50 is the median.", fallback: 95, min: 1, max: 100 },
+    { key: "window_minutes", label: "Window (minutes)", hint: "Runs that started within this many minutes count.", fallback: 15, min: 1, max: 10080 },
+    { key: "min_runs", label: "Minimum runs", hint: "Fewer started runs than this never fire.", fallback: 5, min: 1, max: 1000000 },
+  ],
+  queue_growing: [
+    { key: "minutes", label: "Growing for (minutes)", hint: "Look at depth samples from this long. Needs the events listener's depth sampler running.", fallback: 15, min: 1, max: 10080 },
+    { key: "min_increase", label: "Increase (messages)", hint: "Fire when the queue gained at least this many messages without draining on the way.", fallback: 50, min: 1, max: 1000000000 },
+  ],
 };
 
 const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email" };
@@ -113,6 +129,10 @@ function describeCondition(rule: AlertRule): string {
       return `Broker unreachable for ${p.minutes} min`;
     case "broker_memory":
       return `Redis memory at ${formatPercent(p.ratio ?? 0)} of maxmemory or more`;
+    case "queue_wait":
+      return `p${p.quantile} queue wait of ${p.seconds}s or more over ${p.window_minutes} min (at least ${p.min_runs} runs)`;
+    case "queue_growing":
+      return `Depth up by ${p.min_increase} or more over ${p.minutes} min, without draining`;
   }
 }
 

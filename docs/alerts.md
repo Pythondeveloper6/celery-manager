@@ -74,6 +74,8 @@ tell you about three failing tasks separately.
 | `missed_run` | schedule name | A run of the schedule that was due in the last `window_minutes` never arrived. | `window_minutes` (60) |
 | `broker_unreachable` | `*` (one broker) | The broker has not accepted a connection for `minutes`. | `minutes` (2) |
 | `broker_memory` | `*` (one broker) | Redis uses at least `ratio` of its `maxmemory`. Redis only. | `ratio` (0.8, a fraction: 0.8 is 80%) |
+| `queue_wait` | queue name | At least `min_runs` runs started from the queue in the last `window_minutes`, and their `quantile`-th percentile queue wait is at least `seconds`. | `seconds` (60), `quantile` (95, meaning p95; 1 to 100), `window_minutes` (15), `min_runs` (5) |
+| `queue_growing` | queue name | The queue's sampled depth rose by at least `min_increase` over the last `minutes` without draining on the way. | `minutes` (15), `min_increase` (50) |
 
 An incident **resolves** when its condition no longer holds: the failures
 leave the window, the queue drains, the worker answers again, or the missed
@@ -95,6 +97,14 @@ Some details per kind:
   down or renamed on purpose. If the ping itself fails (broker down), the rule
   is marked *couldn't check* instead of reporting every worker offline. Uses
   `inspect_timeout_seconds` as the ping timeout.
+- **`queue_wait`** measures `started_at - max(sent_at, eta)`, so ETA and
+  countdown time never counts, and only runs whose send time was recorded
+  (see [Wait time](queues.md#wait-time)). `min_runs` keeps three slow runs
+  from paging anyone. It resolves when the slow runs leave the window.
+- **`queue_growing`** reads the [depth samples](queues.md#depth-history) the
+  events listener records, so it needs the listener running with
+  `queue_sample_interval_seconds` above 0; the exact growth rule is defined
+  there. Gaps in sampling neither fire nor resolve it.
 - **`missed_run`** uses the same detection as the Schedules page, so it needs
   beat to run the stamping scheduler and respects `missed_run_grace_seconds`
   (see [Missed-run detection](decorator.md#missed-run-detection)).
@@ -180,7 +190,9 @@ Any URL that accepts a JSON `POST`. The body:
   `worker_offline`; `missed`, `last_due_at`, `window_minutes` for
   `missed_run`; `unreachable_minutes`, `threshold_minutes`, `error` for
   `broker_unreachable`; `used_memory`, `maxmemory`, `ratio`, `threshold` for
-  `broker_memory`.
+  `broker_memory`; `wait_seconds`, `quantile`, `runs`, `threshold`,
+  `window_minutes` for `queue_wait`; `from`, `to`, `increase`, `samples`,
+  `minutes`, `threshold` for `queue_growing`.
 - `url` is `null` without `dashboard_url`.
 
 Any `2xx` answer counts as delivered. Redirects are not followed and count as

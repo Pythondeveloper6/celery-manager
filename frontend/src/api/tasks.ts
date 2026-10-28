@@ -36,6 +36,11 @@ export interface TaskDetail extends TaskSummary {
   queue: string | null;
   worker: string | null;
   eta: string | null;
+  // From the task-sent / task-received events; null when never seen.
+  sent_at: string | null;
+  received_at: string | null;
+  // started_at - max(sent_at, eta): time spent waiting in the queue.
+  wait_seconds: number | null;
   // Both directions of the retry chain. `retried_by` is a list because an
   // operator can retry the same failed run more than once.
   retried_from_id: string | null;

@@ -27,7 +27,10 @@ from sqlalchemy import update
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import AlertChannel, AlertIncident, AlertRule
 
-RULE_KINDS = ("failure_rate", "queue_backlog", "worker_offline", "missed_run", "broker_unreachable", "broker_memory")
+RULE_KINDS = (
+    "failure_rate", "queue_backlog", "worker_offline", "missed_run",
+    "broker_unreachable", "broker_memory", "queue_wait", "queue_growing",
+)
 # Kinds about the one broker rather than a named thing: their target is
 # always "*" whatever was sent, so a rule can't claim to watch "redis-2".
 BROKER_KINDS = ("broker_unreachable", "broker_memory")
@@ -72,6 +75,23 @@ RULE_PARAMS: dict[str, dict[str, tuple[type, float, float, float]]] = {
     # when maxmemory is 0 (no limit: no ceiling to approach).
     "broker_memory": {
         "ratio": (float, 0.8, 0.01, 1.0),
+    },
+    # --- queue wait / depth history block ---
+    # Fires when at least `min_runs` runs started in the last `window_minutes`
+    # and the `quantile`-th percentile (95 = p95) of their queue wait, which
+    # excludes ETA/countdown time, is at least `seconds`.
+    "queue_wait": {
+        "seconds": (float, 60.0, 0.001, 86_400.0),
+        "quantile": (int, 95, 1, 100),
+        "window_minutes": (int, 15, 1, MAX_MINUTES),
+        "min_runs": (int, 5, 1, 1_000_000),
+    },
+    # Fires when the sampled depth rose by at least `min_increase` over the
+    # last `minutes` without draining on the way (see
+    # control.depth_history.growth for the exact rule).
+    "queue_growing": {
+        "minutes": (int, 15, 1, MAX_MINUTES),
+        "min_increase": (int, 50, 1, 1_000_000_000),
     },
 }
 

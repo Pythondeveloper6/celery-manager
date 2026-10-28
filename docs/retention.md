@@ -69,6 +69,14 @@ The [Insights](insights.md) pages and [metrics](metrics.md) are computed from
 stored runs, so history shorter than your retention period disappears from
 them as well.
 
+## Queue depth samples
+
+The [depth history](queues.md#depth-history) samples are not governed by
+these rules. They have no task name and are tiny, so one setting covers
+them: `queue_sample_retention_days` (14 by default, `0` keeps them). A prune
+deletes older samples along with the runs and audit rows, and reports them as
+`samples_deleted`.
+
 ## Running a prune
 
 Nothing prunes on its own. Pick one of these.

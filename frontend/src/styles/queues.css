@@ -131,3 +131,36 @@
     padding: var(--cm-space-3);
   }
 }
+
+/* The sparkline doubles as the button that opens the depth chart. */
+.cm-queue-spark-btn {
+  display: block;
+  padding: 0.25rem;
+  margin: -0.25rem;
+  border: 0;
+  border-radius: var(--cm-radius-sm, 4px);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cm-queue-spark-btn:hover,
+.cm-queue-spark-btn[aria-expanded="true"] {
+  background: var(--cm-color-surface-muted, rgba(127, 127, 127, 0.12));
+}
+
+.cm-queue-depth-panel {
+  padding: 0.75rem 0;
+}
+
+.cm-queue-depth-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+
+.cm-queue-depth-range [aria-pressed="true"] {
+  background: var(--cm-color-surface-muted, rgba(127, 127, 127, 0.12));
+  font-weight: 600;
+}
