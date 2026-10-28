@@ -126,6 +126,29 @@ def list_users_command(db_url: str) -> int:
         engine.dispose()
 
 
+def prune_command(db_url: str, *, dry_run: bool = False, batch_size: int = 1000) -> int:
+    """`celery-manager prune`. Returns the process exit code."""
+    from celery_manager.control.retention import run_prune
+
+    engine, session_factory = _user_session_factory(db_url)
+    try:
+        with session_factory() as session:
+            try:
+                summary = run_prune(session, username="cli", batch_size=batch_size, dry_run=dry_run)
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        verb = "Would delete" if dry_run else "Deleted"
+        for task_name, count in sorted(summary["by_task"].items()):
+            print(f"{task_name}\t{count}")
+        print(f"{verb} {summary['runs_deleted']} run(s) and {summary['audit_deleted']} audit log row(s).")
+        if summary["runs_deleted"] == 0 and summary["audit_deleted"] == 0 and not dry_run:
+            print("Nothing to prune. (Retention is off until you set days in Settings or update_retention().)")
+        return 0
+    finally:
+        engine.dispose()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="celery-manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -167,7 +190,17 @@ def main() -> None:
     list_users_parser = subparsers.add_parser("list-users", help="list dashboard users and their roles")
     list_users_parser.add_argument("--db-url", required=True)
 
+    prune_parser = subparsers.add_parser(
+        "prune", help="delete runs older than the retention rules (a no-op until rules are set)"
+    )
+    prune_parser.add_argument("--db-url", required=True)
+    prune_parser.add_argument("--dry-run", action="store_true", help="only report what would be deleted")
+    prune_parser.add_argument("--batch-size", type=int, default=1000, help="rows per transaction (default 1000)")
+
     args = parser.parse_args()
+
+    if args.command == "prune":
+        sys.exit(prune_command(args.db_url, dry_run=args.dry_run, batch_size=args.batch_size))
 
     if args.command == "create-user":
         sys.exit(create_user_command(args.db_url, args.username, args.role, password_stdin=args.password_stdin))

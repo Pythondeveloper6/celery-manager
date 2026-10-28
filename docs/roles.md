@@ -40,6 +40,8 @@ The server check is the real one.
 | Shut down a worker | `POST /api/workers/{worker}/shutdown` | `admin` |
 | Purge a queue | `POST /api/queues/{name}/purge` | `admin` |
 | Change branding | `PUT /api/settings` | `admin` |
+| Change data retention | `PUT /api/settings/retention` | `admin` |
+| Preview what retention would delete (deletes nothing) | `POST /api/settings/retention/preview` | `viewer` |
 | List users | `GET /api/users` | `admin` |
 | Add a user | `POST /api/users` | `admin` |
 | Change a user's role | `PATCH /api/users/{username}` | `admin` |
@@ -57,7 +59,11 @@ Why the line falls where it does:
   sends a body; it changes nothing, so viewers may do it.
 - **Admin** controls either lose data (a purge deletes messages for good),
   can't be undone from the dashboard (a shut-down worker needs someone to
-  start it again), or affect everyone (branding).
+  start it again), or affect everyone (branding, and data retention, which
+  decides what is deleted for good).
+
+`GET /metrics` is not role-based: it uses its own bearer token
+([Metrics](metrics.md)), because Prometheus has no dashboard session.
 
 ### What viewers can see
 

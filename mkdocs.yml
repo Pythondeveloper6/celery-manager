@@ -115,6 +115,8 @@ nav:
       - Workers and rate limits: workers.md
       - Queues, purge and bulk cancel: queues.md
       - Dead letters: dead-letters.md
+      - Data retention: retention.md
+      - Metrics: metrics.md
       - Roles: roles.md
   - Reference:
       - REST API: rest-api.md

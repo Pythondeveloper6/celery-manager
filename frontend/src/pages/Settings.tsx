@@ -4,6 +4,7 @@ import { DEFAULT_BRAND_SETTINGS, updateSettings } from "../api/settings";
 import type { BrandSettings } from "../api/settings";
 import { BrandGlyph, ThemeSwitch, deriveAccent, parseHexColour, useBranding } from "../branding";
 import { IconListChecks } from "../components/icons";
+import { RetentionSettingsCard } from "../components/RetentionSettings";
 import { useResolvedTheme, useThemePreference } from "../theme";
 import { useCan } from "../lib/role";
 
@@ -346,6 +347,8 @@ export function Settings() {
           </form>
         )}
       </section>
+
+      <RetentionSettingsCard />
 
       <section className="cm-card cm-settings-section" aria-labelledby={appearanceHeadingId}>
         <div className="cm-card-header">
