@@ -13,11 +13,6 @@ dead-letter view and data retention) shipped in 0.1.0a5. See the
 
 These use Redis or RabbitMQ directly, beyond the queue depth celery-manager reads today.
 
-**Broker health.** Redis memory, connected clients, evicted keys and the eviction policy
-(anything but `noeviction` can silently drop queued tasks); RabbitMQ memory and disk
-alarms. On the Queues page, in `/metrics`, and as two new alert kinds: broker
-unreachable and broker memory high.
-
 **Queue wait time.** How long tasks wait in the queue before a worker starts them, as
 p50/p95 per queue, a metric, and a "tasks are waiting too long" alert.
 
@@ -48,8 +43,3 @@ management API.
 
 **Dead-letter queues.** See what RabbitMQ dead-lettered and send it back to the queue
 it came from.
-
-## Smaller fixes
-
-**Unsupported transports say so.** The filesystem transport reports 0 waiting messages
-today; it should say queue depth isn't available, as the in-memory transport does.

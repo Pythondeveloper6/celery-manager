@@ -1,0 +1,121 @@
+/* Broker panel on the Queues page (components/BrokerPanel.tsx). */
+
+.cm-broker {
+  margin-bottom: var(--cm-space-4);
+  display: grid;
+  gap: var(--cm-space-3);
+}
+
+.cm-broker-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cm-space-2) var(--cm-space-3);
+}
+
+.cm-broker-title {
+  margin: 0;
+  font-size: var(--cm-text-md);
+  font-weight: 600;
+}
+
+.cm-broker-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--cm-text-xs);
+  font-weight: 600;
+  color: var(--cm-color-success);
+}
+
+.cm-broker-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cm-radius-full);
+  background-color: currentColor;
+}
+
+.cm-broker-status[data-state="down"] {
+  color: var(--cm-color-danger);
+}
+
+.cm-broker-meta {
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-broker-url {
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.cm-broker-memory-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--cm-space-3);
+  margin-bottom: 0.25rem;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-broker-bar {
+  height: 8px;
+  overflow: hidden;
+  background-color: var(--cm-color-border);
+  border-radius: var(--cm-radius-full);
+}
+
+.cm-broker-bar-fill {
+  height: 100%;
+  background-color: var(--cm-color-status-started);
+  border-radius: var(--cm-radius-full);
+}
+
+.cm-broker-bar[data-warn] .cm-broker-bar-fill {
+  background-color: var(--cm-color-danger);
+}
+
+.cm-broker-memory-text,
+.cm-broker-note {
+  margin: 0;
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-broker-warning {
+  margin: 0;
+  padding: var(--cm-space-2) var(--cm-space-3);
+  font-size: var(--cm-text-sm);
+  color: var(--cm-color-danger);
+  background-color: var(--cm-color-danger-bg);
+  border: 1px solid var(--cm-color-danger-border);
+  border-radius: var(--cm-radius-md);
+}
+
+.cm-broker-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--cm-space-3);
+  margin: 0;
+}
+
+.cm-broker-stat dt {
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-broker-stat dd {
+  margin: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.cm-broker-stat[data-warn] dd {
+  color: var(--cm-color-danger);
+}

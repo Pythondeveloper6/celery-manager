@@ -60,8 +60,14 @@ scrape time, and every metric is a gauge.
 | `celery_manager_queue_recorded_queued` | `queue` | Runs recorded as `queued` (from the database). |
 | `celery_manager_workers_online` | none | Workers that answered a ping within `inspect_timeout_seconds`. Omitted if the broker cannot be reached. |
 | `celery_manager_schedule_missed_runs_24h` | `schedule` | Scheduled firings that never arrived in the last 24 hours (needs the [stamping beat scheduler](decorator.md#missed-run-detection)). |
+| `celery_manager_broker_up` | `transport` | `1` if the broker accepted a connection, `0` if not. An outage shows here, not in `collector_up`. |
+| `celery_manager_broker_latency_seconds` | `transport` | Time to connect to the broker (and ping it, on Redis). Omitted while the broker is down. |
+| `celery_manager_broker_memory_used_bytes` | `transport` | Redis `used_memory`. Redis only. |
+| `celery_manager_broker_memory_max_bytes` | `transport` | Redis `maxmemory`; `0` means no limit. Redis only. |
+| `celery_manager_broker_evicted_keys` | `transport` | Keys Redis has evicted since it started. Redis only. Above zero can mean queued tasks were lost (see [Broker health](queues.md#broker-health)). |
+| `celery_manager_broker_connected_clients` | `transport` | Clients connected to Redis. Redis only. |
 | `celery_manager_window_seconds` | none | The length of the window above: 900. |
-| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `workers`, `missed`. `0` means that part failed and its metrics are left out of the response. |
+| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `workers`, `missed`, `broker`. `0` means that part failed and its metrics are left out of the response. |
 
 The "histogram" is windowed, so it is exposed as gauges named
 `_bucket`/`_sum`/`_count`, not as a Prometheus histogram. Use

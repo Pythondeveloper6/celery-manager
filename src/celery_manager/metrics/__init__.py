@@ -36,6 +36,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, func
 
+from celery_manager.control.broker import broker_health
 from celery_manager.control.missed import missed_run_counts
 from celery_manager.control.queues import _run_with_deadline, list_queues
 from celery_manager.control.tasks import list_registered_tasks
@@ -66,6 +67,12 @@ METRIC_NAMES = (
     "celery_manager_queue_recorded_queued",
     "celery_manager_workers_online",
     "celery_manager_schedule_missed_runs_24h",
+    "celery_manager_broker_up",
+    "celery_manager_broker_latency_seconds",
+    "celery_manager_broker_memory_used_bytes",
+    "celery_manager_broker_memory_max_bytes",
+    "celery_manager_broker_evicted_keys",
+    "celery_manager_broker_connected_clients",
     "celery_manager_collector_up",
 )
 
@@ -268,6 +275,31 @@ def _missed_family(session, celery_app, grace_seconds: int, now: datetime) -> Fa
     return family
 
 
+def _broker_families(celery_app) -> list[Family]:
+    """Broker reachability for every transport; memory, evictions and clients
+    for Redis only. `broker_up` is the signal for an outage (0, with the
+    latency and Redis metrics omitted), so a down broker does not trip
+    `collector_up`: the collector did its job and the answer was "down"."""
+    health = broker_health(celery_app)
+    transport = {"transport": health["transport"] or "unknown"}
+    up = Family("celery_manager_broker_up", "1 if the broker answered a connection, 0 if it did not.")
+    up.samples = [(transport, 1 if health["reachable"] else 0)]
+    latency = Family("celery_manager_broker_latency_seconds", "Time to connect to the broker (and ping it, on Redis).")
+    used = Family("celery_manager_broker_memory_used_bytes", "Redis used_memory. Redis only.")
+    limit = Family("celery_manager_broker_memory_max_bytes", "Redis maxmemory; 0 means no limit. Redis only.")
+    evicted = Family("celery_manager_broker_evicted_keys", "Keys Redis has evicted since it started. Redis only; nonzero can mean lost tasks.")
+    clients = Family("celery_manager_broker_connected_clients", "Clients connected to Redis. Redis only.")
+    if health["reachable"]:
+        latency.samples = [(transport, health["latency_ms"] / 1000)]
+        details = health["details"] or {}
+        if health["transport"] == "redis":
+            for family, key in ((used, "used_memory"), (limit, "maxmemory"), (evicted, "evicted_keys"),
+                                (clients, "connected_clients")):
+                if details.get(key) is not None:
+                    family.samples = [(transport, details[key])]
+    return [up, latency, used, limit, evicted, clients]
+
+
 def compute_snapshot(config, session_factory, now: datetime | None = None) -> list[Family]:
     """One pass over the database and (briefly) the broker. Each source that
     fails is left out and flagged in `celery_manager_collector_up`; a broker
@@ -310,6 +342,10 @@ def compute_snapshot(config, session_factory, now: datetime | None = None) -> li
         missed = attempt("missed", lambda: _missed_family(session, celery_app, config.missed_run_grace_seconds, now))
         if missed is not None:
             families.append(missed)
+
+        broker = attempt("broker", lambda: _broker_families(celery_app))
+        if broker is not None:
+            families.extend(broker)
 
     families.append(up)
     return families

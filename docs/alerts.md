@@ -56,8 +56,8 @@ You can run several evaluators against the same database, for example one per
 events listener, for redundancy. They don't send duplicate messages: every
 decision that leads to a message is a database write only one process can win
 (a unique key on the open incident, and a compare-and-set update before each
-message). Nothing is kept in memory between checks, so restarting an evaluator
-loses nothing.
+message). Nothing that decides a message is kept in memory between checks, so restarting an evaluator
+loses nothing (the one exception, `broker_unreachable`'s down-since time, only delays its alert).
 
 ## Rule kinds
 
@@ -72,6 +72,8 @@ tell you about three failing tasks separately.
 | `queue_backlog` | queue name | The broker holds at least `depth` messages in the queue. | `depth` (1000) |
 | `worker_offline` | worker name | A worker the evaluator has seen before hasn't answered a ping for `minutes`. | `minutes` (5) |
 | `missed_run` | schedule name | A run of the schedule that was due in the last `window_minutes` never arrived. | `window_minutes` (60) |
+| `broker_unreachable` | `*` (one broker) | The broker has not accepted a connection for `minutes`. | `minutes` (2) |
+| `broker_memory` | `*` (one broker) | Redis uses at least `ratio` of its `maxmemory`. Redis only. | `ratio` (0.8, a fraction: 0.8 is 80%) |
 
 An incident **resolves** when its condition no longer holds: the failures
 leave the window, the queue drains, the worker answers again, or the missed
@@ -96,6 +98,20 @@ Some details per kind:
 - **`missed_run`** uses the same detection as the Schedules page, so it needs
   beat to run the stamping scheduler and respects `missed_run_grace_seconds`
   (see [Missed-run detection](decorator.md#missed-run-detection)).
+
+- **`broker_unreachable`** checks the same way as the
+  [Broker panel](queues.md#broker-health) (one connection, 3s deadline). The
+  target is always `*`: there is one broker, and any other target is replaced
+  with `*`. To know *how long* the broker has been down, the evaluator keeps
+  the time it first saw it down **in memory**, so unlike the other kinds a
+  restart of the evaluator restarts that clock (a down broker alerts up to
+  `minutes` late, never early). The first successful check resolves it.
+- **`broker_memory`** reads Redis `used_memory` against `maxmemory`. **It
+  never fires when `maxmemory` is 0** (Redis's default: no limit), because
+  there is no ceiling to be near; set a `maxmemory` if you want this alert.
+  On a broker that isn't Redis the rule is marked *couldn't check* with the
+  reason, and an unreachable broker does the same (use `broker_unreachable`
+  for that).
 
 ## Quiet period, and what gets sent
 
@@ -157,12 +173,14 @@ Any URL that accepts a JSON `POST`. The body:
 
 - `event` is `alert.firing`, `alert.resolved` or `alert.test` (a test has
   `rule` and `key` set to `null`).
-- `key` is the task, queue, worker or schedule name.
+- `key` is the task, queue, worker or schedule name (`broker` for the broker kinds).
 - `details` depends on the kind: `failed`, `runs`, `failure_rate`,
   `threshold`, `window_minutes` for `failure_rate`; `depth`, `threshold` for
   `queue_backlog`; `last_seen_at`, `offline_minutes`, `threshold_minutes` for
   `worker_offline`; `missed`, `last_due_at`, `window_minutes` for
-  `missed_run`.
+  `missed_run`; `unreachable_minutes`, `threshold_minutes`, `error` for
+  `broker_unreachable`; `used_memory`, `maxmemory`, `ratio`, `threshold` for
+  `broker_memory`.
 - `url` is `null` without `dashboard_url`.
 
 Any `2xx` answer counts as delivered. Redirects are not followed and count as

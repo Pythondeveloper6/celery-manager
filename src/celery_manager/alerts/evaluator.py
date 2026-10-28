@@ -47,6 +47,7 @@ from celery_manager.alerts.senders import SENDERS, AlertMessage, DeliveryError
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.control import alerts as control
 from celery_manager.control.audit import record as record_audit
+from celery_manager.control.broker import broker_health as _broker_health
 from celery_manager.control.missed import list_missed_runs
 from celery_manager.control.queues import list_queues as _list_queues
 from celery_manager.control.workers import inspect_workers as _inspect_workers
@@ -100,15 +101,17 @@ class _Probe:
     """Broker and worker answers for one pass, fetched at most once however
     many rules need them, and only if some rule does."""
 
-    def __init__(self, session, celery_app, config, now, inspect_workers_fn, list_queues_fn):
+    def __init__(self, session, celery_app, config, now, inspect_workers_fn, list_queues_fn, broker_health_fn=None):
         self.session = session
         self.celery_app = celery_app
         self.config = config
         self.now = now
         self._inspect = inspect_workers_fn
         self._list_queues = list_queues_fn
+        self._broker_health = broker_health_fn or _broker_health
         self._queues = None
         self._sightings = None
+        self._broker = None
 
     def queues(self) -> dict:
         if self._queues is None:
@@ -117,6 +120,14 @@ class _Probe:
             except Exception as exc:  # noqa: BLE001 - list_queues reports trouble itself; this is belt and braces
                 self._queues = {"broker": {"error": f"could not list queues: {exc}"}, "queues": []}
         return self._queues
+
+    def broker(self) -> dict:
+        if self._broker is None:
+            try:
+                self._broker = self._broker_health(self.celery_app)
+            except Exception as exc:  # noqa: BLE001 - broker_health never raises; belt and braces
+                self._broker = {"reachable": False, "error": f"could not check the broker: {exc}"}
+        return self._broker
 
     def sightings(self) -> dict[str, datetime]:
         """`{worker: last seen}` for every remembered worker, after recording
@@ -151,7 +162,7 @@ def _record_sightings(session, online: list[str], now: datetime) -> None:
     session.commit()
 
 
-# --- the four checks ---------------------------------------------------------------
+# --- the checks ---------------------------------------------------------------
 
 
 def _check_failure_rate(rule: AlertRule, params: dict, probe: _Probe) -> Observation:
@@ -233,11 +244,62 @@ def _check_missed_run(rule: AlertRule, params: dict, probe: _Probe) -> Observati
     return observation
 
 
+# --- broker checks -----------------------------------------------------------------
+
+BROKER_KEY = "broker"
+
+# When each rule first saw the broker unreachable, `{(id(celery_app), rule id): time}`.
+# In memory on purpose (see docs/alerts.md): the only cost of losing it is an
+# alert up to `minutes` late after an evaluator restart, and it avoids a
+# table for one timestamp. Cleared the moment the broker answers.
+_broker_down_since: dict[tuple[int, int], datetime] = {}
+
+
+def _check_broker_unreachable(rule: AlertRule, params: dict, probe: _Probe) -> Observation:
+    health = probe.broker()
+    state_key = (id(probe.celery_app), rule.id)
+    observation = Observation()
+    if health.get("reachable"):
+        _broker_down_since.pop(state_key, None)
+        return observation
+    since = _broker_down_since.setdefault(state_key, probe.now)
+    down = probe.now - since
+    if down >= timedelta(minutes=params["minutes"]):
+        observation.firing[BROKER_KEY] = {
+            "unreachable_minutes": int(down.total_seconds() // 60),
+            "threshold_minutes": params["minutes"],
+            "error": health.get("error"),
+        }
+    return observation
+
+
+def _check_broker_memory(rule: AlertRule, params: dict, probe: _Probe) -> Observation:
+    health = probe.broker()
+    if not health.get("reachable"):
+        raise CheckUnavailable(f"broker memory unavailable: {health.get('error') or 'the broker is unreachable'}")
+    if health.get("transport") != "redis":
+        raise CheckUnavailable(f"broker memory is only checked on Redis, not {health.get('transport')}")
+    details = health.get("details") or {}
+    observation = Observation()
+    ratio = details.get("memory_ratio")
+    # maxmemory 0 (no limit) gives no ratio: nothing to approach, never fires.
+    if ratio is not None and ratio >= params["ratio"]:
+        observation.firing[BROKER_KEY] = {
+            "used_memory": details.get("used_memory"),
+            "maxmemory": details.get("maxmemory"),
+            "ratio": ratio,
+            "threshold": params["ratio"],
+        }
+    return observation
+
+
 _CHECKS = {
     "failure_rate": _check_failure_rate,
     "queue_backlog": _check_queue_backlog,
     "worker_offline": _check_worker_offline,
     "missed_run": _check_missed_run,
+    "broker_unreachable": _check_broker_unreachable,
+    "broker_memory": _check_broker_memory,
 }
 
 
@@ -264,6 +326,15 @@ def _summary(rule: AlertRule, key: str, details: dict, event: str) -> str:
             return f"Schedule {key} has no missed runs in the last {details.get('window_minutes')} min"
         runs = "run" if details["missed"] == 1 else "runs"
         return f"Schedule {key} missed {details['missed']} {runs} in the last {details['window_minutes']} min"
+    if kind == "broker_unreachable":
+        if event == "resolved":
+            return "The broker is reachable again"
+        return f"The broker has been unreachable for {details['unreachable_minutes']} min: {details.get('error') or 'no answer'}"
+    if kind == "broker_memory":
+        if event == "resolved":
+            return f"Broker memory is back under {details.get('threshold', 0):.0%} of maxmemory"
+        return (f"Broker memory is at {details['ratio']:.0%} of maxmemory "
+                f"({details['used_memory']:,} of {details['maxmemory']:,} bytes; threshold {details['threshold']:.0%})")
     return f"{rule.name}: {key}"
 
 
@@ -276,7 +347,7 @@ def dashboard_link(config: CeleryManagerConfig, kind: str | None, key: str | Non
         return base + "task-types/" + quote(key, safe="")
     if kind == "missed_run" and key:
         return base + "schedules/" + quote(key, safe="")
-    if kind == "queue_backlog":
+    if kind in ("queue_backlog", "broker_unreachable", "broker_memory"):
         return base + "queues"
     if kind == "worker_offline":
         return base + "workers"
@@ -461,21 +532,22 @@ def evaluate_once(
     senders: dict | None = None,
     inspect_workers_fn=None,
     list_queues_fn=None,
+    broker_health_fn=None,
 ) -> list[dict]:
     """Judge every enabled rule once. Returns one entry per message sent
     (`rule_id`, `key`, `event`, `channels`, `errors`), for logs and tests.
 
     `senders` maps a channel kind to a callable `(channel config, message,
     config)`, `inspect_workers_fn` and `list_queues_fn` stand in for
-    `control.workers.inspect_workers` and `control.queues.list_queues`; all
-    three default to the real thing and exist for tests.
+    `control.workers.inspect_workers`, `control.queues.list_queues` and
+    `control.broker.broker_health`; all four default to the real thing and exist for tests.
     """
     now = _aware(now) or datetime.now(timezone.utc)
     sent: list[dict] = []
     with session_factory() as session:
         probe = _Probe(
             session, celery_app, config, now,
-            inspect_workers_fn or _inspect_workers, list_queues_fn or _list_queues,
+            inspect_workers_fn or _inspect_workers, list_queues_fn or _list_queues, broker_health_fn,
         )
         rules = session.query(AlertRule).filter(AlertRule.enabled.is_(True)).order_by(AlertRule.id).all()
         for rule in rules:

@@ -1,7 +1,13 @@
 import { API_BASE as BASE } from "./base";
 import { describeFailure } from "./settings";
 
-export type RuleKind = "failure_rate" | "queue_backlog" | "worker_offline" | "missed_run";
+export type RuleKind =
+  | "failure_rate"
+  | "queue_backlog"
+  | "worker_offline"
+  | "missed_run"
+  | "broker_unreachable"
+  | "broker_memory";
 export type ChannelKind = "slack" | "webhook" | "email";
 
 export interface AlertRule {

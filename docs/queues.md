@@ -63,15 +63,47 @@ filled in:
 - **slow**: the whole broker round-trip has a 3s deadline. A broker that
   accepts the connection and then hangs can't hang the request; the stuck
   call finishes in a small background pool;
-- **`memory://`**: reported as unsupported. The in-memory transport is
-  private to each process, so the API process would only ever see its own
-  empty queues. A confident `0` would be a lie;
+- **`memory://` and `filesystem://`**: reported as unsupported. The
+  in-memory transport is private to each process, so the API process would
+  only ever see its own empty queues, and the filesystem transport can't
+  count the messages in its directory (it would answer `0` for a full one).
+  A confident `0` would be a lie, so the page says "queue depth isn't
+  available" instead;
 - **queue not declared**: depth `0`, `exists: false`. On Redis that just
   means empty (Redis deletes a list when it drains); on RabbitMQ the reason
   says nobody has declared it yet.
 
 The page refreshes every 5 seconds and stops while the browser tab is
 hidden.
+
+## Broker health
+
+The **Broker** panel at the top of the Queues page, and `GET /api/broker/health`
+(any signed-in user), answer a different question from queue depth: is the
+broker itself up, and is it in trouble? What can be shown depends on what the
+broker lets a client see.
+
+| Transport | What you get |
+|---|---|
+| **Redis** (including Sentinel) | Reachable, latency, version, memory used against `maxmemory` (a bar; `maxmemory` of 0 means unlimited, so no bar), eviction policy, connected and blocked clients, evicted keys, refused connections, RDB/AOF status, uptime. |
+| **RabbitMQ** (AMQP) | Reachable, latency, product and version. Memory and disk alarms need the RabbitMQ management API, which celery-manager doesn't talk to yet, so the panel says `management: not configured` instead of implying there are none. |
+| **Anything else** | Reachable, latency, and "details not available for <transport>". |
+
+**The eviction policy is the one to watch.** A queued task is a key in a Redis
+list. If `maxmemory-policy` is anything other than `noeviction`
+(`allkeys-lru`, `volatile-ttl`, ...), Redis deletes keys when it runs out of
+memory, and it can delete queued tasks, which then never run and leave no
+error. The panel shows a warning for any other policy (and for a nonzero
+`evicted_keys`). Set `maxmemory-policy noeviction`: a full Redis then refuses
+new tasks, which you can see, instead of losing old ones, which you can't.
+With no `maxmemory` set nothing is evicted today, and the warning says so.
+
+The check opens one connection with the same 2s connect timeout and 3s
+deadline as the queue list and never raises: an unreachable broker is
+`reachable: false` with the error. The broker URL is shown with its password
+masked, and the same masking is applied to error text. The panel refreshes
+with the page. The numbers are also in [`/metrics`](metrics.md) and drive the
+`broker_unreachable` and `broker_memory` [alert kinds](alerts.md).
 
 ## Purging a queue
 

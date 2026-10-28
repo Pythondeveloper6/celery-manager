@@ -27,7 +27,10 @@ from sqlalchemy import update
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import AlertChannel, AlertIncident, AlertRule
 
-RULE_KINDS = ("failure_rate", "queue_backlog", "worker_offline", "missed_run")
+RULE_KINDS = ("failure_rate", "queue_backlog", "worker_offline", "missed_run", "broker_unreachable", "broker_memory")
+# Kinds about the one broker rather than a named thing: their target is
+# always "*" whatever was sent, so a rule can't claim to watch "redis-2".
+BROKER_KINDS = ("broker_unreachable", "broker_memory")
 CHANNEL_KINDS = ("slack", "webhook", "email")
 
 MAX_NAME_LENGTH = 100
@@ -60,6 +63,15 @@ RULE_PARAMS: dict[str, dict[str, tuple[type, float, float, float]]] = {
     # never arrived (after `missed_run_grace_seconds`).
     "missed_run": {
         "window_minutes": (int, 60, 1, MAX_MINUTES),
+    },
+    # Fires once the broker has refused connections for `minutes`.
+    "broker_unreachable": {
+        "minutes": (int, 2, 1, MAX_MINUTES),
+    },
+    # Fires when Redis uses at least `ratio` of its maxmemory. Never fires
+    # when maxmemory is 0 (no limit: no ceiling to approach).
+    "broker_memory": {
+        "ratio": (float, 0.8, 0.01, 1.0),
     },
 }
 
@@ -438,7 +450,7 @@ def create_rule(session, actor: str, payload: dict) -> dict:
     if kind not in RULE_KINDS:
         raise ValueError(f"the rule kind must be one of {', '.join(RULE_KINDS)}")
     params = validate_params(kind, payload.get("params"))
-    target = _validate_target(payload.get("target"))
+    target = "*" if kind in BROKER_KINDS else _validate_target(payload.get("target"))
     quiet = _validate_minutes(payload.get("quiet_period_minutes", 60), "the quiet period")
     channel_ids = _validate_channel_ids(session, payload.get("channel_ids"))
     if _name_taken(session, AlertRule, name):
@@ -496,7 +508,10 @@ def update_rule(session, actor: str, rule_id: int, changes: dict) -> dict:
         params = validate_params(kind, changes.get("params"))
         if params != _loads(rule.params, {}):
             changed["params"] = params
-    if changes.get("target") is not None:
+    if kind in BROKER_KINDS:
+        if rule.target != "*":
+            changed["target"] = "*"
+    elif changes.get("target") is not None:
         target = _validate_target(changes["target"])
         if target != rule.target:
             changed["target"] = target
