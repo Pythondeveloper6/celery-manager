@@ -18,9 +18,6 @@ durations, failure rates and queue depth, for teams that already watch Grafana.
 **Sign in with your app's users.** Use your Django, Flask or FastAPI users, and map them
 to celery-manager [roles](roles.md), instead of keeping a separate set of accounts.
 
-**User management in the dashboard.** Admins can add users, change roles and reset
-passwords from the UI. Today this is done with the `celery-manager` command.
-
 ## Periodic tasks
 
 **Edit schedules from the dashboard.** Change a cron expression or an interval and see
