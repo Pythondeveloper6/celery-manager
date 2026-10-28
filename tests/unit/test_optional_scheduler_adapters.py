@@ -64,11 +64,14 @@ def test_shipped_scheduler_stamps_and_advances_once(adapter):
     backend.create(ScheduleEntry("stamped", "contract.task", schedule(60), source=backend.name))
     if backend.name == "redbeat":
         entry = backend.Entry.from_key(backend.conf.key_prefix + "stamped", app=app)
-    else:
-        entry = backend.Entry(backend.Model.objects.get(name="stamped"), app=app)
     path = backend.beat_scheduler_class()
     module, name = path.split(":")
     scheduler = getattr(importlib.import_module(module), name)(app=app, lazy=True)
+    if backend.name == "django-beat":
+        # Exercise the entry owned by the scheduler, as tick() does. Django's
+        # reserve mutates that entry's model; sync persists its cached model.
+        # A detached ModelEntry is not part of the scheduler's lifecycle.
+        entry = scheduler.schedule["stamped"]
     with patch.object(task, "apply_async", return_value=MagicMock(id="sent")) as send:
         scheduler.apply_async(entry)
     headers = send.call_args.kwargs["headers"]

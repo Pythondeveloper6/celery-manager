@@ -101,6 +101,13 @@ cookie writes from other origins remain refused. `frame_ancestors` permits
 embedding from explicit origins and removes the conflicting deny-frame header.
 These are separate controls: allowing CORS does not allow framing.
 
+## Broker dependencies
+
+For Redis brokers, install `celery-manager[redis]` so Celery's compatible Redis
+transport dependencies are installed. RabbitMQ deployments do not need that extra.
+The development extra includes Redis because the broker regression tests import
+its transport even when no live Redis server is configured.
+
 ## Immediate task links and WSGI
 
 ```python
