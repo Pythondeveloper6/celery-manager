@@ -96,7 +96,8 @@ function sectionLabel(pathname: string): string {
   if (pathname.startsWith("/workers")) return "Workers";
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/users")) return "Users";
-  if (pathname.startsWith("/queues")) return "Queues";
+  if (pathname.startsWith("/queues") || pathname.startsWith("/rabbitmq")) return "Queues";
+  if (pathname.startsWith("/held")) return "Held tasks";
   if (pathname.startsWith("/alerts")) return "Alerts";
   if (pathname === "/" || pathname.startsWith("/tasks")) return "Tasks";
   return "";
