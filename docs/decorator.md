@@ -257,6 +257,12 @@ class Scheduler(StampOccurrencesMixin, DatabaseScheduler):
     pass
 ```
 
+To change schedules from the dashboard, run
+`celery_manager.beat:DatabaseScheduler` instead: the same scheduler, plus
+it applies the edits (see [Editing schedules](schedules.md)). The stamped
+occurrence and interval then follow the edited schedule, so skips are
+matched against the runs that actually happen.
+
 Beat then adds headers to every message it sends: `cm_schedule` (the entry
 name) and `cm_occurrence` (the scheduled time of this firing, computed from
 the schedule, the same value the dashboard lists), `cm_sent_at`, and

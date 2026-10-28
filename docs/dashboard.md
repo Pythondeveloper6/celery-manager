@@ -331,6 +331,10 @@ startup**. A schedule added to your beat config while the dashboard process
 is running will not appear until it restarts. Empty state: "No periodic
 schedules configured yet."
 
+A schedule edited from the dashboard shows the edited timing with
+"Edited by *user*, *time*" beside it (hover for what the code says). See
+[Editing schedules](schedules.md).
+
 ## Schedule occurrences (future-schedule view)
 
 ![Upcoming runs of a schedule, with one marked Will be skipped](assets/screenshots/schedule-occurrences-light.png){ .cm-shot .cm-only-light }

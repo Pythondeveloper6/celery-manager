@@ -316,12 +316,15 @@ Runs with status `failed` that nothing was run again from. See
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool, "paused": bool, "paused_at": datetime\|null, "paused_by": str\|null, "paused_until": datetime\|null, "missed_count": int}`, ordered by `name`. `missed_count` is the number of missed runs in the last 24 hours (see `GET /api/schedules/{name}/missed`), `0` where detection is not active. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. It is *not* the pause state: `paused` is, with `paused_at`/`paused_by` saying when the current pause began and who started it (both `null` when not paused; `paused_at` carries an explicit `+00:00` offset). |
+| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool, "paused": bool, "paused_at": datetime\|null, "paused_by": str\|null, "paused_until": datetime\|null, "missed_count": int}`, ordered by `name`. `missed_count` is the number of missed runs in the last 24 hours (see `GET /api/schedules/{name}/missed`), `0` where detection is not active. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. It is *not* the pause state: `paused` is, with `paused_at`/`paused_by` saying when the current pause began and who started it (both `null` when not paused; `paused_at` carries an explicit `+00:00` offset). Since schedule editing: `schedule_spec` is the schedule in force (an operator's edit while one applies and `schedule_editing` is on), `code_schedule_spec` is always the code's, `code_schedule` is the code's schedule as an editable spec (`null` for solar and custom kinds), `schedule_override` is the saved edit as a spec (or `null`), `edited_by`/`edited_at` say who saved it and when, and `schedule_editing` repeats the config flag so the dashboard knows whether to offer saving. See [Editing a schedule](#editing-a-schedule). |
 | `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool, "paused": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. `paused` is `true` on every entry while the whole schedule is paused (see below): that occurrence will be recorded as skipped whatever `action` says. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
 | `GET` | `/api/schedules/{name}/missed` | required | — | `200` — `{"active": bool, "tracking_since": datetime\|null, "grace_seconds": int, "missed": [{"due_at": datetime}]}`. Runs of the schedule that were due in the last 7 days but never arrived, oldest first (max 500). `active` is `false` (and `missed` empty) until beat has stamped a run of this schedule; `tracking_since` is the first stamped occurrence, where judging starts. A run counts as missed `missed_run_grace_seconds` after it was due; skipped, revoked and failed runs count as arrived. Any signed-in role. Pure read, no audit row. `404` if `name` isn't a known schedule. See [Missed-run detection](decorator.md#missed-run-detection). |
 | `POST` | `/api/schedules/{name}/occurrences/pause` | required | `{"target_time": datetime, "action": "skip"\|"cancel"}` (any other `action` value is a `422`) | `200 {"id": int, "action": str, "target_time": datetime}`. Records (or updates) an override for the occurrence closest to `target_time`. |
 | `POST` | `/api/schedules/{name}/pause` | required | — | `200` — the schedule's summary, same shape as a `GET /api/schedules` item, now with `paused: true`. Pauses every firing of the schedule until resumed. Idempotent: pausing an already-paused schedule returns `200` with the *original* `paused_at`/`paused_by` and writes no audit row. `404` if `name` isn't a known schedule. |
 | `POST` | `/api/schedules/{name}/resume` | required | — | `200` — the schedule's summary with `paused: false`, `paused_at`/`paused_by` `null`. Idempotent: resuming a schedule that isn't paused is a `200` no-op with no audit row. `404` if `name` isn't a known schedule. |
+| `POST` | `/api/schedules/{name}/preview` | required (any role) | a spec: `{"type": "crontab", "minute": str, "hour": str, "day_of_week": str, "day_of_month": str, "month_of_year": str}` (missing fields are `"*"`) or `{"type": "interval", "seconds": number}` | `200 {"occurrences": [datetime × 5]}`: the next five runs under that schedule, computed as the dashboard will list them once saved. Saves nothing and works whether or not editing is enabled. `422` with a sentence in `detail` for a spec Celery rejects (e.g. `"Minute '99' is not valid: Invalid end range: 99 > 59."`), a crontab that never fires, or an interval under 1 second or over 366 days. `404` for an unknown schedule. |
+| `PUT` | `/api/schedules/{name}/schedule` | `operator` | a spec, as for `preview` | `200` — the schedule's summary plus `unmatched_overrides: [datetime]`. Saves the edit (audit `edit_schedule`, `details` = `before`, `after`, `code`, `unmatched_overrides`). Saving the spec already saved is a no-op with no audit row. `409` while `schedule_editing` is off, `422` as for `preview`, `404` for an unknown schedule. |
+| `DELETE` | `/api/schedules/{name}/schedule` | `operator` | — | `200` — the schedule's summary, now running as the code says (audit `revert_schedule`, `details` = the removed edit, `code`, `edited_by`, `edited_at`). Idempotent: no edit, no audit row. Allowed while `schedule_editing` is off, so an edit left from before can still be cleared. `404` for an unknown schedule. |
 
 ### Pausing a whole schedule
 
@@ -364,6 +367,31 @@ at run time, not by beat — celery-manager does not own your beat process:
   indefinite).
 - Same protections as every other state-changing endpoint: a session is
   required and a cross-origin `Origin` is refused with a `403`.
+
+### Editing a schedule
+
+The three routes above back the dashboard's **Edit schedule** sheet. The
+whole picture (beat setup, what happens to skips) is on
+[Editing schedules](schedules.md); the API-level points:
+
+- **Validation is Celery's.** Crontab fields go through `crontab(...)`, so
+  the syntax is exactly what a `beat_schedule` accepts (`"*/15"`, `"1-5"`,
+  `"mon-fri"`). Every refusal is a `422` whose `detail` is one sentence,
+  shown in the dashboard as-is.
+- **Crontabs are read in the Celery app's `timezone`**, like the entries in
+  `beat_schedule`. Times in responses are UTC.
+- **Interval previews start from the last run**, not from now: beat keeps
+  its `last_run_at` when the schedule changes, so the first run after the
+  edit is "last run + new interval" (or now + interval if the schedule
+  has never run).
+- **`409` means beat won't apply it.** `schedule_editing` is off until you
+  run beat with `celery_manager.beat:DatabaseScheduler` and turn it on.
+  While it's off, a saved edit (from before) is reported in
+  `schedule_override` but not used for `schedule_spec` or
+  `.../occurrences`.
+- **Skips and cancels survive an edit.** One the new schedule has no run
+  for is listed in `unmatched_overrides`; it stays stored, never matches
+  while the edit is in force, and applies again if you revert.
 
 ### Occurrence-matching nuances worth knowing
 
@@ -580,6 +608,8 @@ of another action. Every control action is covered:
 | `pause_occurrence` | `schedule` | the schedule name | `POST /api/schedules/{name}/occurrences/pause` |
 | `pause_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/pause` — only when it actually pauses (not on an idempotent repeat); `details` is `null` |
 | `resume_schedule` | `schedule` | the schedule name | `POST /api/schedules/{name}/resume` — only when it actually resumes; `details={"paused_at", "paused_by"}` of the pause it ended |
+| `edit_schedule` | `schedule` | the schedule name | `PUT /api/schedules/{name}/schedule` — only when the spec changes; `details={"before", "after", "code", "unmatched_overrides"}` (`before` is `null` when it ran as the code said) |
+| `revert_schedule` | `schedule` | the schedule name | `DELETE /api/schedules/{name}/schedule` — only when there was an edit; `details={"before", "code", "edited_by", "edited_at"}` |
 | `cancel_bulk` | `task` | `selection` (by ids) or `filter` | `POST /api/tasks/cancel-bulk` (not on `dry_run`, nor when nothing matched) — `details={"terminate", "revoked", "skipped_finished", "unknown", "filter", "task_ids"}` |
 | `purge` | `queue` | the queue name | `POST /api/queues/{name}/purge` — `details={"messages_removed", "runs_marked_revoked", "task_ids"}` (the runs marked `revoked`) |
 | `update` | `setting` | the setting key (`brand_name`, `brand_accent`, `brand_logo_url`) | `PUT /api/settings` — one row per *changed* key, `details={"old", "new"}` (each truncated to 200 characters, so a data-URI logo doesn't turn the audit log into an image store) |

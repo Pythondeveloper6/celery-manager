@@ -10,7 +10,7 @@ the role before it can.
 | Role | For | Can |
 |---|---|---|
 | `viewer` | People who watch: support, on-call shadowing, managers | See everything. Change nothing. |
-| `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause and resume schedules and single runs, and the worker controls you can undo from the dashboard. |
+| `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, skip single runs, and the worker controls you can undo from the dashboard. |
 | `admin` | People who own the deployment | Everything, including purging queues, shutting down workers and changing branding. |
 
 The server checks the role on every request that changes something. A
@@ -32,6 +32,8 @@ The server check is the real one.
 | Run dead letters again (with or without edited arguments) | `POST /api/dead-letters/rerun` | `operator` |
 | Skip or cancel one schedule run | `POST /api/schedules/{name}/occurrences/pause` | `operator` |
 | Pause or resume a schedule | `POST /api/schedules/{name}/pause`, `.../resume` | `operator` |
+| Preview a schedule change (the next five runs; saves nothing) | `POST /api/schedules/{name}/preview` | `viewer` |
+| Change when a schedule runs, or revert it to the code's | `PUT /api/schedules/{name}/schedule`, `DELETE .../schedule` | `operator` |
 | Add or remove a worker pool process | `POST /api/workers/{worker}/pool/grow`, `.../shrink` | `operator` |
 | Make a worker start or stop consuming a queue | `POST /api/workers/{worker}/queues/add`, `.../cancel` | `operator` |
 | Set a task rate limit | `POST /api/tasks/rate-limit` | `operator` |
@@ -48,9 +50,11 @@ The server check is the real one.
 Why the line falls where it does:
 
 - **Operator** controls are the ones you use in an incident and can undo.
-  A paused schedule can be resumed, a pool can grow back, a rate limit can
-  be cleared. Cancel and terminate are here too, because stopping a runaway
-  task is a normal on-call job.
+  A paused schedule can be resumed, an edited schedule reverted to the
+  code's, a pool can grow back, a rate limit can be cleared. Cancel and
+  terminate are here too, because stopping a runaway task is a normal
+  on-call job. Previewing a schedule change is a `POST` only because it
+  sends a body; it changes nothing, so viewers may do it.
 - **Admin** controls either lose data (a purge deletes messages for good),
   can't be undone from the dashboard (a shut-down worker needs someone to
   start it again), or affect everyone (branding).

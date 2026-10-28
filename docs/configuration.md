@@ -18,6 +18,7 @@ config = CeleryManagerConfig(
     cookie_secure=True,
     auto_migrate=True,
     inspect_timeout_seconds=1.0,
+    schedule_editing=False,
 )
 ```
 
@@ -34,10 +35,22 @@ config = CeleryManagerConfig(
 | `auto_migrate` | `bool` | `True` | Whether `init_db()` upgrades the database schema to the latest revision at startup. Set it to `False` to run `celery-manager migrate` as a deploy step instead; `init_db()` then leaves the database untouched and logs a warning if the schema isn't current. See [Schema and upgrades](#schema-and-upgrades). |
 
 | `inspect_timeout_seconds` | `float` | `1.0` | How long the [Workers page](workers.md) and the worker control endpoints wait for workers to reply to a broadcast (`inspect()`, `pool_grow`, `rate_limit`, ...). The HTTP request blocks for it, so keep it short; raise it only if workers on a slow or distant broker show as missing when they are running. |
+| `schedule_editing` | `bool` | `False` | Lets operators change a schedule's crontab or interval from the dashboard. Leave it off unless beat runs `celery_manager.beat:DatabaseScheduler`: no other scheduler reads the edits, so the dashboard would list runs that never happen. While it's off, `PUT /api/schedules/{name}/schedule` answers `409`, saved edits are ignored when listing upcoming runs, and the dashboard's editor can only preview and revert. See [Editing schedules](schedules.md). |
 
-Those nine fields are the whole dataclass — `CeleryManagerConfig` has no
+Those ten fields are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
 the environment.
+
+The beat process doesn't use `CeleryManagerConfig`. When beat runs
+`celery_manager.beat:DatabaseScheduler`, that scheduler reads two keys from
+your Celery app's own config:
+
+| Celery setting | Default | What it does |
+|---|---|---|
+| `celery_manager_db_url` | *required* | celery-manager's database, the same URL as `db_url`. Beat only reads the saved schedule edits from it. |
+| `celery_manager_schedule_refresh` | `10` | Seconds between reads of the saved edits. An edit reaches beat within this time. |
+
+See [Editing schedules](schedules.md).
 
 ## Tunables that are *not* config fields
 
