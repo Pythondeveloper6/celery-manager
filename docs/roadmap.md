@@ -89,5 +89,5 @@ are already in the release.
   host's existing scheduler layer.
 
 CI runs only after pushes to `main` (including merges). Publishing is downstream
-of successful CI on that exact main commit and only runs for a version change.
+of successful CI on that exact main commit and publishes when that version is absent from PyPI, including retries after CI-fix commits.
 Nothing is published by a local merge.
