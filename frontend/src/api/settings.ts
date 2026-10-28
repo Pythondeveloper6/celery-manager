@@ -42,7 +42,7 @@ export const DEFAULT_BRAND_SETTINGS: BrandSettings = {
  * as a *list* of objects, which is machine-shaped and useless in a form, so
  * anything that isn't a non-empty string falls back to the generic message.
  */
-async function describeFailure(response: Response, fallback: string): Promise<string> {
+export async function describeFailure(response: Response, fallback: string): Promise<string> {
   try {
     const body: unknown = await response.json();
     if (body && typeof body === "object" && "detail" in body) {

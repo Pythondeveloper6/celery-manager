@@ -28,3 +28,11 @@ export function useCan(required: Role): boolean {
 export function needsRole(required: Role): string {
   return `Needs the ${required} role`;
 }
+
+// Who is signed in, for the few places that need to tell "me" from "someone
+// else" (the Users page). Cosmetic like the role: the server decides.
+export const UsernameContext = createContext<string | null>(null);
+
+export function useUsername(): string | null {
+  return useContext(UsernameContext);
+}

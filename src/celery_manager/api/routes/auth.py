@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from celery_manager.api.deps import SESSION_COOKIE, Principal, cookie_path
 from celery_manager.auth.sessions import sign_session
-from celery_manager.auth.users import verify_password
+from celery_manager.auth.users import session_fingerprint, verify_password
 
 router = APIRouter(prefix="/api")
 
@@ -23,7 +23,9 @@ def login(payload: LoginRequest, request: Request, response: Response):
         user = verify_password(db_session, payload.username, payload.password)
     if user is None:
         raise HTTPException(status_code=401, detail="invalid credentials")
-    token = sign_session(config.secret_key, user.username)
+    token = sign_session(
+        config.secret_key, user.username, session_fingerprint(config.secret_key, user.password_hash)
+    )
     response.set_cookie(
         SESSION_COOKIE,
         token,

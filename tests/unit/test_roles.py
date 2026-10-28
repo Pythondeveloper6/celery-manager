@@ -66,6 +66,23 @@ WRITE_ROUTES = [
     ("POST", "/api/workers/w1/shutdown", None, "admin"),
     ("POST", "/api/queues/celery/purge", None, "admin"),
     ("PUT", "/api/settings", {"brand_name": "Acme"}, "admin"),
+    (
+        "POST",
+        "/api/users",
+        {"username": "newbie", "password": "long-enough-pw", "role": "viewer"},
+        "admin",
+    ),
+    ("PATCH", "/api/users/viewer", {"role": "viewer"}, "admin"),
+    ("POST", "/api/users/ghost/password", {"generate": True}, "admin"),
+    ("DELETE", "/api/users/ghost", None, "admin"),
+    # A too-short new password: past the role check (so allowed for every
+    # role) without changing anything.
+    (
+        "POST",
+        "/api/me/password",
+        {"current_password": "pw", "new_password": "short"},
+        "viewer",
+    ),
 ]
 
 # The same matrix by route template, as the app declares it.
@@ -86,6 +103,11 @@ ROUTE_ROLES = {
     ("POST", "/api/workers/{worker}/shutdown"): "admin",
     ("POST", "/api/queues/{name}/purge"): "admin",
     ("PUT", "/api/settings"): "admin",
+    ("POST", "/api/users"): "admin",
+    ("PATCH", "/api/users/{target}"): "admin",
+    ("POST", "/api/users/{target}/password"): "admin",
+    ("DELETE", "/api/users/{target}"): "admin",
+    ("POST", "/api/me/password"): "viewer",
 }
 
 READ_ROUTES = [

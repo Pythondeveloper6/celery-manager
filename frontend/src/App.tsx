@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { HashRouter, Link, Route, Routes } from "react-router-dom";
 import { whoami, type CurrentUser } from "./api/client";
-import { RoleContext } from "./lib/role";
+import { RoleContext, UsernameContext } from "./lib/role";
 import { BrandMark, useBranding } from "./branding";
 import { AppShell } from "./components/AppShell";
 import { Login } from "./pages/Login";
@@ -15,6 +15,7 @@ import { Insights } from "./pages/Insights";
 import { TaskOverview } from "./pages/TaskOverview";
 import { Workers } from "./pages/Workers";
 import { Queues } from "./pages/Queues";
+import { Users } from "./pages/Users";
 
 // Unmatched hash paths render a real page inside the shell rather than a
 // blank body, which reads as a broken app rather than a bad URL.
@@ -102,6 +103,7 @@ export function App() {
   return (
     <HashRouter>
       <RoleContext.Provider value={user.role}>
+        <UsernameContext.Provider value={user.username}>
         <AppShell username={user.username} role={user.role} onSignedOut={() => setUser(null)}>
           <Routes>
             <Route path="/" element={<TaskList />} />
@@ -114,9 +116,11 @@ export function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/workers" element={<Workers />} />
             <Route path="/queues" element={<Queues />} />
+            <Route path="/users" element={<Users />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppShell>
+        </UsernameContext.Provider>
       </RoleContext.Provider>
     </HashRouter>
   );

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Cookie, Depends, HTTPException, Request
 
 from celery_manager.auth.roles import role_allows, validate_role
-from celery_manager.auth.sessions import verify_session
-from celery_manager.auth.users import get_user_role
+from celery_manager.auth.sessions import verify_session_claims
+from celery_manager.auth.users import get_user_auth, session_fingerprint
 
 # Not plain `session`: celery-manager is usually mounted inside a host app,
 # and Flask's and Starlette's own session cookies are both called `session`
@@ -36,16 +37,22 @@ def get_current_principal(
     config = request.app.state.cm_config
     if session is None:
         raise HTTPException(status_code=401, detail="not authenticated")
-    username = verify_session(config.secret_key, session)
-    if username is None:
+    claims = verify_session_claims(config.secret_key, session)
+    if claims is None:
         raise HTTPException(status_code=401, detail="invalid or expired session")
+    username, fingerprint = claims
     # Sessions are stateless signed tokens, so a valid signature alone would
     # keep a deleted account working for the rest of its 7 days. The role is
     # read here on every request for the same reason: a demotion takes
-    # effect on the very next request, not when the cookie expires.
+    # effect on the very next request, not when the cookie expires. The
+    # password hash is read for the same reason: the cookie carries a
+    # fingerprint of it, so a password reset ends every older session.
     with request.app.state.cm_session_factory() as db_session:
-        role = get_user_role(db_session, username)
-    if role is None:
+        auth = get_user_auth(db_session, username)
+    if auth is None:
+        raise HTTPException(status_code=401, detail="invalid or expired session")
+    role, password_hash = auth
+    if not hmac.compare_digest(fingerprint, session_fingerprint(config.secret_key, password_hash)):
         raise HTTPException(status_code=401, detail="invalid or expired session")
     return CurrentUser(username=username, role=role)
 

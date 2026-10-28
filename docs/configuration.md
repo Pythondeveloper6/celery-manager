@@ -249,8 +249,10 @@ it:
   a copy someone else already has — a stolen cookie keeps working until it
   expires. Deleting the user, or changing their role, takes effect on their
   next request (every request reads the account and its role from the
-  database). To revoke *every* session at once, rotate
-  `secret_key`.
+  database). Resetting or changing an account's password also ends every
+  session it had: the cookie carries a fingerprint of the password hash and
+  a mismatch is a 401. See [managing accounts](roles.md#managing-accounts).
+  To revoke *every* session at once, rotate `secret_key`.
 - **`brand_logo_url` may point at an external host.** It lands in an
   `<img src>` on every page, including the login screen, so whoever controls
   that host sees a request (IP address, user agent) from each visitor, and

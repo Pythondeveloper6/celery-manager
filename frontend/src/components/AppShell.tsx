@@ -5,6 +5,7 @@ import { logout, type Role } from "../api/client";
 import { BrandMark, ThemeSwitch, useBranding } from "../branding";
 import {
   IconCalendarClock,
+  IconKey,
   IconChartLine,
   IconLayers,
   IconListChecks,
@@ -13,8 +14,11 @@ import {
   IconScrollText,
   IconServer,
   IconSettings,
+  IconUsers,
   IconX,
 } from "./icons";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { roleAllows } from "../lib/role";
 
 /* ==========================================================================
    App shell: a collapsible sidebar (shadcn's Sidebar, collapsible="icon")
@@ -31,13 +35,21 @@ import {
 const SIDEBAR_STORAGE_KEY = "cm-sidebar";
 const mobileQuery = window.matchMedia("(max-width: 767px)");
 
-const NAV_ITEMS: { to: string; end?: boolean; label: string; icon: ComponentType<{ className?: string }> }[] = [
+const NAV_ITEMS: {
+  to: string;
+  end?: boolean;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  // Hidden from roles below this one (cosmetic; the server enforces).
+  needs?: Role;
+}[] = [
   { to: "/", end: true, label: "Tasks", icon: IconListChecks },
   { to: "/schedules", label: "Schedules", icon: IconCalendarClock },
   { to: "/audit", label: "Audit log", icon: IconScrollText },
   { to: "/insights", label: "Insights", icon: IconChartLine },
   { to: "/workers", label: "Workers", icon: IconServer },
   { to: "/queues", label: "Queues", icon: IconLayers },
+  { to: "/users", label: "Users", icon: IconUsers, needs: "admin" },
   { to: "/settings", label: "Settings", icon: IconSettings },
 ];
 
@@ -75,6 +87,7 @@ function sectionLabel(pathname: string): string {
   if (pathname.startsWith("/insights") || pathname.startsWith("/task-types")) return "Insights";
   if (pathname.startsWith("/workers")) return "Workers";
   if (pathname.startsWith("/settings")) return "Settings";
+  if (pathname.startsWith("/users")) return "Users";
   if (pathname.startsWith("/queues")) return "Queues";
   if (pathname === "/" || pathname.startsWith("/tasks")) return "Tasks";
   return "";
@@ -98,6 +111,7 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const wasOpenRef = useRef(false);
@@ -186,7 +200,7 @@ export function AppShell({
 
         <nav className="cm-sidebar-content" aria-label="Primary">
           <ul className="cm-sidebar-menu">
-            {NAV_ITEMS.map(({ to, end, label, icon: Icon }) => (
+            {NAV_ITEMS.filter((item) => !item.needs || roleAllows(role, item.needs)).map(({ to, end, label, icon: Icon }) => (
               <li key={to} className="cm-sidebar-item">
                 <NavLink to={to} end={end} className="cm-sidebar-button">
                   <Icon />
@@ -205,6 +219,15 @@ export function AppShell({
               settings screen: it is the one preference someone changes
               because of the room they're in. */}
           <ThemeSwitch />
+          <div className="cm-sidebar-item">
+            <button type="button" className="cm-sidebar-button" onClick={() => setChangingPassword(true)}>
+              <IconKey />
+              <span className="cm-sidebar-label">Change password</span>
+            </button>
+            <span className="cm-tooltip" aria-hidden="true">
+              Change password
+            </span>
+          </div>
           <div className="cm-sidebar-item">
             <button type="button" className="cm-sidebar-button" onClick={signOut} disabled={signingOut}>
               <IconLogOut />
@@ -256,6 +279,7 @@ export function AppShell({
         </header>
         <main className="cm-main">{children}</main>
       </div>
+      {changingPassword && <ChangePasswordDialog onClose={() => setChangingPassword(false)} />}
     </div>
   );
 }

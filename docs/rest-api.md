@@ -48,8 +48,24 @@ framed by another site.
 | Method | Path | Auth | Request body | Response |
 |---|---|---|---|---|
 | `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str, "role": str}` on success; `401 {"detail": "invalid credentials"}` on bad username/password. Sets the `cm_session` cookie. |
-| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires; see the [security model](configuration.md#security-model). |
+| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires or the account's password changes; see the [security model](configuration.md#security-model). |
 | `GET` | `/api/whoami` | required | — | `200 {"username": str, "role": "viewer" \| "operator" \| "admin"}` if authenticated; `401` otherwise. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
+
+## Users
+
+Manage dashboard accounts; see [Roles](roles.md#managing-accounts) for the
+rules. Errors carry a `detail` sentence meant for people: `422` bad input
+(username, role, password length), `404` unknown user, `409` refused by a
+rule (duplicate username, last admin, deleting yourself).
+
+| Method | Path | Role | Body | Response |
+|---|---|---|---|---|
+| `GET` | `/api/users` | `admin` | none | `{"users": [{"username", "role", "source"}]}`. `source` is `"local"` for accounts celery-manager stores itself. |
+| `POST` | `/api/users` | `admin` | `{"username", "password", "role"?}` (role defaults to `viewer`) | `201` with the new user entry. |
+| `PATCH` | `/api/users/{username}` | `admin` | `{"role"}` | The updated entry. Refused with `409` if it would leave no admin. |
+| `POST` | `/api/users/{username}/password` | `admin` | `{"password"}` or `{"generate": true}` | `{"username", "generated_password"}`; the generated password is only in this response. Signs the user out everywhere. |
+| `DELETE` | `/api/users/{username}` | `admin` | none | `{"ok": true}`. |
+| `POST` | `/api/me/password` | `viewer` (any account) | `{"current_password", "new_password"}` | `{"ok": true}` and a fresh `cm_session` cookie; the account's other sessions end. `403` if the current password is wrong. |
 
 ## Tasks
 
