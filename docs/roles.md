@@ -11,7 +11,7 @@ the role before it can.
 |---|---|---|
 | `viewer` | People who watch: support, on-call shadowing, managers | See everything. Change nothing. |
 | `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, manage maintenance windows, skip single runs, and the worker controls you can undo from the dashboard. |
-| `admin` | People who own the deployment | Everything, including purging queues, shutting down workers, changing branding and setting up alerts. |
+| `admin` | People who own the deployment | Everything, including purging queues, deleting or moving single queued messages, shutting down workers, changing branding and setting up alerts. |
 
 The server checks the role on every request that changes something. A
 request the role doesn't allow gets `403` and does nothing. The dashboard
@@ -43,6 +43,9 @@ The server check is the real one.
 | Set a task rate limit | `POST /api/tasks/rate-limit` | `operator` |
 | Shut down a worker | `POST /api/workers/{worker}/shutdown` | `admin` |
 | Purge a queue | `POST /api/queues/{name}/purge` | `admin` |
+| Browse the messages waiting in a queue | `GET /api/queues/{name}/messages` | `viewer` |
+| Delete one waiting message (Redis) | `DELETE /api/queues/{name}/messages/{task_id}` | `admin` |
+| Move one waiting message to another queue (Redis) | `POST /api/queues/{name}/messages/{task_id}/move` | `admin` |
 | Change branding | `PUT /api/settings` | `admin` |
 | Change data retention | `PUT /api/settings/retention` | `admin` |
 | Preview what retention would delete (deletes nothing) | `POST /api/settings/retention/preview` | `viewer` |
@@ -65,7 +68,9 @@ Why the line falls where it does:
   terminate are here too, because stopping a runaway task is a normal
   on-call job. Previewing a schedule change is a `POST` only because it
   sends a body; it changes nothing, so viewers may do it.
-- **Admin** controls either lose data (a purge deletes messages for good),
+- **Admin** controls either lose data (a purge deletes messages for good,
+  and so does deleting one waiting message; moving one changes where and
+  whether it runs),
   can't be undone from the dashboard (a shut-down worker needs someone to
   start it again), or affect everyone (branding; data retention, which
   decides what is deleted for good; and alerts: a rule or channel decides
@@ -78,7 +83,10 @@ Why the line falls where it does:
 ### What viewers can see
 
 Viewers see task arguments, keyword arguments, captured logs and
-tracebacks, and they can export. That's on purpose: a read-only role is
+tracebacks, and they can export. The same goes for the arguments of
+messages still waiting in a queue ([Looking inside a queue](queues.md#looking-inside-a-queue));
+`queue_browser_show_args=False` leaves those out of the response for every
+role. That's on purpose: a read-only role is
 mostly used for debugging, and the list and detail pages already show this
 data, so blocking export would only make it slower to get. If your task
 arguments hold secrets, don't give that person a dashboard account at all.

@@ -53,6 +53,8 @@ config = CeleryManagerConfig(
 | `login_url` | `str` or `None` | `None` | Your app's login page, for the "Sign in with ..." link. `{next}` is replaced with the dashboard's address. A path or an `http(s)` URL; anything else makes `create_app()` refuse to start. |
 | `logout_url` | `str` or `None` | `None` | Your app's sign-out page, linked from "Sign out" for people your app signed in. Without it they get no sign-out item. Same rules as `login_url`. |
 | `login_provider_name` | `str` | `"your app"` | What the sign-in screen and sidebar call your app ("Sign in with Acme"). |
+| `queue_browser_show_args` | `bool` | `True` | Show task arguments when [browsing a queue's waiting messages](queues.md#looking-inside-a-queue). Every role sees them, as on task runs (see [Roles](roles.md#what-viewers-can-see)). `False` leaves `args`/`kwargs` out of the response for everyone, for deployments whose task arguments carry secrets. |
+| `queue_browser_amqp` | `bool` | `False` | Allow browsing RabbitMQ queues. Off by default because RabbitMQ can only show a message by handing it out: each one looked at is taken without acknowledgement and put back, which marks it redelivered and may move it to the front. While off, browsing a RabbitMQ queue answers `supported: false` with the reason. Redis browsing is read-only and needs no switch. |
 
 The fields above are the whole dataclass — `CeleryManagerConfig` has no
 other options, and nothing else in celery-manager reads configuration from
