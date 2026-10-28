@@ -6,6 +6,58 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0a1] — 2026-10-28
+
+One combined production-adoption alpha. Run migrations through `0014` before
+starting application processes, or leave automatic migrations enabled. See
+[production adoption](docs/production.md) and the
+[requirements roadmap](docs/roadmap.md) for configuration and remaining gaps.
+
+### Added
+
+- Pluggable schedule discovery and CRUD: static, RedBeat and Django Celery Beat
+  backends, lazy optional extras, runtime refresh, preserved removed-entry
+  history, and before/after change audits. Create with natural-language or cron
+  preview in the dashboard; edit timing, delete with confirmation, skip-next
+  and run-now. Advanced argument/options edits are available through PATCH.
+- Stamping schedulers for RedBeat and Django Celery Beat, plus `schedule_from`
+  and `consume_kwargs` for migration from host-provided identity arguments.
+- Deterministic English schedule parsing and optional host-provided AI parsing,
+  with strict schedule validation and preview.
+- OIDC bearer/JWKS authentication, a provider chain alongside existing host
+  authenticators, stable audit subjects, an opt-in short session bridge,
+  configurable session lifetimes, explicit trusted origins and frame ancestors.
+- Configurable dispatch allowlists, strict Pydantic argument schemas, queue
+  override restrictions and retry argument-edit policy shared by task starts,
+  retries, failed-run reruns and schedule run-now. Denials are audited.
+- Bounded log capture with head/tail retention, explicit truncation, logger and
+  level filters, redaction, task-context/thread isolation and log read roles.
+- Bounded task results, result opt-out, listener fallback and task-detail display.
+- Public task-link helper and optional producer hook with after-publish queued
+  recording and initiator headers. Unrecorded deep links wait and recover.
+- Explicit polling mode for WSGI; no stream endpoint or EventSource loop in that mode.
+- Worker event enabling at listener startup and every minute, with an opt-out.
+- SQLAlchemy schema isolation and engine options, SQL Server migration/range
+  locking and UTC server defaults. Schema-aware migration, prune and user CLI.
+- Durable last-seen worker state, advisory stuck/lost-run health, optional beat
+  heartbeat health, and Microsoft Teams Workflows alert channels.
+- Optional-adapter CI and live PostgreSQL/MySQL/SQL Server storage contracts.
+  These integrations require their CI and real-application gates; local SQL
+  compilation alone does not establish live backend compatibility.
+
+### Changed
+
+- Only registered user tasks can be dispatched by default. Queue overrides now
+  require `allow_queue_override=True`. An empty `startable_tasks` disables dispatch.
+- Cancelling an unknown task ID returns 404; explicit forced cancellation is admin-only.
+- Reversed `@track` / `@app.task` placement raises a clear import-time error.
+- CI and docs run after changes reach main. Publishing follows successful main CI,
+  checks the exact tested commit and requires a version increase. PR, manual and
+  release-event triggers are removed.
+- Existing `celery_manager.beat:DatabaseScheduler` keeps its static-editing meaning;
+  the Django integration is `celery_manager.beat:DjangoDatabaseScheduler`.
+
+
 ## [0.1.0a5] — 2026-10-28
 
 Run the migrations after upgrading (`0006` to `0011`; automatic unless
@@ -699,6 +751,7 @@ because anyone who pinned a git SHA during development *will* hit them.
   the Flask demo disables `/api/stream` and the dashboard falls back to
   polling. Run the dashboard as its own uvicorn process for live push.
 
+[0.2.0a1]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.2.0a1
 [0.1.0a5]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a5
 [0.1.0a4]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a4
 [0.1.0a3]: https://github.com/Pythondeveloper6/celery-manager/releases/tag/v0.1.0a3

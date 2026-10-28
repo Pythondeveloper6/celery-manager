@@ -248,7 +248,7 @@ def _report_progress(current, total, message) -> None:
         _warn_no_task_id_once()
         return
 
-    if decorator._session_factory is None:
+    if decorator._sessions() is None:
         _warn_unconfigured_once()
         return
 

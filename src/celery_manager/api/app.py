@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 
@@ -72,7 +72,6 @@ from celery_manager.api.routes import (
 from celery_manager.api.security import SecurityMiddleware
 from celery_manager.api.sse import EventBus, sse_stream
 from celery_manager.config import CeleryManagerConfig
-from celery_manager.control.schedules import sync_periodic_schedules
 from celery_manager.metrics import MetricsCollector
 from celery_manager.runtime import setup as setup_runtime
 
@@ -171,7 +170,7 @@ def _check_link(name: str, url: str | None) -> None:
 def _check_sign_in_options(config: CeleryManagerConfig) -> None:
     if config.authenticate_request is not None and not callable(config.authenticate_request):
         raise ValueError("CeleryManagerConfig.authenticate_request must be a callable taking the request")
-    if not config.local_login_enabled and config.authenticate_request is None:
+    if not config.local_login_enabled and config.authenticate_request is None and not config.principal_providers:
         raise ValueError(
             "CeleryManagerConfig.local_login_enabled is False but no authenticate_request is set, "
             "so nobody could sign in. Set authenticate_request (see celery_manager.integrations) "
@@ -206,10 +205,17 @@ def create_app(config: CeleryManagerConfig):
     # can never drift out of sync.
     session_factory = setup_runtime(config)
 
-    with session_factory() as session:
-        sync_periodic_schedules(session, config.celery_app)
+    from celery_manager.schedulers.service import ScheduleService
+    config._schedule_service = ScheduleService(config, session_factory)
+    config._schedule_service.refresh(force=True)
 
     app = FastAPI(title="celery-manager")
+    from celery_manager.control.policy import DispatchDenied
+
+    @app.exception_handler(DispatchDenied)
+    async def denied(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+
     app.state.cm_config = config
     app.state.cm_session_factory = session_factory
     # The bus polls the DB change feed for writes made by other processes
@@ -219,13 +225,28 @@ def create_app(config: CeleryManagerConfig):
     # one cached snapshot. Built even when metrics are disabled: it does no
     # work until something asks.
     app.state.cm_metrics = MetricsCollector(config, session_factory)
-    app.add_middleware(SecurityMiddleware)
+    if config.live_stream not in ("sse", "poll"):
+        raise ValueError("live_stream must be 'sse' or 'poll'")
+    from celery_manager.auth.roles import validate_role
+    validate_role(config.log_view_role)
+    app.add_middleware(SecurityMiddleware, trusted_origins=config.trusted_origins, frame_ancestors=config.frame_ancestors)
+    if config.trusted_origins:
+        from starlette.middleware.cors import CORSMiddleware
+        app.add_middleware(CORSMiddleware, allow_origins=list(config.trusted_origins),
+                           allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                           allow_headers=["Authorization", "Content-Type"])
 
+    from celery_manager.api.routes.health import router as health_router
+    app.include_router(health_router)
     app.include_router(auth_routes.router)
     # Before task_routes: /api/tasks/export must win over /api/tasks/{task_id}.
     app.include_router(export_routes.router)
     app.include_router(task_routes.router)
     app.include_router(deadletter_routes.router)
+    from celery_manager.api.routes.schedule_backend import (
+        router as schedule_backend_router,
+    )
+    app.include_router(schedule_backend_router)
     app.include_router(schedule_routes.router)
     app.include_router(maintenance_routes.router)
     app.include_router(audit_routes.router)
@@ -243,9 +264,10 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(workflow_routes.router)
     app.include_router(alert_routes.router)
 
-    @app.get("/api/stream")
-    def stream(request: Request, username: str = Depends(get_current_user)):
-        return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
+    if config.live_stream == "sse":
+        @app.get("/api/stream")
+        def stream(request: Request, username: str = Depends(get_current_user)):
+            return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
 
     # Fail closed: a new state-changing route that forgot `require_role`
     # would otherwise be open to every signed-in viewer. Refuse to build the

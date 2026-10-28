@@ -9,14 +9,17 @@ the role before it can.
 
 | Role | For | Can |
 |---|---|---|
-| `viewer` | People who watch: support, on-call shadowing, managers | See everything. Change nothing. |
+| `viewer` | People who watch: support, on-call shadowing, managers | Read operational data, subject to log access policy. Change nothing. |
 | `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, manage maintenance windows, skip single runs, and the worker controls you can undo from the dashboard. |
 | `admin` | People who own the deployment | Everything, including purging queues, deleting or moving single queued messages, shutting down workers, changing branding and setting up alerts. |
 
 The server checks the role on every request that changes something. A
 request the role doesn't allow gets `403` and does nothing. The dashboard
 also hides the buttons a role can't use, but that's only for convenience.
-The server check is the real one.
+The server check is the real one. Task dispatch also applies registered-task,
+allowlist, argument-schema and queue/edit policy checks; having `operator` is
+necessary but does not override those restrictions. `log_view_role` may require
+operator or admin for captured logs. See [production policies](production.md#safe-dispatch).
 
 ## What each role can do
 
@@ -25,6 +28,13 @@ The server check is the real one.
 | Look at anything: task lists and details, schedules, workers, queues, broker health, Insights, the audit log, the live stream | every `GET` | `viewer` |
 | See a queue's depth history | `GET /api/queues/{name}/history` | `viewer` |
 | Export tasks to CSV or JSON | `GET /api/tasks/export` | `viewer` |
+| Create a backend schedule | `POST /api/schedules` | `admin` |
+| Update a backend schedule | `PATCH /api/schedules/{name}` | `operator` |
+| Delete a backend schedule | `DELETE /api/schedules/{name}` | `admin` |
+| Preview a new schedule | `POST /api/schedules/preview` | `viewer` |
+| Skip next or run a schedule now | `POST /api/schedules/{name}/skip-next`, `.../run-now` | `operator` |
+| Bridge external authentication | `POST /api/auth/bridge` | `viewer` with fresh external authentication; opt-in |
+| Force cancellation of an unknown task ID | `POST /api/tasks/{id}/cancel?force=true` | `admin` |
 | Start a task | `POST /api/tasks/start` | `operator` |
 | Cancel or terminate a task | `POST /api/tasks/{id}/cancel` | `operator` |
 | Retry a task (with or without edited arguments) | `POST /api/tasks/{id}/retry` | `operator` |

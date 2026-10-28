@@ -32,16 +32,20 @@ import of the submodule.
 from celery_manager import control
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.decorator import track
+from celery_manager.links import task_url
 from celery_manager.progress import report_progress
+from celery_manager.publish import install_publish_hook
 from celery_manager.runtime import setup
 
-__version__ = "0.1.0a5"
+__version__ = "0.2.0a1"
 
 __all__ = [
     "CeleryManagerConfig",
     "__version__",
     "control",
+    "install_publish_hook",
     "report_progress",
     "setup",
+    "task_url",
     "track",
 ]

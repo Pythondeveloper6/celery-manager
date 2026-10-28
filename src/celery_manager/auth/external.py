@@ -62,6 +62,7 @@ class ExternalUser:
 
     username: str
     role: str | None
+    subject: str | None = None
 
 
 class ExternalAuthMisconfigured(Exception):
@@ -88,6 +89,11 @@ def _check(result: object) -> ExternalUser | None:
             f"authenticate_request returned an unusable username {username!r}: it must be 1-"
             f"{MAX_EXTERNAL_USERNAME_LENGTH} printable characters"
         )
+    if result.subject is not None and (
+        not isinstance(result.subject, str) or not result.subject or len(result.subject) > 255
+        or not result.subject.isprintable()
+    ):
+        raise ExternalAuthMisconfigured("External subject must be 1-255 printable characters or None")
     if result.role is not None and result.role not in ROLES:
         raise ExternalAuthMisconfigured(
             f"authenticate_request returned role {result.role!r} for {username!r}; "
@@ -113,14 +119,18 @@ def authenticate_external(config, request) -> ExternalUser | None:
     dependency reused as-is may raise its own 401), a 500 for a misconfigured
     answer or a crash, never a quiet ``None``.
     """
-    authenticate = config.authenticate_request
-    if authenticate is None:
-        return None
+    authenticators = [provider.authenticate for provider in config.principal_providers]
+    if config.authenticate_request is not None:
+        authenticators.append(config.authenticate_request)
     try:
-        result = authenticate(request)
-        if inspect.isawaitable(result):
-            result = anyio.from_thread.run(_await, result)
-        return _check(result)
+        for authenticate in authenticators:
+            result = authenticate(request)
+            if inspect.isawaitable(result):
+                result = anyio.from_thread.run(_await, result)
+            result = _check(result)
+            if result is not None:
+                return result
+        return None
     except StarletteHTTPException:
         raise
     except ExternalAuthMisconfigured as exc:

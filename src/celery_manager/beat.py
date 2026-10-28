@@ -123,6 +123,19 @@ class StampOccurrencesMixin:
     computation is guarded: if it fails, the task is still sent, unstamped.
     """
 
+    def tick(self, *args, **kwargs):
+        from celery_manager.beat_health import record_tick
+        interval = record_tick(self)
+        delay = super().tick(*args, **kwargs)
+        return min(delay, interval) if interval else delay
+
+    def close(self):
+        try:
+            return super().close()
+        finally:
+            if getattr(self, "_cm_health_engine", None) is not None:
+                self._cm_health_engine.dispose()
+
     def apply_async(self, entry, producer=None, advance=True, **kwargs):
         sent_at = None
         if advance:
@@ -270,3 +283,19 @@ class DatabaseScheduler(Scheduler):
         if changed:
             self._heap = None  # rebuilt from the new schedules on this tick
         return changed
+
+
+def __getattr__(name):
+    # Optional schedulers must not make importing celery_manager require either
+    # Django settings or a RedBeat installation. Keep DatabaseScheduler's
+    # existing public meaning (the package's static-schedule editor).
+    if name == "RedBeatScheduler":
+        from redbeat.schedulers import RedBeatScheduler
+        cls = type(name, (StampOccurrencesMixin, RedBeatScheduler), {"__module__": __name__})
+    elif name == "DjangoDatabaseScheduler":
+        from django_celery_beat.schedulers import DatabaseScheduler
+        cls = type(name, (StampOccurrencesMixin, DatabaseScheduler), {"__module__": __name__})
+    else:
+        raise AttributeError(name)
+    globals()[name] = cls
+    return cls

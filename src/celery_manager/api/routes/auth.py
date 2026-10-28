@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from celery_manager.api.deps import SESSION_COOKIE, Principal, cookie_path
+from celery_manager.api.deps import SESSION_COOKIE, Principal, cookie_path, require_role
 from celery_manager.auth.external import SOURCE_LOCAL
 from celery_manager.auth.sessions import sign_session
 from celery_manager.auth.users import session_fingerprint, verify_password
+
+require_viewer = require_role("viewer")
 
 router = APIRouter(prefix="/api")
 
@@ -30,7 +32,10 @@ def auth_options(request: Request):
     config = request.app.state.cm_config
     return {
         "local_login": config.local_login_enabled,
-        "external": config.authenticate_request is not None,
+        "external": config.authenticate_request is not None or bool(config.principal_providers),
+        "live_stream": config.live_stream,
+        "allow_queue_override": config.allow_queue_override,
+        "retry_edit_args": config.retry_edit_args,
         "provider_name": config.login_provider_name,
         "login_url": config.login_url,
         "logout_url": config.logout_url,
@@ -63,6 +68,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
         httponly=True,
         samesite="lax",
         secure=config.cookie_secure,
+        max_age=config.session_max_age_seconds,
     )
     return {"username": user.username, "role": user.role, "source": SOURCE_LOCAL}
 
@@ -89,4 +95,24 @@ def whoami(principal: Principal):
     every state-changing request. ``source`` is ``"local"`` for
     celery-manager's own accounts and ``"external"`` for someone the host
     app signed in, whose password and sign-out belong to the host."""
-    return {"username": principal.username, "role": principal.role, "source": principal.source}
+    return {"username": principal.username, "role": principal.role, "source": principal.source, **({"subject": principal.subject} if principal.subject else {})}
+
+
+@router.post("/auth/bridge")
+def bridge(request: Request, response: Response, principal: Principal, username: str = Depends(require_viewer)):
+    """Opt-in, short-lived dashboard session. Role changes apply on expiry."""
+    config = request.app.state.cm_config
+    if not config.session_bridge_enabled:
+        raise HTTPException(404, "Session bridge is disabled")
+    if principal.source == SOURCE_LOCAL:
+        raise HTTPException(403, "The bridge requires external authentication")
+    # Do not let a bridge cookie renew itself indefinitely.
+    from celery_manager.auth.external import authenticate_external
+    external = authenticate_external(config, request)
+    if external is None or external.role is None:
+        raise HTTPException(401, "Fresh external authentication is required")
+    from celery_manager.auth.sessions import sign_bridge
+    response.set_cookie(SESSION_COOKIE, sign_bridge(config.secret_key, external.username, external.role, external.subject),
+                        max_age=config.bridge_max_age_seconds, path=cookie_path(request),
+                        httponly=True, secure=config.cookie_secure, samesite="lax")
+    return {"username": external.username, "role": external.role, "expires_in": config.bridge_max_age_seconds}

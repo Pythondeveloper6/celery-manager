@@ -21,6 +21,7 @@ from celery_manager.schedule_specs import (
     spec_from_schedule,
     validate_spec,
 )
+from celery_manager.schedulers.service import entries_for
 
 logger = logging.getLogger(__name__)
 
@@ -502,7 +503,7 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
     Call once at REST API startup (see Task 10) so the dashboard's list of
     schedules always reflects what's actually configured to run."""
     synced = []
-    for name, entry in celery_app.conf.beat_schedule.items():
+    for name, entry in entries_for(session, celery_app).items():
         row = session.query(PeriodicSchedule).filter_by(name=name).one_or_none()
         if row is None:
             row = PeriodicSchedule(name=name)
@@ -559,13 +560,13 @@ def list_upcoming_with_overrides(
     two neighboring occurrences at once.
     """
     periodic = session.query(PeriodicSchedule).filter_by(name=schedule_name).one_or_none()
-    entry = celery_app.conf.beat_schedule.get(schedule_name)
-    if periodic is None or entry is None:
+    entry = entries_for(session, celery_app).get(schedule_name)
+    if periodic is None or entry is None or not periodic.enabled:
         return []
 
     # The operator's edit, if any (and `apply_edits`): see `effective_schedule`.
     celery_schedule = _entry_schedule(entry, periodic.schedule_override if apply_edits else None, app=celery_app)
-    anchor = _last_observed_run_at(session, schedule_name) if _is_interval_schedule(celery_schedule) else None
+    anchor = (entry.get("last_run_at") or _last_observed_run_at(session, schedule_name)) if _is_interval_schedule(celery_schedule) else None
     occurrences = upcoming_occurrences(periodic, celery_schedule, count=count, from_time=from_time, anchor=anchor)
     pool = [o for o in list_overrides(session, schedule_name) if not o.consumed]
     window = timedelta(seconds=eta_tolerance_seconds)
@@ -616,7 +617,7 @@ def _schedule_target(session, celery_app, schedule_name: str):
     needs both the stored row (it holds the edit) and the code's entry (the
     task it runs, and what "revert to code" goes back to)."""
     row = get_periodic_schedule(session, schedule_name)
-    entry = celery_app.conf.beat_schedule.get(schedule_name)
+    entry = entries_for(session, celery_app).get(schedule_name)
     if row is None or entry is None:
         return None
     return row, entry
@@ -765,6 +766,11 @@ def schedule_edit_fields(row: PeriodicSchedule, celery_app, apply_edits: bool = 
     the code's schedule as a spec, to prefill the editor (None for solar and
     custom schedule kinds, which a spec cannot express)."""
     entry = celery_app.conf.beat_schedule.get(row.name)
+    if row.source and row.source != "static" and row.definition:
+        import json
+        data = json.loads(row.definition)
+        if data.get("schedule"):
+            entry = {"schedule": build_schedule(data["schedule"], app=celery_app)}
     spec = _stored_spec(row)
     code_schedule = spec_from_schedule(_entry_schedule(entry)) if entry is not None else None
     effective = row.schedule_spec

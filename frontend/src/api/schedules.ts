@@ -58,6 +58,9 @@ export async function pauseOccurrence(name: string, targetTime: string, action: 
 
 export interface ScheduleSummary {
   name: string;
+  source: string | null;
+  backend_writable: boolean;
+  definition: { args: unknown[]; kwargs: Record<string, unknown>; options: Record<string, unknown>; schedule: ScheduleSpec | null } | null;
   task_name: string;
   schedule_spec: string;
   // Always true today: `sync_periodic_schedules` sets it for every entry in

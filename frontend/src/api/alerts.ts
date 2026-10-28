@@ -12,7 +12,7 @@ export type RuleKind =
   | "queue_growing"
   // RabbitMQ
   | "rabbitmq_alarm";
-export type ChannelKind = "slack" | "webhook" | "email";
+export type ChannelKind = "slack" | "webhook" | "email" | "teams";
 
 export interface AlertRule {
   id: number;

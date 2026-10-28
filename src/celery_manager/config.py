@@ -231,3 +231,48 @@ class CeleryManagerConfig:
     rabbitmq_management_verify_tls: bool = True
     rabbitmq_management_timeout_seconds: float = 3.0
     rabbitmq_dlq_patterns: list[str] = field(default_factory=lambda: ["*.dlq", "*.dead", "dlq.*"])
+
+    # Production controls. None allows registered user tasks; an empty collection
+    # disables dashboard dispatch. Callable receives (task_name, principal).
+    startable_tasks: object = None
+    allow_queue_override: bool = False
+    retry_edit_args: bool = True
+    args_schemas: dict = field(default_factory=dict)
+    log_capture: bool = True
+    log_capture_level: int = 0
+    log_capture_max_bytes: int = 256_000
+    log_capture_loggers: tuple[str, ...] = ()
+    log_redactor: Callable[[str], str] | None = None
+    log_view_role: str = "viewer"
+    store_results: bool = True
+    result_max_bytes: int = 64_000
+    live_stream: str = "sse"
+    trusted_origins: tuple[str, ...] = ()
+    frame_ancestors: tuple[str, ...] = ()
+    principal_providers: tuple = ()
+    session_max_age_seconds: int = 604800
+    bridge_max_age_seconds: int = 300
+    session_bridge_enabled: bool = False
+    db_schema: str | None = None
+    engine_options: dict = field(default_factory=dict)
+    scheduler_backend: object = None
+    schedule_sync_interval_seconds: float = 30.0
+    cron_parser: object = None
+
+    def __post_init__(self):
+        from celery_manager.auth.roles import validate_role
+        validate_role(self.log_view_role)
+        if self.live_stream not in ("sse", "poll"):
+            raise ValueError("live_stream must be 'sse' or 'poll'")
+        for name in ("log_capture_max_bytes", "result_max_bytes"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a nonnegative byte count")
+        for name in ("session_max_age_seconds", "bridge_max_age_seconds"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be positive seconds")
+        if self.schedule_sync_interval_seconds < 0:
+            raise ValueError("schedule_sync_interval_seconds cannot be negative")
+        if isinstance(self.startable_tasks, str):
+            raise ValueError("startable_tasks must be a collection of names or a callable, not a string")  # noqa: TRY004

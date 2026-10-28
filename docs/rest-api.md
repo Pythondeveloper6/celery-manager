@@ -9,14 +9,11 @@ design notes.
 
 ## Auth
 
-All auth is cookie-based: `POST /api/auth/login` sets an `httponly`,
-`samesite=lax` session cookie named **`cm_session`** (signed with
-`CeleryManagerConfig.secret_key` via `itsdangerous`, valid 7 days, `Path`
-set to the app's mount point — `/` unless it is mounted under a prefix);
-every other endpoint below reads that cookie via the `get_current_user`
-dependency and returns **`401`** if it's missing, invalid, expired, or names
-a user that no longer exists. There are no API keys or bearer tokens of
-celery-manager's own.
+Local login sets an `HttpOnly`, `SameSite=lax` cookie named **`cm_session`**,
+signed with `secret_key`. Its path is the app's mount point and its lifetime is
+`session_max_age_seconds` (7 days by default). Missing, expired, deleted-user or
+password-invalidated local sessions return 401. External providers can instead
+validate bearer tokens or host sessions; see [production identity](production.md#external-identity).
 
 **Signed in by your app.** With `CeleryManagerConfig.authenticate_request` set
 (see [Sign in with your app's users](integrations.md#sign-in-with-your-apps-users)),
@@ -37,11 +34,13 @@ Besides login, logout and `GET /api/auth/options`, only
 [`GET /api/settings`](#settings-branding) is not behind that dependency, and **on purpose** — the login screen has to
 render this deployment's branding before anyone has signed in.
 
-**Cross-origin writes are refused.** Any `POST`/`PUT`/`PATCH`/`DELETE`
+**Untrusted cross-origin cookie writes are refused.** Any `POST`/`PUT`/`PATCH`/`DELETE`
 (login included) that carries an `Origin` header whose host doesn't match
 the request's `Host` (or the first `X-Forwarded-Host`, for proxies that
 rewrite `Host`) gets **`403 {"detail": "cross-origin request refused"}`**
-before reaching the route. Requests with no `Origin` — curl, scripts,
+before reaching the route, unless explicitly allowed by `trusted_origins`. A
+bearer-only request with no cookies is exempt from this ambient-cookie check.
+Requests with no `Origin` — curl, scripts,
 server-to-server clients — are unaffected. If you put celery-manager behind a
 proxy that rewrites `Host`, make `Host` or `X-Forwarded-Host` carry the public
 `host:port` the browser used (in nginx: `proxy_set_header Host $http_host;`
@@ -50,13 +49,13 @@ the port), or the dashboard's own writes, login included, will be refused. If
 login returns `403 cross-origin request refused`, this is the cause; see
 [Behind a reverse proxy](integrations.md#behind-a-reverse-proxy).
 
-Every response also carries `X-Frame-Options: DENY` and
-`Content-Security-Policy: frame-ancestors 'none'`, so the dashboard can't be
-framed by another site.
+By default responses carry `X-Frame-Options: DENY` and
+`Content-Security-Policy: frame-ancestors 'none'`. Explicit `frame_ancestors`
+replaces this with the allowed origins and omits the conflicting XFO header.
 
 | Method | Path | Auth | Request body | Response |
 |---|---|---|---|---|
-| `GET` | `/api/auth/options` | none | — | `200 {"local_login": bool, "external": bool, "provider_name": str, "login_url": str \| null, "logout_url": str \| null}`: how this deployment signs people in, for the login screen. `external` is true when `authenticate_request` is set; `login_url` may contain `{next}`. Unauthenticated, like `GET /api/settings`; it holds nothing secret. |
+| `GET` | `/api/auth/options` | none | — | `200 {"local_login": bool, "external": bool, "provider_name": str, "login_url": str \| null, "logout_url": str \| null}`: how this deployment signs people in, for the login screen. `external` is true when a host authenticator or principal provider is configured; `login_url` may contain `{next}`. Unauthenticated, like `GET /api/settings`; it holds nothing secret. |
 | `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str, "role": str, "source": "local"}` on success; `401 {"detail": "invalid credentials"}` on bad username/password; `403` with a sentence naming your app when `local_login_enabled=False`. Sets the `cm_session` cookie. |
 | `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires or the account's password changes; see the [security model](configuration.md#security-model). |
 | `GET` | `/api/whoami` | required | — | `200 {"username": str, "role": "viewer" \| "operator" \| "admin", "source": "local" \| "external"}` if authenticated (`external`: signed in by your app); `401` otherwise; `403 {"detail": "Your <app> account (<name>) has no access to this dashboard."}` for a user of your app who has no role here. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
@@ -83,11 +82,11 @@ rule (duplicate username, last admin, deleting yourself).
 |---|---|---|---|---|
 | `GET` | `/api/tasks` | required | Query params: `status`, `task_name`, `q`, `date_from`, `date_to`, `limit` (default `50`), `offset` (default `0`) — all optional. See [Filtering, search and pagination](#filtering-search-and-pagination) below for exact semantics. | `200 {"items": [...], "total": int, "limit": int, "offset": int}` — **an envelope, not a bare array** (see the change note below). Each item is `{"task_id", "task_name", "status", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at"}`, newest first (ordered by internal row id descending). `total` is the number of runs matching the *same filters*, ignoring `limit`/`offset`. `limit`/`offset` are echoed back *after* clamping, so a client can see what it actually got. |
 | `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "eta", "sent_at", "received_at", "wait_seconds", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at", "retried_from_id", "retried_by"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener and the timings from the decorator, so any of them may be `null` for a run that hasn't started or wasn't seen by both. `eta`, `sent_at` and `received_at` come from the `task-sent`/`task-received` events (`null` if never seen); `wait_seconds` is `started_at - max(sent_at, eta)`, `null` without a send time or a start (see [Wait time](queues.md#wait-time)). `retried_from_id` is the id of the run this one was dispatched as a retry of, or `null`; `retried_by` is a **list** of the ids dispatched as retries *of this run* (an operator can retry the same failed run more than once), `[]` if there are none. The four `progress_*` fields are `null` unless the task calls [`report_progress()`](progress.md). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
-| `GET` | `/api/tasks/registered` | required | — | `200 {"items": [{"name", "signature", "queue", "doc"}]}`. Task names registered on the Celery app in the **API process**, minus Celery's own `celery.*` tasks (the app's `include`/`imports` modules are imported first, best effort). `signature` is a list of `{"name", "kind", "required", "has_default", "default", "annotation"}` per parameter (`kind` is `positional`, `keyword_only`, `var_args` or `var_kwargs`; defaults that aren't JSON-able come back as their `repr`), or `null` when it can't be inspected. `queue` is the task's own or routed queue, `null` if none; `doc` is the docstring's first line. If the web process never imports your task modules the list is short or empty — `start` still accepts any name. Powers the dashboard's task picker. |
-| `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}, "queue": str?, "countdown": number?, "eta": ISO datetime?}` | `200 {"task_id": str}`. Dispatches via `celery_app.send_task(...)` (`queue`, `countdown` >= 0 and `eta` are passed through only when set; a naive `eta` is read as UTC), seeds a `queued` run row so the run's detail page opens immediately, and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}` plus `queue`/`countdown`/`eta` when given). `422` for a wrongly-typed field. No check that `task_name` is registered; a bad name fails at the broker/worker level, not here. |
-| `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Does not check that `task_id` exists in celery-manager's own storage. |
+| `GET` | `/api/tasks/registered` | required | — | `200 {"items": [{"name", "signature", "queue", "doc"}]}`. Task names registered on the Celery app in the **API process**, minus Celery's own `celery.*` tasks (the app's `include`/`imports` modules are imported first, best effort). `signature` is a list of `{"name", "kind", "required", "has_default", "default", "annotation"}` per parameter (`kind` is `positional`, `keyword_only`, `var_args` or `var_kwargs`; defaults that aren't JSON-able come back as their `repr`), or `null` when it can't be inspected. `queue` is the task's own or routed queue, `null` if none; `doc` is the docstring's first line. The list is filtered through the dispatch allowlist for the current principal. If the web process never imports your task modules, the list is short or empty and unregistered starts are refused. Powers the dashboard's task picker. |
+| `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}, "queue": str?, "countdown": number?, "eta": ISO datetime?}` | `200 {"task_id": str}`. Dispatches via `celery_app.send_task(...)` (`queue`, `countdown` >= 0 and `eta` are passed through only when set; a naive `eta` is read as UTC), seeds a `queued` run row so the run's detail page opens immediately, and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}` plus `queue`/`countdown`/`eta` when given). `422` for a wrongly-typed field. An unregistered task returns 422 before publication; allowlist, queue and argument-schema checks also apply. Explicit queue override is refused unless enabled. |
+| `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Unknown IDs return 404 unless an admin explicitly supplies `force=true`. |
 | `POST` | `/api/tasks/{task_id}/retry` | required | optional `{"args": [...]?, "kwargs": {...}?}` | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them (or, if the body supplies `args` and/or `kwargs`, those instead; a field left out keeps the stored value, and no body behaves exactly as before; `422` if `args` is not a list or `kwargs` not an object) as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`; for an edited retry also `"args_edited": true` and the `args`/`kwargs` actually sent). The new run records `retried_from_id` either way). `404 {"detail": "not found"}` if no run exists for `task_id`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
-| `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. **Not partial-failure aware**: it stops at the first unknown id and returns `404 {"detail": "no task run found for <id>"}` for the whole batch — ids earlier in the list have already been dispatched and audited by then, and the response does not tell you which. Check the ids before sending them, or retry one at a time if that matters. |
+| `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. The HTTP API validates the whole requested scope before publishing: an unknown ID returns 404 and a policy denial returns 403/422 without dispatch. Broker failures during actual publication can still be partial. |
 | `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | Changes a task's rate limit on running workers (not persisted). Documented with the other worker controls under [Workers](#workers). |
 
 | `POST` | `/api/tasks/cancel-bulk` | required | `{"task_ids": [str, ...]}` **or** `{"filter": {"status", "task_name", "q", "date_from", "date_to"}}` (exactly one; the filter fields mean what they mean on `GET /api/tasks`), plus `"terminate": bool = false`, `"dry_run": bool = false` | `200 {"revoked": int, "matched": int, "skipped_finished": int, "unknown": int, "limit": 1000, "dry_run": bool}`. Revokes only runs in `queued`/`started`/`retried`; finished runs are counted in `skipped_finished`, ids with no stored run in `unknown` (and not revoked). `dry_run` counts without revoking or auditing. `400` if both or neither selector is sent, or if more than 1,000 runs would be cancelled (nothing is revoked then). One `cancel_bulk` audit row per call. See [Bulk cancel](queues.md#bulk-cancel). |
@@ -322,8 +321,8 @@ Runs with status `failed` that nothing was run again from. See
 
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
-| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool, "paused": bool, "paused_at": datetime\|null, "paused_by": str\|null, "paused_until": datetime\|null, "missed_count": int}`, ordered by `name`. `missed_count` is the number of missed runs in the last 24 hours (see `GET /api/schedules/{name}/missed`), `0` where detection is not active. A pure read of the `periodic_schedules` table, which `create_app()` populates once at startup from `celery_app.conf.beat_schedule` (`sync_periodic_schedules`). `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` is written as `True` for every synced entry and there is no endpoint to change it, so today it is always `true`. It is *not* the pause state: `paused` is, with `paused_at`/`paused_by` saying when the current pause began and who started it (both `null` when not paused; `paused_at` carries an explicit `+00:00` offset). Since schedule editing: `schedule_spec` is the schedule in force (an operator's edit while one applies and `schedule_editing` is on), `code_schedule_spec` is always the code's, `code_schedule` is the code's schedule as an editable spec (`null` for solar and custom kinds), `schedule_override` is the saved edit as a spec (or `null`), `edited_by`/`edited_at` say who saved it and when, and `schedule_editing` repeats the config flag so the dashboard knows whether to offer saving. See [Editing a schedule](#editing-a-schedule). |
-| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool, "paused": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from `celery_app.conf.beat_schedule`), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. `paused` is `true` on every entry while the whole schedule is paused (see below): that occurrence will be recorded as skipped whatever `action` says. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
+| `GET` | `/api/schedules` | required | — | `200` — list of `{"name": str, "task_name": str, "schedule_spec": str, "enabled": bool, "paused": bool, "paused_at": datetime\|null, "paused_by": str\|null, "paused_until": datetime\|null, "missed_count": int}`, ordered by `name`. `missed_count` is the number of missed runs in the last 24 hours (see `GET /api/schedules/{name}/missed`), `0` where detection is not active. Schedule requests refresh the configured backend snapshot at most once per sync interval. Stored history remains when backend entries are removed. `schedule_spec` is the `str()` of the Celery schedule object — human-readable, not machine-parseable (`"<freq: 2.00 hours>"`, `"<crontab: 0 7 * * * (m/h/dM/MY/d)>"`). `enabled` reflects backend state and is false for removed entries retained as history; writable backends allow changing it. It is *not* the pause state: `paused` is, with `paused_at`/`paused_by` saying when the current pause began and who started it (both `null` when not paused; `paused_at` carries an explicit `+00:00` offset). Since schedule editing: `schedule_spec` is the schedule in force (an operator's edit while one applies and `schedule_editing` is on), `code_schedule_spec` is always the code's, `code_schedule` is the code's schedule as an editable spec (`null` for solar and custom kinds), `schedule_override` is the saved edit as a spec (or `null`), `edited_by`/`edited_at` say who saved it and when, and `schedule_editing` repeats the config flag so the dashboard knows whether to offer saving. See [Editing a schedule](#editing-a-schedule). |
+| `GET` | `/api/schedules/{name}/occurrences` | required | — | `200` — list of `{"target_time": datetime, "action": "skip"\|"cancel"\|null, "consumed": bool, "paused": bool}`, one entry per of the next 10 computed occurrences of the periodic schedule named `name` (from the configured backend), in chronological order. `action`/`consumed` reflect any matching unconsumed `ScheduleOverride`, or `null`/`false` if none. `paused` is `true` on every entry while the whole schedule is paused (see below): that occurrence will be recorded as skipped whatever `action` says. Returns `[]` if `name` isn't a known schedule (rather than a `404`). |
 | `GET` | `/api/schedules/{name}/missed` | required | — | `200` — `{"active": bool, "tracking_since": datetime\|null, "grace_seconds": int, "missed": [{"due_at": datetime}]}`. Runs of the schedule that were due in the last 7 days but never arrived, oldest first (max 500). `active` is `false` (and `missed` empty) until beat has stamped a run of this schedule; `tracking_since` is the first stamped occurrence, where judging starts. A run counts as missed `missed_run_grace_seconds` after it was due; skipped, revoked and failed runs count as arrived. Any signed-in role. Pure read, no audit row. `404` if `name` isn't a known schedule. See [Missed-run detection](decorator.md#missed-run-detection). |
 | `POST` | `/api/schedules/{name}/occurrences/pause` | required | `{"target_time": datetime, "action": "skip"\|"cancel"}` (any other `action` value is a `422`) | `200 {"id": int, "action": str, "target_time": datetime}`. Records (or updates) an override for the occurrence closest to `target_time`. |
 | `POST` | `/api/schedules/{name}/pause` | required | — | `200` — the schedule's summary, same shape as a `GET /api/schedules` item, now with `paused: true`. Pauses every firing of the schedule until resumed. Idempotent: pausing an already-paused schedule returns `200` with the *original* `paused_at`/`paused_by` and writes no audit row. `404` if `name` isn't a known schedule. |
@@ -772,3 +771,41 @@ any broker or extra infrastructure. The database is the only shared piece.
 - **No replay.** A connection gets changes from the moment it opens, not
   the ones it missed while disconnected. Clients should refetch on
   (re)connect, as the dashboard does.
+
+
+## Production API additions (0.2)
+
+See [production adoption](production.md) for identity setup, optional extras,
+scheduler ownership, dispatch validation and the deployment checklist.
+
+| Method | Path | Minimum role | Contract |
+|---|---|---|---|
+| `POST` | `/api/auth/bridge` | viewer, external authentication | Disabled unless explicitly enabled. Issues a short cookie after fresh external authentication; cannot renew from the bridge cookie alone. |
+| `GET` | `/api/schedules/backend` | viewer | Backend `name`, `writable`, and recommended `beat_scheduler` class. |
+| `POST` | `/api/schedules/preview` | viewer | A schedule spec or `{schedule: spec}`; returns validated `schedule`, description, timezone and ten UTC ISO `occurrences`. Text specs use `{type:"text", text:"weekdays at 06:30"}`. Saves nothing. |
+| `POST` | `/api/schedules` | admin | `{name, task, schedule, args?, kwargs?, options?, enabled?}`. Registered user task required. Returns definition; duplicate 409, read-only backend 409, invalid input 422. |
+| `PATCH` | `/api/schedules/{name}` | operator | Partial schedule/args/kwargs/options/enabled update; explicit null fields are refused. Backend must be writable. |
+| `DELETE` | `/api/schedules/{name}` | admin | Deletes the backend definition; run and override history remain. |
+| `POST` | `/api/schedules/{name}/skip-next` | operator | Records the next enabled occurrence as a one-off skip. Repeated calls use existing tolerance-based idempotence. No available occurrence returns 409. |
+| `POST` | `/api/schedules/{name}/run-now` | operator | Dispatches the entry arguments through the task policy. Returns `{task_id}`; carries no occurrence header and consumes no scheduled skip. |
+| `GET` | `/api/schedules/health` | viewer | Backend name and unregistered-task findings. This is not yet a complete reconciliation/drift report. |
+| `GET` | `/api/health/beat` | viewer | Healthy/stale/unknown beat state, last tick and age. Optional `stale_seconds` threshold. |
+| `GET` | `/api/health/workers` | viewer | Durable last-seen worker online/offline observations. |
+| `GET` | `/api/health/runs` | viewer | Advisory `worker_lost`/`suspect_stuck` findings; optional `stuck_seconds`. Never changes execution status. |
+
+Task detail adds `result_repr`, `result_truncated`, `log_output_truncated`,
+`logs_restricted` and `initiator`. Restricted log output is `null`; a result can be
+`null` because collection is disabled or no result was recorded. Truncated results
+are display text, not guaranteed valid JSON. Audit entries add `actor_subject`.
+Schedule summaries add `source`, `backend_writable` and a stored `definition`.
+Auth options additionally expose `live_stream`, `allow_queue_override` and
+`retry_edit_args`; `external` also covers configured principal providers.
+
+Task dispatch defaults to registered user tasks only and additionally applies
+`startable_tasks`, argument schemas and edit/queue restrictions. These checks
+cover retry, bulk retry, failed-run reruns and schedule run-now too. Denials are
+audited as `start_denied`. An unknown single cancel returns 404; an admin may
+explicitly request `?force=true` (other roles receive 403).
+
+With `live_stream="poll"`, `/api/stream` is absent and the SPA polls. Teams is an
+additional alert-channel kind with `{url}` configuration; the URL is write-only.

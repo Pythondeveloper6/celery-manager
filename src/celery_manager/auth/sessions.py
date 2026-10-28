@@ -34,3 +34,20 @@ def verify_session_claims(
 def verify_session(secret_key: str, token: str, max_age_seconds: int = 60 * 60 * 24 * 7) -> str | None:
     claims = verify_session_claims(secret_key, token, max_age_seconds)
     return None if claims is None else claims[0]
+
+
+def sign_bridge(secret_key, username, role, subject=None):
+    return URLSafeTimedSerializer(secret_key, salt="celery-manager-bridge").dumps(
+        {"username": username, "role": role, "subject": subject})
+
+
+def verify_bridge(secret_key, token, max_age):
+    from celery_manager.auth.roles import ROLES
+    try:
+        data = URLSafeTimedSerializer(secret_key, salt="celery-manager-bridge").loads(token, max_age=max_age)
+    except BadData:
+        return None
+    if (not isinstance(data, dict) or data.get("role") not in ROLES
+            or not isinstance(data.get("username"), str)):
+        return None
+    return {k: data.get(k) for k in ("username", "role", "subject")}

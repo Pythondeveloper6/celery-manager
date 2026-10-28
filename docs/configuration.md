@@ -26,7 +26,7 @@ config = CeleryManagerConfig(
 |---|---|---|---|
 | `celery_app` | `celery.Celery` | *required* | Your application's Celery instance. Used for task introspection (dispatching tasks via `send_task`, reading `beat_schedule` to compute upcoming occurrences) and control calls (`revoke`/`terminate`). The API app and the events listener must both be given the *same* Celery app configuration (same broker, same `beat_schedule`) or their views of the world will disagree. |
 | `db_url` | `str` | `"sqlite:///celery_manager.db"` | SQLAlchemy connection URL for celery-manager's own storage (task runs, schedules, overrides, users, audit log — see `celery_manager.db.models`). Any SQLAlchemy-supported backend works; swap to Postgres/MySQL/etc. for production. For `sqlite:///:memory:` specifically, the engine is built with `StaticPool` so every connection shares one in-memory database — needed for it to behave sensibly under FastAPI's threadpool (as used in the test suite); other SQLite URLs use `check_same_thread=False` instead. Every process that needs to see the same data (API app + events listener) must point at the same `db_url`. |
-| `secret_key` | `str` | `"change-me"` (a placeholder) | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for 7 days). Anyone who knows the key can forge a valid session cookie for any username, so **`create_app()` raises `ValueError` and refuses to start if it is empty or still `"change-me"`** — set a private random value in every process that serves the dashboard, local development included. Processes that don't serve HTTP (Celery workers calling `celery_manager.setup()`, the events listener) never sign sessions and may leave the default. Rotating it invalidates every existing session (users are signed out). See [`secret_key` in production](#secret_key-in-production). |
+| `secret_key` | `str` | `"change-me"` (a placeholder) | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for `session_max_age_seconds`, default 7 days). Anyone who knows the key can forge a valid session cookie for any username, so **`create_app()` raises `ValueError` and refuses to start if it is empty or still `"change-me"`** — set a private random value in every process that serves the dashboard, local development included. Processes that don't serve HTTP (Celery workers calling `celery_manager.setup()`, the events listener) never sign sessions and may leave the default. Rotating it invalidates every existing session (users are signed out). See [`secret_key` in production](#secret_key-in-production). |
 | `eta_tolerance_seconds` | `int` | `60` | How far apart two timestamps of the same occurrence may be: an interval-schedule occurrence stamped by beat vs. a saved `target_time` (in `@track`, capped at half the interval), and a saved `target_time` vs. a recomputed occurrence (in `GET /api/schedules/{name}/occurrences`). It is compared with "now" only for messages without occurrence headers while beat has never stamped any (see [How the skip/cancel check works](decorator.md#how-the-skipcancel-check-works)). See the trade-off below. |
 | `missed_run_grace_seconds` | `int` | `300` | How long after a scheduled run was due it may still arrive before it is reported as missed (`GET /api/schedules/{name}/missed`, the `missed_count` on `GET /api/schedules`). Detection needs beat to run the stamping scheduler (see [Missed-run detection](decorator.md#missed-run-detection)). Raise it if your broker or workers are routinely slow to start a run. |
 | `cookie_secure` | `bool` | `True` | Sets the `Secure` flag on the session cookie, so browsers only ever send it back over HTTPS. See below for why the default is `True` and when to change it. |
@@ -270,13 +270,14 @@ Know what celery-manager does and doesn't defend against before you expose
 it:
 
 - **Operators are powerful.** Accounts have a [role](roles.md): `viewer`
-  (read-only), `operator` or `admin`. An `operator` can dispatch *any* task
-  name with *any* args and kwargs (`POST /api/tasks/start` does not check
-  the name against registered tasks), cancel or terminate any task, retry
-  runs and pause schedules. Give `operator` and `admin` only to people you'd
+  (read-only), `operator` or `admin`. Operators can dispatch registered user
+  tasks subject to `startable_tasks` and optional strict argument schemas,
+  cancel or terminate known tasks, retry runs and pause schedules. Queue
+  overrides are disabled by default. Forced cancellation of an unknown ID
+  requires an admin and explicit `force=true`. Give `operator` and `admin` only to people you'd
   trust with that, use `viewer` for everyone else, and treat the dashboard
   as an admin surface, ideally reachable only from a private network or VPN.
-  Viewers can see task arguments, logs and tracebacks.
+  Viewers can see task arguments and tracebacks; `log_view_role` can restrict logs.
 - **Upgrading makes every existing account `admin`**, because before roles
   every account could do everything. Demote accounts afterwards with
   `celery-manager set-role`.
@@ -291,7 +292,8 @@ it:
   `POST /api/auth/login` at your reverse proxy (e.g. nginx `limit_req`,
   Traefik `RateLimit`, a cloud WAF rule). bcrypt makes each guess cost
   ~0.2 s of server CPU, which slows brute force but is not a substitute.
-- **Sessions are stateless signed tokens, valid for 7 days.** The
+- **Local sessions are stateless signed tokens, valid for 7 days by default.**
+  Set `session_max_age_seconds` to change that lifetime. The
   `cm_session` cookie *is* the session; nothing is stored server-side.
   Logging out deletes the cookie from that browser but does **not** revoke
   a copy someone else already has — a stolen cookie keeps working until it
@@ -309,8 +311,47 @@ it:
 
 What *is* in place: `HttpOnly`, `SameSite=lax`, `Secure`-by-default session
 cookies; refusal of cross-origin `POST`/`PUT`/`PATCH`/`DELETE` requests by
-`Origin` check; `X-Frame-Options: DENY` and `frame-ancestors 'none'` against
+`Origin` check (with explicit `trusted_origins` and a bearer-only exception);
+`X-Frame-Options: DENY` and `frame-ancestors 'none'` by default against
 clickjacking; bcrypt password hashes, with login timing that doesn't reveal
 whether a username exists. See the [REST API auth notes](rest-api.md#auth)
 for the exact behaviour, including what a proxy in front of the app must
 forward.
+
+
+## Production options introduced in 0.2
+
+The [production adoption guide](production.md) gives working examples, migration
+instructions, adapter installation and operational limitations. These options
+compose with the existing configuration and retention UI.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `startable_tasks` | `None` | Registered user tasks only. A collection restricts names; an empty collection disables dispatch. A callable receives `(name, principal)`. |
+| `allow_queue_override` | `False` | Permit explicit task-start queue overrides. |
+| `retry_edit_args` | `True` | Permit changed arguments when retrying a recorded run. |
+| `args_schemas` | `{}` | Task-name to Pydantic model; strict validation of bound arguments before publishing. |
+| `log_capture` / `log_capture_level` | `True` / `0` | Capture emitted records and filter by logging level; host logger levels remain authoritative. |
+| `log_capture_max_bytes` | `256_000` | UTF-8 head/tail storage limit, including truncation marker. |
+| `log_capture_loggers` | `()` | Optional logger-name prefixes; empty accepts all emitted task-context records. |
+| `log_redactor` | `None` | Callable transforming a formatted log record. Failure withholds the raw record. |
+| `log_view_role` | `"viewer"` | Minimum role that can retrieve captured logs. |
+| `store_results` / `result_max_bytes` | `True` / `64_000` | Store bounded result representations in decorator and listener. |
+| `principal_providers` | `()` | Ordered external providers, before the existing host callable and local-cookie fallback. |
+| `session_max_age_seconds` | `604800` | Local-cookie lifetime; existing password fingerprints and live role lookup still apply. |
+| `session_bridge_enabled` | `False` | Opt into a short external-authenticated dashboard cookie. |
+| `bridge_max_age_seconds` | `300` | Bridge lifetime; fresh external authentication is required to renew. |
+| `trusted_origins` | `()` | Explicit HTTP(S) origins for credentialed CORS and cross-origin cookie writes. |
+| `frame_ancestors` | `()` | Explicit embedding origins. Empty denies framing; nonempty replaces deny-frame headers with the configured CSP. |
+| `live_stream` | `"sse"` | `"poll"` omits the stream endpoint and disables EventSource in the SPA; use under WSGI. |
+| `scheduler_backend` | `None` | Default static discovery, or a backend adapter such as RedBeat/Django Celery Beat. |
+| `schedule_sync_interval_seconds` | `30.0` | Minimum interval between request-driven backend snapshot refreshes. |
+| `cron_parser` | `None` | Deterministic rules by default, or a host parser/optional `LLMParser`. |
+| `db_schema` | `None` | Provisioned SQL schema used by runtime models and migrations. SQLite uses a separate database file. |
+| `engine_options` | `{}` | Additional SQLAlchemy engine options. |
+
+Set worker, listener and API options consistently, particularly result/log
+collection, storage namespace and scheduler configuration. The beat process uses
+`app.conf.celery_manager_db_url` and `celery_manager_db_schema` when recording
+optional liveness or reading package timing edits. Retention remains configured
+through its existing persistent rules; it is not replaced by a new config flag.

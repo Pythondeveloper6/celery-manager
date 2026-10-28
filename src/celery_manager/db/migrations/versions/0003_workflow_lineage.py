@@ -19,14 +19,14 @@ _COLUMNS = ('parent_id', 'root_id', 'group_id')
 
 
 def upgrade() -> None:
-    with op.batch_alter_table('task_runs', schema=None) as batch_op:
+    with op.batch_alter_table('task_runs', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         for name in _COLUMNS:
             batch_op.add_column(sa.Column(name, sa.String(length=255), nullable=True))
             batch_op.create_index(batch_op.f(f'ix_task_runs_{name}'), [name], unique=False)
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('task_runs', schema=None) as batch_op:
+    with op.batch_alter_table('task_runs', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         for name in reversed(_COLUMNS):
             batch_op.drop_index(batch_op.f(f'ix_task_runs_{name}'))
             batch_op.drop_column(name)

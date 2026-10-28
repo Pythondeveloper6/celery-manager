@@ -57,6 +57,7 @@ from celery_manager.occurrences import (
     is_interval_schedule,
     next_occurrence_after,
 )
+from celery_manager.schedulers.service import entries_for
 
 DEFAULT_LOOKBACK = timedelta(days=7)
 DEFAULT_GRACE_SECONDS = 300
@@ -104,7 +105,7 @@ def list_missed_runs(
     `apply_edits` is as for `control.schedules.effective_schedule`.
     """
     now = as_aware_utc(now) if now is not None else datetime.now(timezone.utc)
-    entry = (celery_app.conf.beat_schedule or {}).get(schedule_name)
+    entry = entries_for(session, celery_app).get(schedule_name)
     if entry is None:
         return []
     first = first_stamped_occurrence(session, schedule_name)
@@ -156,7 +157,7 @@ def missed_run_counts(
     omitted). Same rules as `list_missed_runs`; pure read. Counts are capped
     at `DEFAULT_MAX_RESULTS` per schedule."""
     counts: dict[str, int] = {}
-    for name in (celery_app.conf.beat_schedule or {}):
+    for name in entries_for(session, celery_app):
         missed = list_missed_runs(
             session, celery_app, name, since=since, grace_seconds=grace_seconds, now=now,
             apply_edits=apply_edits,

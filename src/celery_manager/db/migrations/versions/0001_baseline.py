@@ -28,7 +28,7 @@ def upgrade() -> None:
     # database that reaches them is versioned.
     existing = set()
     if not op.get_context().as_sql:
-        existing = set(sa.inspect(op.get_bind()).get_table_names())
+        existing = set(sa.inspect(op.get_bind()).get_table_names(schema=op.get_context().opts.get("version_table_schema")))
 
     if 'app_settings' not in existing:
         op.create_table('app_settings',
@@ -37,7 +37,7 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('updated_by', sa.String(length=255), nullable=True),
         sa.PrimaryKeyConstraint('key')
-        )
+        , schema=op.get_context().opts.get("version_table_schema"))
 
     if 'audit_log' not in existing:
         op.create_table('audit_log',
@@ -49,7 +49,7 @@ def upgrade() -> None:
         sa.Column('details', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint('id')
-        )
+        , schema=op.get_context().opts.get("version_table_schema"))
 
     if 'periodic_schedules' not in existing:
         op.create_table('periodic_schedules',
@@ -61,8 +61,8 @@ def upgrade() -> None:
         sa.Column('kwargs', sa.Text(), nullable=False),
         sa.Column('enabled', sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint('id')
-        )
-        with op.batch_alter_table('periodic_schedules', schema=None) as batch_op:
+        , schema=op.get_context().opts.get("version_table_schema"))
+        with op.batch_alter_table('periodic_schedules', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
             batch_op.create_index(batch_op.f('ix_periodic_schedules_name'), ['name'], unique=True)
 
     if 'task_runs' not in existing:
@@ -90,8 +90,8 @@ def upgrade() -> None:
         sa.Column('progress_message', sa.Text(), nullable=True),
         sa.Column('progress_updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint('id')
-        )
-        with op.batch_alter_table('task_runs', schema=None) as batch_op:
+        , schema=op.get_context().opts.get("version_table_schema"))
+        with op.batch_alter_table('task_runs', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
             batch_op.create_index(batch_op.f('ix_task_runs_retried_from_id'), ['retried_from_id'], unique=False)
             batch_op.create_index(batch_op.f('ix_task_runs_schedule_name'), ['schedule_name'], unique=False)
             batch_op.create_index(batch_op.f('ix_task_runs_status'), ['status'], unique=False)
@@ -104,8 +104,8 @@ def upgrade() -> None:
         sa.Column('username', sa.String(length=255), nullable=False),
         sa.Column('password_hash', sa.String(length=255), nullable=False),
         sa.PrimaryKeyConstraint('id')
-        )
-        with op.batch_alter_table('users', schema=None) as batch_op:
+        , schema=op.get_context().opts.get("version_table_schema"))
+        with op.batch_alter_table('users', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
             batch_op.create_index(batch_op.f('ix_users_username'), ['username'], unique=True)
 
     if 'schedule_overrides' not in existing:
@@ -118,35 +118,35 @@ def upgrade() -> None:
         sa.Column('consumed', sa.Boolean(), nullable=False),
         sa.Column('created_by', sa.String(length=255), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(['schedule_name'], ['periodic_schedules.name'], ),
+        sa.ForeignKeyConstraint(['schedule_name'], [(op.get_context().opts.get("version_table_schema") + "." if op.get_context().opts.get("version_table_schema") else "") + "periodic_schedules.name"], ),
         sa.PrimaryKeyConstraint('id')
-        )
-        with op.batch_alter_table('schedule_overrides', schema=None) as batch_op:
+        , schema=op.get_context().opts.get("version_table_schema"))
+        with op.batch_alter_table('schedule_overrides', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
             batch_op.create_index(batch_op.f('ix_schedule_overrides_schedule_name'), ['schedule_name'], unique=False)
             batch_op.create_index(batch_op.f('ix_schedule_overrides_target_time'), ['target_time'], unique=False)
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('schedule_overrides', schema=None) as batch_op:
+    with op.batch_alter_table('schedule_overrides', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f('ix_schedule_overrides_target_time'))
         batch_op.drop_index(batch_op.f('ix_schedule_overrides_schedule_name'))
 
-    op.drop_table('schedule_overrides')
-    with op.batch_alter_table('users', schema=None) as batch_op:
+    op.drop_table('schedule_overrides', schema=op.get_context().opts.get("version_table_schema"))
+    with op.batch_alter_table('users', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f('ix_users_username'))
 
-    op.drop_table('users')
-    with op.batch_alter_table('task_runs', schema=None) as batch_op:
+    op.drop_table('users', schema=op.get_context().opts.get("version_table_schema"))
+    with op.batch_alter_table('task_runs', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f('ix_task_runs_task_name'))
         batch_op.drop_index(batch_op.f('ix_task_runs_task_id'))
         batch_op.drop_index(batch_op.f('ix_task_runs_status'))
         batch_op.drop_index(batch_op.f('ix_task_runs_schedule_name'))
         batch_op.drop_index(batch_op.f('ix_task_runs_retried_from_id'))
 
-    op.drop_table('task_runs')
-    with op.batch_alter_table('periodic_schedules', schema=None) as batch_op:
+    op.drop_table('task_runs', schema=op.get_context().opts.get("version_table_schema"))
+    with op.batch_alter_table('periodic_schedules', schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index(batch_op.f('ix_periodic_schedules_name'))
 
-    op.drop_table('periodic_schedules')
-    op.drop_table('audit_log')
-    op.drop_table('app_settings')
+    op.drop_table('periodic_schedules', schema=op.get_context().opts.get("version_table_schema"))
+    op.drop_table('audit_log', schema=op.get_context().opts.get("version_table_schema"))
+    op.drop_table('app_settings', schema=op.get_context().opts.get("version_table_schema"))

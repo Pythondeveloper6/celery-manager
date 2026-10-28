@@ -4,6 +4,7 @@ import functools
 import json
 import logging
 import traceback as tb_module
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -31,9 +32,75 @@ _warned_legacy_match = False
 # headers (a stamped message, or a stamped `task_runs` row). From then on a
 # message without headers never consumes an override.
 _beat_stamps = False
+_config = None
 
 
-def configure(session_factory, eta_tolerance_seconds: int = 60) -> None:
+@dataclass
+class _RuntimeState:
+    sessions: object
+    tolerance: int
+    config: object = None
+    beat_stamps: bool = False
+    warned_legacy: bool = False
+    warned_unconfigured: bool = False
+
+
+_runtime_context = ContextVar("cm_task_runtime", default=None)
+
+
+def _state_for_app(app):
+    state = getattr(app, "_cm_runtime_state", None)
+    if state is None:
+        state = getattr(app, "_cm_unconfigured_state", None)
+        if state is None:
+            state = _RuntimeState(None, 60)
+            if app is not None:
+                app._cm_unconfigured_state = state
+    return state
+
+
+def _active_state():
+    state = _runtime_context.get()
+    if state is not None:
+        return state
+    # Direct configure(factory) remains the legacy process-wide integration.
+    if _config is None or _session_factory is None:
+        return None
+    from celery import current_task
+    task = current_task._get_current_object()
+    if task is not None:
+        return _state_for_app(task.app)
+    return None
+
+
+def _sessions():
+    state = _active_state()
+    return state.sessions if state is not None else _session_factory
+
+
+def _settings():
+    state = _active_state()
+    return state.config if state is not None else _config
+
+
+def _with_task_runtime(function):
+    @functools.wraps(function)
+    def scoped(*args, **kwargs):
+        if _config is None or _session_factory is None:
+            state = None
+        else:
+            from celery import current_task
+            task = args[0] if args and isinstance(args[0], Task) else current_task._get_current_object()
+            state = _state_for_app(getattr(task, "app", None))
+        token = _runtime_context.set(state)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _runtime_context.reset(token)
+    return scoped
+
+
+def configure(session_factory, eta_tolerance_seconds: int = 60, config=None) -> None:
     """Wire the decorator to a session factory.
 
     Called once per *process* that runs `@track`-decorated tasks — which
@@ -42,11 +109,17 @@ def configure(session_factory, eta_tolerance_seconds: int = 60) -> None:
     so prefer that over calling this directly.
     """
     global _session_factory, _eta_tolerance_seconds, _warned_unconfigured, _warned_legacy_match, _beat_stamps
+    global _config
+    _config = config
     _session_factory = session_factory
     _eta_tolerance_seconds = eta_tolerance_seconds
     _warned_unconfigured = False
     _warned_legacy_match = False
     _beat_stamps = False
+    if config is not None and config.celery_app is not None:
+        previous = getattr(config.celery_app, "_cm_runtime_state", None)
+        if previous is None or previous.sessions is not session_factory or previous.config is not config:
+            config.celery_app._cm_runtime_state = _RuntimeState(session_factory, eta_tolerance_seconds, config)
 
 
 def _warn_unconfigured_once(task_name: str) -> None:
@@ -57,9 +130,15 @@ def _warn_unconfigured_once(task_name: str) -> None:
     Deliberately does not raise: an observability gap must never take down
     the host application's actual task."""
     global _warned_unconfigured
-    if _warned_unconfigured:
-        return
-    _warned_unconfigured = True
+    state = _active_state()
+    if state is not None:
+        if state.warned_unconfigured:
+            return
+        state.warned_unconfigured = True
+    else:
+        if _warned_unconfigured:
+            return
+        _warned_unconfigured = True
     logger.warning(
         "celery-manager: @track task %r ran in a process that never called "
         "celery_manager.setup(config) — schedule pause/skip and log capture "
@@ -126,27 +205,41 @@ def _beat_occurrence(task_self) -> BeatOccurrence | None:
 
 def _mark_beat_stamping() -> None:
     global _beat_stamps
-    _beat_stamps = True
+    state = _active_state()
+    if state is not None:
+        state.beat_stamps = True
+    else:
+        _beat_stamps = True
 
 
 def _beat_is_stamping(session) -> bool:
     """True once any run in storage carries a beat occurrence stamp. Cached
     per process once true (a beat that stamps keeps stamping)."""
     global _beat_stamps
-    if _beat_stamps:
+    state = _active_state()
+    if state.beat_stamps if state is not None else _beat_stamps:
         return True
     from celery_manager.db.models import TaskRun
 
     if session.query(TaskRun.id).filter(TaskRun.occurrence_at.isnot(None)).first() is not None:
-        _beat_stamps = True
-    return _beat_stamps
+        if state is not None:
+            state.beat_stamps = True
+        else:
+            _beat_stamps = True
+    return state.beat_stamps if state is not None else _beat_stamps
 
 
 def _warn_legacy_match_once(schedule_name: str) -> None:
     global _warned_legacy_match
-    if _warned_legacy_match:
-        return
-    _warned_legacy_match = True
+    state = _active_state()
+    if state is not None:
+        if state.warned_legacy:
+            return
+        state.warned_legacy = True
+    else:
+        if _warned_legacy_match:
+            return
+        _warned_legacy_match = True
     logger.warning(
         "celery-manager: matched a schedule override for %r by wall-clock time "
         "because the message carries no occurrence headers. Run beat with "
@@ -198,7 +291,7 @@ def _find_matching_override(session, schedule_name: str, occurrence: BeatOccurre
     if not candidates:
         return None
 
-    tolerance = timedelta(seconds=_eta_tolerance_seconds)
+    tolerance = timedelta(seconds=_active_state().tolerance if _active_state() is not None else _eta_tolerance_seconds)
     if occurrence is not None:
         if occurrence.interval_seconds is not None:
             window = min(tolerance, timedelta(seconds=occurrence.interval_seconds / 2))
@@ -361,7 +454,7 @@ def _persist_run(task_id: str, create_defaults: dict | None = None, clear: tuple
     error is logged and dropped; the caller's control flow is unaffected.
     """
     try:
-        with _session_factory() as session:
+        with _sessions()() as session:
             _upsert_task_run(session, task_id, create_defaults=create_defaults, clear=clear, **fields)
             session.commit()
     except Exception:  # deliberate: storage must never affect the task's outcome
@@ -456,8 +549,17 @@ def _workflow_lineage(task_self) -> dict:
     return lineage
 
 
-def track(schedule_name: str | None = None):
-    """Decorator for Celery tasks. Apply above @app.task:
+def _initiator(task_self):
+    request = getattr(task_self, "request", None)
+    if request is None:
+        from celery import current_task
+        request = getattr(current_task, "request", None)
+    value = _header(request, "cm_initiator")
+    return value if isinstance(value, str) and 0 < len(value) <= 255 else None
+
+
+def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwargs: tuple[str, ...] = ()):
+    """Decorator for Celery tasks. Apply directly below @app.task:
 
         @app.task(name="demo.echo", bind=True)
         @track(schedule_name="demo-every-2h")
@@ -482,12 +584,22 @@ def track(schedule_name: str | None = None):
     """
 
     def decorator(func):
+        if isinstance(func, Task):
+            raise TypeError("Apply @track() below @app.task, directly on the task function")
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             task_self, task_id, task_name = _identify_run(args, func)
-            effective_schedule_name = schedule_name or task_name
+            extracted = None
+            if schedule_from is not None:
+                try:
+                    extracted = schedule_from(args[1:] if task_self else args, dict(kwargs))
+                except Exception:
+                    logger.exception("celery-manager: schedule identity extractor failed")
+            for key in consume_kwargs:
+                kwargs.pop(key, None)
+            effective_schedule_name = extracted or schedule_name or task_name
 
-            if _session_factory is None:
+            if _sessions() is None:
                 # Not configured (e.g. task called outside a configured app) — run normally.
                 _warn_unconfigured_once(task_name)
                 return func(*args, **kwargs)
@@ -513,7 +625,7 @@ def track(schedule_name: str | None = None):
             skipped = False
             skip_reason: str | None = None
             try:
-                with _session_factory() as session:
+                with _sessions()() as session:
                     override = _find_matching_override(session, control_schedule_name, beat_occurrence)
                     if override is not None and override.action in ("skip", "cancel"):
                         # Commit the "this occurrence is consumed" decision on
@@ -566,6 +678,7 @@ def track(schedule_name: str | None = None):
                     finished_at=now,
                     skip_reason=skip_reason,
                     **occurrence_fields,
+                initiator=_initiator(task_self),
                 )
                 return None
 
@@ -615,20 +728,24 @@ def track(schedule_name: str | None = None):
                 effective_task_id,
                 task_name=task_name,
                 status="started",
+                result_truncated=False,
+                log_output_truncated=False,
+                log_output="",
                 args=run_args,
                 kwargs=run_kwargs,
                 schedule_name=effective_schedule_name,
                 started_at=started_at,
                 **occurrence_fields,
+                initiator=_initiator(task_self),
                 **_workflow_lineage(task_self),
                 clear=(
                     "exception", "traceback", "finished_at", "runtime_seconds",
                     "progress_current", "progress_total", "progress_message",
-                    "progress_updated_at",
+                    "progress_updated_at", "result_repr",
                 ),
             )
 
-            with progress_module._run_context(effective_task_id), capture_logs() as buffer:
+            with progress_module._run_context(effective_task_id), capture_logs(_settings()) as buffer:
                 try:
                     result = func(*args, **kwargs)
                 except Retry as exc:
@@ -658,6 +775,7 @@ def track(schedule_name: str | None = None):
                         started_at=started_at,
                         exception=_describe_exception(exc)[0],
                         log_output=buffer.getvalue(),
+                        log_output_truncated=buffer.truncated,
                     )
                     raise
                 except Exception as exc:
@@ -676,12 +794,16 @@ def track(schedule_name: str | None = None):
                         exception=message,
                         traceback=formatted,
                         log_output=buffer.getvalue(),
+                        log_output_truncated=buffer.truncated,
                     )
                     raise
                 else:
                     finished_at = datetime.now(timezone.utc)
+                    from celery_manager.logcapture import result_fields
+                    output = result_fields(result, _settings()) if _settings() is None or _settings().store_results else {}
                     _persist_run(
                         effective_task_id,
+                        **output,
                         task_name=task_name,
                         status="succeeded",
                         args=run_args,
@@ -691,9 +813,10 @@ def track(schedule_name: str | None = None):
                         finished_at=finished_at,
                         runtime_seconds=(finished_at - started_at).total_seconds(),
                         log_output=buffer.getvalue(),
+                        log_output_truncated=buffer.truncated,
                     )
                     return result
 
-        return wrapper
+        return _with_task_runtime(wrapper)
 
     return decorator

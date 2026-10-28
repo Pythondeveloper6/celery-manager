@@ -106,6 +106,10 @@ without touching your beat schedule or restarting anything.
 </tr>
 </table>
 
+Production adoption: the [0.2 guide](docs/production.md) covers external schedulers,
+OIDC, dispatch policies, bounded logs/results and storage isolation. The
+[requirements roadmap](docs/roadmap.md) tracks the real-project review and follow-ups.
+
 ## What you get
 
 - **Task visibility** — every task run (decorated or not) with status, args,

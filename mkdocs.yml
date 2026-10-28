@@ -107,6 +107,7 @@ nav:
   - Guide:
       - Quickstart: quickstart.md
       - Integrating with your app: integrations.md
+      - Production adoption: production.md
       - The decorator: decorator.md
       - Editing schedules: schedules.md
       - Live progress: progress.md

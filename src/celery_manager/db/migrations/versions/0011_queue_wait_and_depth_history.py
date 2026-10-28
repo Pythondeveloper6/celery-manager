@@ -20,7 +20,7 @@ depends_on = None
 def upgrade() -> None:
     # Nullable, no backfill: runs recorded before this have no send time, and
     # a wait can't be derived from anything else.
-    with op.batch_alter_table("task_runs", schema=None) as batch_op:
+    with op.batch_alter_table("task_runs", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.add_column(sa.Column("sent_at", sa.DateTime(timezone=True), nullable=True))
         batch_op.add_column(sa.Column("received_at", sa.DateTime(timezone=True), nullable=True))
 
@@ -31,16 +31,16 @@ def upgrade() -> None:
         sa.Column("queue", sa.String(length=255), nullable=False),
         sa.Column("depth", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-    )
-    with op.batch_alter_table("queue_depth_samples", schema=None) as batch_op:
+    schema=op.get_context().opts.get("version_table_schema"))
+    with op.batch_alter_table("queue_depth_samples", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.create_index("ix_queue_depth_samples_queue_sampled_at", ["queue", "sampled_at"], unique=False)
 
 
 def downgrade() -> None:
     # Drops the recorded send/receive times and every depth sample.
-    with op.batch_alter_table("queue_depth_samples", schema=None) as batch_op:
+    with op.batch_alter_table("queue_depth_samples", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_index("ix_queue_depth_samples_queue_sampled_at")
-    op.drop_table("queue_depth_samples")
-    with op.batch_alter_table("task_runs", schema=None) as batch_op:
+    op.drop_table("queue_depth_samples", schema=op.get_context().opts.get("version_table_schema"))
+    with op.batch_alter_table("task_runs", schema=op.get_context().opts.get("version_table_schema")) as batch_op:
         batch_op.drop_column("received_at")
         batch_op.drop_column("sent_at")

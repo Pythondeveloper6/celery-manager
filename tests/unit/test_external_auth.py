@@ -285,6 +285,7 @@ def test_auth_options_without_an_authenticator():
     client, _ = _build()
     assert client.get("/api/auth/options").json() == {
         "local_login": True,
+        "live_stream": "sse", "allow_queue_override": False, "retry_edit_args": True,
         "external": False,
         "provider_name": "your app",
         "login_url": None,
@@ -304,6 +305,7 @@ def test_auth_options_are_public_and_describe_the_host():
     assert response.status_code == 200
     assert response.json() == {
         "local_login": False,
+        "live_stream": "sse", "allow_queue_override": False, "retry_edit_args": True,
         "external": True,
         "provider_name": "Acme",
         "login_url": "/accounts/login/?next={next}",
