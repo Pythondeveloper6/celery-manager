@@ -20,10 +20,6 @@ to celery-manager [roles](roles.md), instead of keeping a separate set of accoun
 
 ## Periodic tasks
 
-**Edit schedules from the dashboard.** Change a cron expression or an interval and see
-the next five runs before saving. This needs a database-backed beat scheduler, such as
-django-celery-beat.
-
 **Maintenance windows.** Pause chosen schedules on a recurring window, for example every
 Sunday from 02:00 to 04:00, without remembering to resume them.
 

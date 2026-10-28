@@ -108,6 +108,7 @@ nav:
       - Quickstart: quickstart.md
       - Integrating with your app: integrations.md
       - The decorator: decorator.md
+      - Editing schedules: schedules.md
       - Live progress: progress.md
       - Dashboard: dashboard.md
       - Insights: insights.md
