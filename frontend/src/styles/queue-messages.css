@@ -1,0 +1,66 @@
+/* Messages waiting in one queue (pages/QueueMessages.tsx). Builds on queues.css
+   (cell labels, muted "unknown" text) and tasks.css (task links, footer). */
+
+.cm-queue-msgs-title {
+  font-family: var(--cm-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.cm-queue-msgs-table .cm-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-queue-msgs-pos {
+  color: var(--cm-color-text-muted);
+}
+
+.cm-queue-msgs-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cm-space-2);
+  margin-top: 0.25rem;
+  font-size: var(--cm-text-xs);
+  color: var(--cm-color-text-muted);
+}
+
+.cm-queue-msgs-meta:empty {
+  display: none;
+}
+
+/* One line, cut with an ellipsis; the full text is in the title. Arguments
+   can be long, and a wrapping cell would make every row a different height. */
+.cm-queue-msgs-args {
+  max-width: 28rem;
+}
+
+.cm-queue-msgs-args code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--cm-font-mono);
+  font-size: var(--cm-text-xs);
+}
+
+.cm-queue-msgs-actions {
+  display: flex;
+  gap: var(--cm-space-2);
+  justify-content: flex-end;
+}
+
+.cm-queue-msgs-approx {
+  max-width: var(--cm-measure);
+}
+
+@media (max-width: 640px) {
+  .cm-queue-msgs-table .cm-num {
+    text-align: left;
+  }
+
+  .cm-queue-msgs-args {
+    flex: 1 0 100%;
+    max-width: none;
+  }
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { BrokerPanel } from "../components/BrokerPanel";
 import {
   getQueueHistory,
@@ -402,7 +403,13 @@ export function Queues() {
                   <tbody key={q.name}>
                     <tr>
                       <td className="cm-cell-primary">
-                        <span className="cm-queue-name">{q.name}</span>
+                        <Link
+                          to={`/queues/${encodeURIComponent(q.name)}`}
+                          className="cm-queue-name cm-link"
+                          title="See the messages waiting in this queue"
+                        >
+                          {q.name}
+                        </Link>
                         <span className="cm-queue-sources">
                           {q.sources.map((s) => SOURCE_LABELS[s] ?? s).join(" · ")}
                         </span>
@@ -548,6 +555,7 @@ export function Queues() {
             The sparkline is the depth recorded by the events listener over the last {SPARK_HOURS} hours; select it for
             a larger chart. Until two samples exist it shows this browser session instead.
           </li>
+          <li>Click a queue&rsquo;s name to see the messages waiting in it.</li>
         </ul>
       )}
     </div>

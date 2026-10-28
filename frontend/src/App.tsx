@@ -24,6 +24,7 @@ import { Insights } from "./pages/Insights";
 import { TaskOverview } from "./pages/TaskOverview";
 import { Workers } from "./pages/Workers";
 import { Queues } from "./pages/Queues";
+import { QueueMessages } from "./pages/QueueMessages";
 import { Users } from "./pages/Users";
 import { Alerts } from "./pages/Alerts";
 
@@ -145,6 +146,7 @@ export function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/workers" element={<Workers />} />
             <Route path="/queues" element={<Queues />} />
+            <Route path="/queues/:name" element={<QueueMessages />} />
             <Route path="/users" element={<Users />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="*" element={<NotFound />} />
