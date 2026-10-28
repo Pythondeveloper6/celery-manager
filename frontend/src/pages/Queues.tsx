@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listQueues, purgeQueue, type QueueInfo, type QueueListing } from "../api/queues";
+import { BrokerPanel } from "../components/BrokerPanel";
 import "../styles/queues.css";
 import { useCan } from "../lib/role";
 
@@ -156,9 +157,12 @@ export function Queues() {
   const [notice, setNotice] = useState<string | null>(null);
   const historyRef = useRef(new Map<string, number[]>());
   const requestIdRef = useRef(0);
+  // Bumped on every refresh so the broker panel reloads with the page.
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const refresh = useCallback(async () => {
     const requestId = ++requestIdRef.current;
+    setRefreshToken((n) => n + 1);
     try {
       const next = await listQueues();
       if (requestId !== requestIdRef.current) return;
@@ -214,6 +218,8 @@ export function Queues() {
           </div>
         )}
       </header>
+
+      <BrokerPanel refreshToken={refreshToken} />
 
       {broker?.error && (
         <p className="cm-alert" role="status">

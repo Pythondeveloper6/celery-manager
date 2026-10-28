@@ -38,13 +38,20 @@ const KIND_LABEL: Record<RuleKind, string> = {
   queue_backlog: "Queue backlog",
   worker_offline: "Worker offline",
   missed_run: "Missed run",
+  broker_unreachable: "Broker unreachable",
+  broker_memory: "Broker memory high",
 };
+
+// About the one broker, not a named thing: no target field, the server pins it to "*".
+const BROKER_KINDS: RuleKind[] = ["broker_unreachable", "broker_memory"];
 
 const TARGET_LABEL: Record<RuleKind, string> = {
   failure_rate: "Task name",
   queue_backlog: "Queue name",
   worker_offline: "Worker name",
   missed_run: "Schedule name",
+  broker_unreachable: "Broker",
+  broker_memory: "Broker",
 };
 
 const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
@@ -52,6 +59,8 @@ const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
   queue_backlog: "e.g. celery",
   worker_offline: "e.g. celery@web-*",
   missed_run: "e.g. nightly-report",
+  broker_unreachable: "*",
+  broker_memory: "*",
 };
 
 // Per kind, the threshold fields in the order shown. Mirrors RULE_PARAMS in
@@ -75,6 +84,12 @@ const PARAM_FIELDS: Record<
   missed_run: [
     { key: "window_minutes", label: "Look back (minutes)", hint: "Fire while a run due within this many minutes never arrived.", fallback: 60, min: 1, max: 10080 },
   ],
+  broker_unreachable: [
+    { key: "minutes", label: "Unreachable for (minutes)", hint: "Fire when the broker hasn't accepted a connection for this long.", fallback: 2, min: 1, max: 10080 },
+  ],
+  broker_memory: [
+    { key: "ratio", label: "Memory used (%)", hint: "Redis only. Fire when used memory reaches this share of maxmemory. Never fires when maxmemory is 0 (no limit).", fallback: 0.8, min: 1, max: 100, percent: true },
+  ],
 };
 
 const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email" };
@@ -94,6 +109,10 @@ function describeCondition(rule: AlertRule): string {
       return `No answer for ${p.minutes} min`;
     case "missed_run":
       return `A run due in the last ${p.window_minutes} min never arrived`;
+    case "broker_unreachable":
+      return `Broker unreachable for ${p.minutes} min`;
+    case "broker_memory":
+      return `Redis memory at ${formatPercent(p.ratio ?? 0)} of maxmemory or more`;
   }
 }
 
@@ -164,7 +183,8 @@ function RuleDialog({
     setChannelIds((ids) => (ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id]));
   }
 
-  const canSubmit = !busy && name.trim() !== "" && target.trim() !== "";
+  const brokerKind = BROKER_KINDS.includes(kind);
+  const canSubmit = !busy && name.trim() !== "" && (brokerKind || target.trim() !== "");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -181,7 +201,7 @@ function RuleDialog({
     const input = {
       name: name.trim(),
       kind,
-      target: target.trim(),
+      target: brokerKind ? "*" : target.trim(),
       params: numeric,
       channel_ids: channelIds,
       quiet_period_minutes: Number(quiet),
@@ -224,15 +244,17 @@ function RuleDialog({
             ))}
           </select>
         </div>
-        <div className="cm-field">
-          <label htmlFor={`${uid}-target`}>{TARGET_LABEL[kind]}</label>
-          <input id={`${uid}-target`} className="cm-input" value={target} maxLength={255} disabled={busy}
-            placeholder={TARGET_PLACEHOLDER[kind]} spellCheck={false} autoCapitalize="none"
-            onChange={(e) => setTarget(e.target.value)} aria-describedby={`${uid}-target-hint`} />
-          <p className="cm-field-hint" id={`${uid}-target-hint`}>
-            <code>*</code> for all, or a pattern such as <code>reports.*</code>. Each match is its own incident.
-          </p>
-        </div>
+        {!brokerKind && (
+          <div className="cm-field">
+            <label htmlFor={`${uid}-target`}>{TARGET_LABEL[kind]}</label>
+            <input id={`${uid}-target`} className="cm-input" value={target} maxLength={255} disabled={busy}
+              placeholder={TARGET_PLACEHOLDER[kind]} spellCheck={false} autoCapitalize="none"
+              onChange={(e) => setTarget(e.target.value)} aria-describedby={`${uid}-target-hint`} />
+            <p className="cm-field-hint" id={`${uid}-target-hint`}>
+              <code>*</code> for all, or a pattern such as <code>reports.*</code>. Each match is its own incident.
+            </p>
+          </div>
+        )}
         {PARAM_FIELDS[kind].map((field) => (
           <div className="cm-field" key={`${kind}-${field.key}`}>
             <label htmlFor={`${uid}-${field.key}`}>{field.label}</label>

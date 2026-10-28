@@ -58,6 +58,17 @@ def parse_exposition(text: str) -> dict[str, list[tuple[dict[str, str], float]]]
     return families
 
 
+@pytest.fixture(autouse=True)
+def _no_real_broker_probe(monkeypatch):
+    # These tests have no broker; without this every snapshot would spend its
+    # connect timeout on the broker-health probe. Broker metrics have their
+    # own tests in test_broker_health.py.
+    monkeypatch.setattr(
+        metrics_module, "broker_health",
+        lambda celery_app: {"transport": "memory", "reachable": True, "latency_ms": 1.0, "details": None},
+    )
+
+
 def make_app(token=TOKEN, cache=0.0, celery_app=None):
     config = CeleryManagerConfig(
         celery_app=celery_app or Celery("t"),

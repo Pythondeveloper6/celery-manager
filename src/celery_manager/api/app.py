@@ -22,6 +22,9 @@ from celery_manager.api.routes import (
     auth as auth_routes,
 )
 from celery_manager.api.routes import (
+    broker as broker_routes,
+)
+from celery_manager.api.routes import (
     deadletters as deadletter_routes,
 )
 from celery_manager.api.routes import (
@@ -224,6 +227,7 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(analytics_routes.router)
     app.include_router(worker_routes.router)
     app.include_router(queue_routes.router)
+    app.include_router(broker_routes.router)
     app.include_router(workflow_routes.router)
     app.include_router(alert_routes.router)
 
