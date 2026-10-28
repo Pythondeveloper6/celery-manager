@@ -10,10 +10,6 @@ Ideas and use cases are welcome in the
 queue backs up, a worker goes offline, or a periodic task misses its run. Rules are set
 per task or per queue, with a quiet period so one incident sends one message.
 
-**Missed-run detection.** Beat now stamps every scheduled run with the time it was due
-(see [the decorator](decorator.md)). The schedule page will show a run that was due but
-never arrived, which today goes unnoticed.
-
 **Prometheus and OpenTelemetry export.** A `/metrics` endpoint with run counts,
 durations, failure rates and queue depth, for teams that already watch Grafana.
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listOccurrences, listSchedules, pauseOccurrence, type Occurrence, type PauseAction, type ScheduleSummary } from "../api/schedules";
 import { IconChevronLeft } from "../components/icons";
+import { MissedRuns } from "../components/MissedRuns";
 import { ScheduleToggle } from "../components/ScheduleToggle";
 import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 import { useCan } from "../lib/role";
@@ -255,6 +256,8 @@ export function ScheduleOccurrences() {
           })}
         </ul>
       )}
+
+      {name && <MissedRuns name={name} />}
     </div>
   );
 }

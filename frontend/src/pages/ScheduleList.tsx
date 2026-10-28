@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { listSchedules, type ScheduleSummary } from "../api/schedules";
+import "../styles/missed-runs.css";
 import { ScheduleToggle } from "../components/ScheduleToggle";
 import { formatPausedBy, formatPauseState } from "../lib/pausedBy";
 
@@ -115,6 +116,14 @@ export function ScheduleList() {
                       <Link to={`/schedules/${encodeURIComponent(s.name)}`} className="cm-schedule-link">
                         {s.name}
                       </Link>
+                      {s.missed_count > 0 && (
+                        <span
+                          className="cm-badge cm-missed-badge"
+                          title={`${s.missed_count} run${s.missed_count === 1 ? "" : "s"} due in the last 24 hours never arrived`}
+                        >
+                          {s.missed_count} missed
+                        </span>
+                      )}
                     </td>
                     <td>{s.task_name}</td>
                     <td>{s.schedule_spec}</td>

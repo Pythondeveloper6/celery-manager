@@ -285,6 +285,33 @@ start is missed, a manual call near the target consumes the skip), and the
 worker logs a warning once when it uses it. Once stamped runs exist, the
 fallback switches off by itself.
 
+### Missed-run detection
+
+The same stamps let the dashboard notice a run that was due but never
+arrived (beat was down, the message was lost, no worker took it). The
+schedule page lists them under **Missed runs**, and the schedule list shows
+a badge with the last 24 hours' count. Rules:
+
+- Judging starts at the schedule's **first stamped run**. Before that a
+  missing run cannot be told from an unstamped one, so until beat runs
+  `celery_manager.beat:Scheduler` (and the task uses `@track`) the page says
+  detection is not active yet.
+- A run **arrived** if any `task_runs` row has its `occurrence_at`, whatever
+  its status: skipped (including runs skipped by a whole-schedule pause),
+  revoked and failed runs all reached the worker.
+- A run is reported only `missed_run_grace_seconds` (default 300) after it
+  was due.
+- crontab/solar: every expected firing is recomputed from the schedule and
+  compared with the stamped `occurrence_at` values (1 second tolerance).
+  Interval schedules have no fixed grid, so gaps in the chain of stamped
+  `beat_sent_at` times are used: after beat downtime it fires once, and the
+  slots in between never went out.
+- The look-back is 7 days and at most 500 missed runs are returned.
+
+See `GET /api/schedules/{name}/missed` in the [REST API](rest-api.md). The
+functions behind it, `list_missed_runs` and `missed_run_counts` in
+`celery_manager.control.missed`, are pure reads.
+
 - If a matching override exists and its `action` is `skip` or `cancel`,
   the decorator marks it `consumed`, records a `TaskRun` with
   `status="skipped"`, and returns `None` **without calling the wrapped

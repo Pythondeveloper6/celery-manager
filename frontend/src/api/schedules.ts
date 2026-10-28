@@ -71,6 +71,9 @@ export interface ScheduleSummary {
   // pause or when not paused. A pause whose end has passed is reported as
   // not paused.
   paused_until: string | null;
+  // Scheduled runs from the last 24 hours that were due but never arrived
+  // (see `getMissedRuns`); 0 when none or when detection isn't active yet.
+  missed_count: number;
 }
 
 export async function listSchedules(): Promise<ScheduleSummary[]> {
@@ -107,5 +110,24 @@ export async function resumeSchedule(name: string): Promise<ScheduleSummary> {
   });
   if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (!response.ok) throw new Error("Couldn't resume this schedule.");
+  return response.json();
+}
+
+export interface MissedRuns {
+  // False until beat has stamped a run of this schedule (run beat with
+  // `-S celery_manager.beat:Scheduler`): before that a missing run cannot be
+  // told from an unstamped one, so nothing is reported.
+  active: boolean;
+  // ISO 8601 UTC of the first stamped run, where judging starts; null when inactive.
+  tracking_since: string | null;
+  // How long after its due time a run may still arrive before it counts as missed.
+  grace_seconds: number;
+  // Runs due in the last 7 days that never arrived, oldest first.
+  missed: { due_at: string }[];
+}
+
+export async function getMissedRuns(name: string): Promise<MissedRuns> {
+  const response = await fetch(`${BASE}/schedules/${encodeURIComponent(name)}/missed`, { credentials: "include" });
+  if (!response.ok) throw new Error("Couldn't load missed runs.");
   return response.json();
 }
