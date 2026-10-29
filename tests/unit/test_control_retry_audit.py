@@ -48,7 +48,7 @@ def test_retry_task_resends_original_args_and_logs_audit():
 
     new_id = retry_task(app, session, "t1", username="alice")
 
-    app.send_task.assert_called_once_with("demo.echo", args=[1], kwargs={})
+    app.send_task.assert_called_once_with("demo.echo", args=[1], kwargs={}, headers={"cm_initiator": "alice"})
     assert new_id == "t1-retry"
     audit_rows = session.query(AuditLog).all()
     assert len(audit_rows) == 1
@@ -187,7 +187,7 @@ def test_retry_task_decodes_listener_written_repr_args():
 
     retry_task(app, session, "listener-1", username="alice")
 
-    app.send_task.assert_called_once_with("demo.plain", args=[5, "x"], kwargs={"b": 2})
+    app.send_task.assert_called_once_with("demo.plain", args=[5, "x"], kwargs={"b": 2}, headers={"cm_initiator": "alice"})
 
 
 def test_retry_task_raises_task_run_not_found_for_an_unknown_id():
@@ -243,4 +243,4 @@ def test_explicit_args_bypass_decoding_entirely():
 
     retry_task(app, session, "truncated-2", username="alice", args=[1], kwargs={})
 
-    app.send_task.assert_called_once_with("demo.plain", args=[1], kwargs={})
+    app.send_task.assert_called_once_with("demo.plain", args=[1], kwargs={}, headers={"cm_initiator": "alice"})

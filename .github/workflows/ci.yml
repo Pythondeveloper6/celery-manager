@@ -78,6 +78,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: node --test tests/*.test.mjs
       - run: npm run lint
       - run: npm run build
       - name: Committed bundle must match the source
@@ -121,13 +122,25 @@ jobs:
     name: Optional auth and scheduler adapters
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CM_TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev,oidc,redbeat,django-beat]' 'fakeredis[lua]'
-      - run: pytest -q tests/unit/test_oidc_provider.py tests/unit/test_optional_scheduler_adapters.py
+      - run: pip install -e '.[dev,oidc,redbeat,django-beat,sqlalchemy-beat,schedule-descriptions]' 'fakeredis[lua]'
+      - run: pytest -q tests/unit/test_oidc_provider.py tests/unit/test_optional_scheduler_adapters.py tests/unit/test_sqlalchemy_scheduler.py tests/unit/test_cron_grammar.py tests/unit/test_singleton.py
 
   database-contracts:
     name: Storage (${{ matrix.name }})
@@ -188,8 +201,8 @@ jobs:
           sudo dpkg -i packages-microsoft-prod.deb
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
-      - run: pip install -e '.[dev]' 'psycopg[binary]' pymysql pyodbc
-      - run: pytest -q tests/integration/test_storage_backends.py
+      - run: pip install -e '.[dev,sqlalchemy-beat]' 'psycopg[binary]' pymysql pyodbc
+      - run: pytest -q tests/integration/test_storage_backends.py tests/integration/test_sql_schedule_storage.py
       - run: pytest -q tests/unit/test_races.py
         env:
           CM_TEST_DB_URL: ${{ matrix.url }}

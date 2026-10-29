@@ -21,6 +21,8 @@ import {
   IconX,
 } from "./icons";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { BrowserSessionsDialog } from "./BrowserSessionsDialog";
+import { SingletonLocksDialog } from "./SingletonLocksDialog";
 import { useAccountSource, useAuthOptions } from "../lib/auth";
 import { roleAllows } from "../lib/role";
 
@@ -124,6 +126,8 @@ export function AppShell({
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [managingSessions, setManagingSessions] = useState(false);
+  const [inspectingLocks, setInspectingLocks] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const wasOpenRef = useRef(false);
@@ -244,6 +248,18 @@ export function AppShell({
               settings screen: it is the one preference someone changes
               because of the room they're in. */}
           <ThemeSwitch />
+          <div className="cm-sidebar-item">
+            <button type="button" className="cm-sidebar-button" onClick={() => setInspectingLocks(true)}>
+              <IconKey /><span className="cm-sidebar-label">Singleton locks</span>
+            </button>
+            <span className="cm-tooltip" aria-hidden="true">Singleton locks</span>
+          </div>
+          <div className="cm-sidebar-item">
+            <button type="button" className="cm-sidebar-button" onClick={() => setManagingSessions(true)}>
+              <IconKey /><span className="cm-sidebar-label">Browser sessions</span>
+            </button>
+            <span className="cm-tooltip" aria-hidden="true">Browser sessions</span>
+          </div>
           {/* Someone the host app signed in has no password here; theirs
               is changed in the host app. */}
           {external || (
@@ -332,6 +348,8 @@ export function AppShell({
         </header>
         <main className="cm-main">{children}</main>
       </div>
+      {inspectingLocks && <SingletonLocksDialog canRelease={roleAllows(role, "admin")} onClose={() => setInspectingLocks(false)} />}
+      {managingSessions && <BrowserSessionsDialog onClose={() => setManagingSessions(false)} />}
       {changingPassword && <ChangePasswordDialog onClose={() => setChangingPassword(false)} />}
     </div>
   );

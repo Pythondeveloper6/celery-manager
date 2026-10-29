@@ -64,6 +64,8 @@ export interface TaskPage {
 }
 
 export interface TaskQuery {
+  started_by_me?: boolean;
+  initiator?: string;
   status?: string;
   task_name?: string;
   q?: string;
@@ -203,6 +205,8 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
 // 37 matching" before the operator confirms. Over the server's cap (1,000)
 // the whole request is refused and `detail` says why.
 export interface BulkCancelFilter {
+  started_by_me?: boolean;
+  initiator?: string;
   status?: string;
   task_name?: string;
   q?: string;

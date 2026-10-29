@@ -36,6 +36,8 @@ def list_tasks(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
+    started_by_me: bool = False,
     limit: int = 50,
     offset: int = 0,
     username: str = Depends(get_current_user),
@@ -62,6 +64,7 @@ def list_tasks(
         filters = {
             "status": status, "task_name": task_name, "q": q,
             "date_from": utc_bound(date_from), "date_to": utc_bound(date_to),
+            "initiator": (getattr(username, "subject", None) or str(username)) if started_by_me else initiator,
         }
         # The same filter dict feeds both calls, so `total` can never be a
         # count of some other query than the one `items` came from.
@@ -268,6 +271,8 @@ def retry_bulk(payload: BulkRetryRequest, request: Request, principal: Principal
 
 
 class BulkCancelFilter(BaseModel):
+    initiator: str | None = None
+    started_by_me: bool = False
     status: str | None = None
     task_name: str | None = None
     q: str | None = None
@@ -300,6 +305,7 @@ def cancel_bulk(payload: BulkCancelRequest, request: Request, username: str = De
         filters = {
             "status": f.status, "task_name": f.task_name, "q": f.q,
             "date_from": utc_bound(f.date_from), "date_to": utc_bound(f.date_to),
+            "initiator": (getattr(username, "subject", None) or str(username)) if f.started_by_me else f.initiator,
         }
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory

@@ -258,8 +258,21 @@ class CeleryManagerConfig:
     scheduler_backend: object = None
     schedule_sync_interval_seconds: float = 30.0
     cron_parser: object = None
+    lock_provider: object = None  # LockProvider; Redis is inferred only for a Redis broker
+    login_backoff_threshold: int = 5
+    login_backoff_max_seconds: int = 300
+    login_backoff_reset_seconds: int = 3600
+
+    worker_heartbeat_retention_days: int = 7
 
     def __post_init__(self):
+        if (isinstance(self.worker_heartbeat_retention_days, bool) or not isinstance(self.worker_heartbeat_retention_days, int)
+                or not 0 <= self.worker_heartbeat_retention_days <= 3650):
+            raise ValueError("worker_heartbeat_retention_days must be 0..3650 (0 disables history)")
+        for name in ("login_backoff_threshold", "login_backoff_max_seconds", "login_backoff_reset_seconds"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
         from celery_manager.auth.roles import validate_role
         validate_role(self.log_view_role)
         if self.live_stream not in ("sse", "poll"):

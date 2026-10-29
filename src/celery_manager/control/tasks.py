@@ -105,6 +105,7 @@ def _apply_task_filters(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
 ):
     """Apply the shared task-run filter chain to a query.
 
@@ -116,6 +117,8 @@ def _apply_task_filters(
     the builder makes drift structurally impossible, so keep it that way and
     add new filters only here.
     """
+    if initiator is not None:
+        query = query.filter(TaskRun.initiator == initiator)
     if status is not None:
         query = query.filter_by(status=status)
     if task_name is not None:
@@ -162,6 +165,7 @@ def list_task_runs(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[TaskRun]:
@@ -173,7 +177,7 @@ def list_task_runs(
     """
     query = _apply_task_filters(
         session.query(TaskRun),
-        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to,
+        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to, initiator=initiator,
     )
     return query.order_by(TaskRun.id.desc()).offset(offset).limit(limit).all()
 
@@ -186,6 +190,7 @@ def count_task_runs(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
 ) -> int:
     """How many runs match these filters, ignoring limit/offset.
 
@@ -196,7 +201,7 @@ def count_task_runs(
     """
     query = _apply_task_filters(
         session.query(TaskRun),
-        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to,
+        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to, initiator=initiator,
     )
     # count() over the filtered entity; SQLAlchemy wraps this in a
     # SELECT count(*) subquery, so no rows are loaded into memory.
@@ -259,6 +264,10 @@ def start_task(
         options["countdown"] = countdown
     if eta is not None:
         options["eta"] = eta
+    initiator = (getattr(principal, "subject", None) or getattr(principal, "username", None)
+                 or getattr(username, "subject", None) or username)
+    if isinstance(initiator, str) and 0 < len(initiator) <= 255:
+        options["headers"] = {**options.get("headers", {}), "cm_initiator": str(initiator)}
     result = celery_app.send_task(task_name, args=args, kwargs=kwargs, **options)
     if session is not None:
         # Seed the run row now (the same upsert retry uses) so the dashboard
@@ -267,7 +276,7 @@ def start_task(
         lock_task_run(session, result.id, seed={
             "task_name": task_name, "status": "queued",
             "args": json.dumps(args), "kwargs": json.dumps(kwargs),
-            "queue": queue, "eta": eta,
+            "queue": queue, "eta": eta, "initiator": initiator,
         })
         session.commit()
     if session is not None and username is not None:
@@ -407,7 +416,8 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     principal = session.info.get("cm_principal")
     validate_dispatch(config, run.task_name, final_args, final_kwargs, edited=edited,
                       session=session, principal=principal)
-    new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
+    new_id = start_task(celery_app, run.task_name, final_args, final_kwargs,
+                        username=username, config=config, principal=principal)
 
     # Upsert, never check-then-insert. `task_runs.task_id` is UNIQUE, and by
     # the time send_task() returns, two other writers may already be racing
@@ -437,6 +447,7 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
         "status": "queued",
         "args": json.dumps(final_args),
         "kwargs": json.dumps(final_kwargs),
+        "initiator": getattr(principal, "subject", None) or getattr(username, "subject", None) or str(username),
     })
     new_run.retried_from_id = task_id
 

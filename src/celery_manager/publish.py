@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from celery import current_app, signals
+from celery import current_app, current_task, signals
 
 from celery_manager.db.runs import lock_task_run
 
@@ -29,11 +29,21 @@ def install_publish_hook(celery_app, *, session_factory=None, initiator=None):
         return current_app._get_current_object() is celery_app
 
     def before(sender=None, headers=None, **unused):
-        if not belongs() or headers is None or initiator is None:
+        if not belongs() or headers is None:
+            return
+        def valid(value):
+            return isinstance(value, str) and 0 < len(value) <= 255 and value.isprintable()
+        # Explicit dispatch identity wins. A child published inside a worker
+        # inherits that worker request's actor, never another Celery app's.
+        if valid(headers.get("cm_initiator")):
             return
         try:
-            value = initiator()
-            if isinstance(value, str) and 0 < len(value) <= 255:
+            task = current_task._get_current_object()
+            parent = (getattr(task.request, "headers", None) or {}) if task is not None and task.app is celery_app else {}
+            value = parent.get("cm_initiator")
+            if not valid(value) and initiator is not None:
+                value = initiator()
+            if valid(value):
                 headers["cm_initiator"] = value
         except Exception:
             logger.exception("celery-manager: initiator callback failed")

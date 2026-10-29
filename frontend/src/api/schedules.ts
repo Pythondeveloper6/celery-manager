@@ -106,6 +106,7 @@ export interface ScheduleSummary {
 export type ScheduleSpec =
   | {
       type: "crontab";
+      timezone?: string;
       minute: string;
       hour: string;
       day_of_week: string;

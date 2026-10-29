@@ -21,7 +21,11 @@ from celery_manager.control.schedules import (
 from celery_manager.control.tasks import start_task
 from celery_manager.cron import RuleBasedParser
 from celery_manager.db.models import PeriodicSchedule
-from celery_manager.schedule_specs import ScheduleSpecError, validate_spec
+from celery_manager.schedule_specs import (
+    ScheduleSpecError,
+    describe_spec,
+    validate_spec,
+)
 from celery_manager.schedulers.base import ScheduleEntry
 from celery_manager.schedulers.service import definition
 
@@ -53,7 +57,10 @@ class UpdateSchedule(BaseModel):
 def parse_schedule(data, config):
     if data.get("type") == "text":
         parser = config.cron_parser or RuleBasedParser()
-        data = parser.parse(data.get("text", ""), str(config.celery_app.timezone))
+        timezone = data.get("timezone", str(config.celery_app.timezone))
+        if not isinstance(timezone, str):
+            raise ValueError("timezone must be an IANA timezone string")
+        data = parser.parse(data.get("text", ""), timezone)
     return validate_spec(data, app=config.celery_app)
 
 
@@ -89,8 +96,8 @@ def preview_new(payload: dict, request: Request, username: str = Depends(require
         times = upcoming_occurrences(row, schedule, count=10)
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(422, str(exc)) from exc
-    return {"schedule": spec, "description": str(schedule), "occurrences": [utc(t) for t in times],
-            "timezone": str(config.celery_app.timezone)}
+    return {"schedule": spec, "description": describe_spec(spec), "occurrences": [utc(t) for t in times],
+            "timezone": spec.get("timezone") or str(config.celery_app.timezone)}
 
 
 @router.post("")
@@ -181,14 +188,10 @@ def run_now(name: str, request: Request, principal: Principal, username: str = D
 
 
 @router.get("/health")
-def health(request: Request, username: str = Depends(require_viewer)):
-    config = request.app.state.cm_config
-    config.celery_app.loader.import_default_modules()
-    items = []
-    for name, entry in config._schedule_service.entries.items():
-        if entry["task"] not in config.celery_app.tasks:
-            items.append({"name": name, "kind": "unregistered_task", "task": entry["task"]})
-    return {"items": items, "backend": config._schedule_service.backend.name}
+def health(request: Request, inspect_consumers: bool = False, username: str = Depends(require_viewer)):
+    from celery_manager.control.schedule_health import schedule_health
+    with request.app.state.cm_session_factory() as session:
+        return schedule_health(request.app.state.cm_config, session, inspect_consumers=inspect_consumers)
 
 
 @router.get("/backend")
@@ -196,3 +199,19 @@ def backend_info(request: Request, username: str = Depends(require_viewer)):
     service = request.app.state.cm_config._schedule_service
     return {"name": service.backend.name, "writable": service.backend.writable,
             "beat_scheduler": service.backend.beat_scheduler_class()}
+
+
+class PauseImport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    csv: str = Field(max_length=1_000_000)
+    dry_run: bool = True
+
+
+@router.post("/pause-import")
+def pause_import(payload: PauseImport, request: Request, username: str = Depends(require_admin)):
+    from celery_manager.control.pause_import import import_pauses
+    with request.app.state.cm_session_factory() as session:
+        try:
+            return import_pauses(session, payload.csv, username, dry_run=payload.dry_run)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc

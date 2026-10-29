@@ -37,6 +37,7 @@ class CurrentUser:
     # user the host app vouched for (`CeleryManagerConfig.authenticate_request`).
     source: str = SOURCE_LOCAL
     subject: str | None = None
+    session_id: str | None = None
 
 
 def get_current_principal(
@@ -68,7 +69,14 @@ def get_current_principal(
         from celery_manager.auth.sessions import verify_bridge
         bridge = verify_bridge(config.secret_key, session, config.bridge_max_age_seconds)
         if bridge is not None:
-            return CurrentUser(**bridge, source=SOURCE_EXTERNAL)
+            from celery_manager.auth.sessions import browser_session_id
+            from celery_manager.auth.state import active_session
+            sid = browser_session_id(config.secret_key, session, config.bridge_max_age_seconds, bridge=True)
+            if sid is not None:
+                with request.app.state.cm_session_factory() as db_session:
+                    if not active_session(db_session, sid, bridge["username"], SOURCE_EXTERNAL, bridge["subject"]):
+                        raise HTTPException(401, "invalid or expired session")
+            return CurrentUser(**bridge, source=SOURCE_EXTERNAL, session_id=sid)
     if not config.local_login_enabled:
         # Ignore cm_session cookies outright: turning local login off must
         # end the sessions it already issued, not only stop new ones.
@@ -92,7 +100,14 @@ def get_current_principal(
     role, password_hash = auth
     if not hmac.compare_digest(fingerprint, session_fingerprint(config.secret_key, password_hash)):
         raise HTTPException(status_code=401, detail="invalid or expired session")
-    return CurrentUser(username=username, role=role)
+    from celery_manager.auth.sessions import browser_session_id
+    from celery_manager.auth.state import active_session
+    sid = browser_session_id(config.secret_key, session, config.session_max_age_seconds)
+    if sid is not None:
+        with request.app.state.cm_session_factory() as db_session:
+            if not active_session(db_session, sid, username, SOURCE_LOCAL):
+                raise HTTPException(401, "invalid or expired session")
+    return CurrentUser(username=username, role=role, session_id=sid)
 
 
 # The signed-in account as a dependency-injected parameter type.

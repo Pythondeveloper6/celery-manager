@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from celery_manager.api.deps import get_current_user, require_admin, require_operator
@@ -133,3 +133,22 @@ def rate_limit(payload: RateLimitRequest, request: Request, username: str = Depe
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/api/workers/{worker}/heartbeats")
+def heartbeat_history(worker: str, request: Request,
+                      since: datetime | None = None, until: datetime | None = None,
+                      limit: int = Query(120, ge=1, le=1000), offset: int = Query(0, ge=0, le=1000000),
+                      username: str = Depends(get_current_user)):
+    from celery_manager.api.serialization import utc, utc_bound
+    from celery_manager.control.worker_history import list_heartbeats
+    _check_worker_name(worker)
+    since, until = utc_bound(since), utc_bound(until)
+    if since is not None and until is not None and since > until:
+        raise HTTPException(422, "since must be before until")
+    with request.app.state.cm_session_factory() as session:
+        rows,total = list_heartbeats(session,worker,since=since,until=until,limit=limit,offset=offset)
+        return {"items":[{"bucket_at":utc(r.bucket_at),"observed_at":utc(r.observed_at),"state":r.state,
+                          "active":r.active,"processed":r.processed} for r in rows],
+                "total":total,"limit":limit,"offset":offset,
+                "retention_days":request.app.state.cm_config.worker_heartbeat_retention_days}

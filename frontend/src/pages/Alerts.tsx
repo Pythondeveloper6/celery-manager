@@ -34,6 +34,14 @@ import { needsRole, useCan } from "../lib/role";
    ========================================================================== */
 
 const KIND_LABEL: Record<RuleKind, string> = {
+  task_failed: "Task failed",
+  consecutive_failures: "Consecutive failures",
+  run_stuck: "Run stuck",
+  worker_lost: "Worker lost",
+  beat_stale: "Beat stale",
+  task_sla: "Task sla",
+  duration_regression: "Duration regression",
+  daily_digest: "Daily digest",
   failure_rate: "Failure rate",
   queue_backlog: "Queue backlog",
   worker_offline: "Worker offline",
@@ -49,6 +57,14 @@ const KIND_LABEL: Record<RuleKind, string> = {
 const BROKER_KINDS: RuleKind[] = ["broker_unreachable", "broker_memory"];
 
 const TARGET_LABEL: Record<RuleKind, string> = {
+  task_failed: "Task name",
+  consecutive_failures: "Task name",
+  run_stuck: "Task name",
+  worker_lost: "Task name",
+  beat_stale: "Beat",
+  task_sla: "Task name",
+  duration_regression: "Task name",
+  daily_digest: "Task name",
   failure_rate: "Task name",
   queue_backlog: "Queue name",
   worker_offline: "Worker name",
@@ -61,6 +77,14 @@ const TARGET_LABEL: Record<RuleKind, string> = {
 };
 
 const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
+  task_failed: "* or e.g. reports.build",
+  consecutive_failures: "* or e.g. reports.build",
+  run_stuck: "* or e.g. reports.build",
+  worker_lost: "* or e.g. reports.build",
+  beat_stale: "*",
+  task_sla: "* or e.g. reports.build",
+  duration_regression: "* or e.g. reports.build",
+  daily_digest: "* or e.g. reports.build",
   failure_rate: "e.g. reports.build",
   queue_backlog: "e.g. celery",
   worker_offline: "e.g. celery@web-*",
@@ -79,6 +103,14 @@ const PARAM_FIELDS: Record<
   RuleKind,
   { key: string; label: string; hint: string; fallback: number; min: number; max: number; percent?: boolean }[]
 > = {
+  task_failed: [{"key": "window_minutes", "label": "Window minutes", "hint": "task failed: window minutes.", "fallback": 60, "min": 1, "max": 10080}],
+  consecutive_failures: [{"key": "count", "label": "Count", "hint": "consecutive failures: count.", "fallback": 3, "min": 1, "max": 1000}, {"key": "window_minutes", "label": "Window minutes", "hint": "consecutive failures: window minutes.", "fallback": 1440, "min": 1, "max": 43200}],
+  run_stuck: [{"key": "seconds", "label": "Seconds", "hint": "run stuck: seconds.", "fallback": 3600, "min": 1, "max": 604800}, {"key": "p95_multiplier", "label": "P95 multiplier", "hint": "run stuck: p95 multiplier.", "fallback": 3, "min": 1, "max": 100}, {"key": "min_runs", "label": "Min runs", "hint": "run stuck: min runs.", "fallback": 10, "min": 2, "max": 10000}],
+  worker_lost: [{"key": "seconds", "label": "Seconds", "hint": "worker lost: seconds.", "fallback": 120, "min": 1, "max": 86400}],
+  beat_stale: [{"key": "seconds", "label": "Seconds", "hint": "beat stale: seconds.", "fallback": 120, "min": 30, "max": 86400}],
+  task_sla: [{"key": "seconds", "label": "Seconds", "hint": "task sla: seconds.", "fallback": 3600, "min": 1, "max": 604800}, {"key": "window_minutes", "label": "Window minutes", "hint": "task sla: window minutes.", "fallback": 60, "min": 1, "max": 10080}],
+  duration_regression: [{"key": "multiplier", "label": "Multiplier", "hint": "duration regression: multiplier.", "fallback": 2, "min": 1.01, "max": 100}, {"key": "baseline_days", "label": "Baseline days", "hint": "duration regression: baseline days.", "fallback": 30, "min": 1, "max": 365}, {"key": "recent_minutes", "label": "Recent minutes", "hint": "duration regression: recent minutes.", "fallback": 60, "min": 1, "max": 43200}, {"key": "min_runs", "label": "Min runs", "hint": "duration regression: min runs.", "fallback": 10, "min": 2, "max": 10000}],
+  daily_digest: [{"key": "hour_utc", "label": "Hour utc", "hint": "daily digest: hour utc.", "fallback": 8, "min": 0, "max": 23}],
   failure_rate: [
     { key: "rate", label: "Failure rate (%)", hint: "Fire when at least this share of finished runs failed.", fallback: 0.2, min: 1, max: 100, percent: true },
     { key: "min_runs", label: "Minimum runs", hint: "Fewer finished runs than this never fire: 1 of 1 is noise.", fallback: 10, min: 1, max: 1000000 },
@@ -140,6 +172,8 @@ function describeCondition(rule: AlertRule): string {
       return `Depth up by ${p.min_increase} or more over ${p.minutes} min, without draining`;
     case "rabbitmq_alarm":
       return "A RabbitMQ node reports a memory or disk alarm";
+    default:
+      return Object.entries(p).map(([key, value]) => `${key.replaceAll("_", " ")}: ${value}`).join(" · ");
   }
 }
 

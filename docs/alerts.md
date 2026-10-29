@@ -272,3 +272,38 @@ saying so.
   network policy or an egress proxy (the standard `HTTPS_PROXY` variables
   are honoured).
 - Every change and every test message is in the [audit log](dashboard.md#audit-log).
+
+## Production rule kinds (0.3)
+
+All new kinds use the existing incident, quiet-period and channel-delivery
+machinery. They are available in the alert-rule editor. A missing observation,
+insufficient sample or an excessive scan is **unknown**, not a recovery: existing
+incidents remain open and `last_check_error` explains checks that cannot be judged.
+Candidate queries are bounded to matching task names and relevant reporting or
+baseline windows, with a 20,000-row ceiling. If a required candidate scan exceeds
+its ceiling, the check refuses to judge rather than silently reporting a healthy
+system; narrow the target/window or use external metrics for larger populations.
+
+| Kind | Target and parameters | Firing and recovery |
+|---|---|---|
+| `task_failed` | task glob; `window_minutes=60` | One incident per failed task ID in the window. Clears after leaving the window or when the recorded status changes. |
+| `consecutive_failures` | task glob; `count=3`, `window_minutes=1440` | Most recent completed runs (ordered by finish time then ID) all failed. A later success recovers. Fewer than `count` completed runs is unknown. |
+| `run_stuck` | task glob; `seconds=3600`, `p95_multiplier=3`, `min_runs=10` | A started run exceeds the greater of the configured floor and its task's successful-run p95 over 30 days times the multiplier. With insufficient baseline, uses the explicit floor. Completion recovers; a missing start time is unknown. |
+| `worker_lost` | task glob; `seconds=120` | A started run's observed worker is explicitly offline or its heartbeat is stale. A current online heartbeat/completion recovers. A worker never observed is unknown. |
+| `beat_stale` | target should be `*`; `seconds=120` | Stored beat heartbeat exceeds the threshold. A fresh tick recovers. No heartbeat or malformed stored heartbeat is unknown. |
+| `task_sla` | task glob; `seconds=3600`, `window_minutes=60` | A completed run's recorded runtime exceeds its configured SLA. Clears when that run leaves the lookback window or its runtime is corrected. |
+| `duration_regression` | task glob; `multiplier=2`, `baseline_days=30`, `recent_minutes=60`, `min_runs=10` | Recent successful-run p95 exceeds historical successful-run p95 by the multiplier. Baseline ends where the recent window begins: a slow new run cannot inflate its own baseline. Both windows require minimum samples; insufficient samples or zero baseline is unknown. |
+| `daily_digest` | task glob; `hour_utc=8` | One dated incident summarizing the preceding 24-hour UTC reporting window. Details include total runs, status counts and task-by-task status totals. Set `notify_resolved=False` to avoid a resolved notification when the next day's bucket replaces it. |
+
+Daily digest incident keys contain the reporting-window end timestamp. This is a
+persisted watermark: evaluator restarts reuse the incident and do not resend a
+successfully recorded delivery. Every day is a distinct bucket, including empty
+reporting windows once there are retained task observations. It is not an
+exactly-once delivery guarantee: a recipient may accept a message before the
+sender sees a timeout or before the database records success. Retries can then
+produce a duplicate; webhook recipients should deduplicate by rule and incident
+key. Tasks with no `finished_at` do not contribute to completed-run digests.
+
+Stuck/lost findings never rewrite execution status or automatically retry work.
+A missing heartbeat cannot prove the worker stopped executing; an automatic retry
+could duplicate external side effects.

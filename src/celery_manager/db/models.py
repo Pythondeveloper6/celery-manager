@@ -377,3 +377,8 @@ class WorkerState(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     active: Mapped[int | None] = mapped_column(Integer, nullable=True)
     processed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+# Register separately defined workflow tables on the same metadata.
+from celery_manager.db.auth_state import BrowserSession, LoginBackoff  # noqa: F401
+from celery_manager.db.failures import FailureResolution, FailureResolutionHistory  # noqa: F401
+from celery_manager.db.worker_history import WorkerHeartbeatSample  # noqa: F401

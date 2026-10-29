@@ -398,11 +398,21 @@ _CHECKS = {
 }
 
 
+from celery_manager.alerts.depth import PARAMS as DEPTH_PARAMS
+from celery_manager.alerts.depth import check as check_depth
+
+_CHECKS.update({kind: check_depth for kind in DEPTH_PARAMS})
+
 # --- messages ------------------------------------------------------------------------
 
 
 def _summary(rule: AlertRule, key: str, details: dict, event: str) -> str:
     kind = rule.kind
+    if kind in DEPTH_PARAMS:
+        if kind == "daily_digest":
+            return f"Daily task digest: {details.get('total', 0)} completed runs ({details.get('until')})"
+        label = kind.replace("_", " ")
+        return f"{key}: {label}{' resolved' if event == 'resolved' else ''}"
     if kind == "failure_rate":
         if event == "resolved":
             return f"{key}: failure rate is back under {details.get('threshold', 0):.0%}"

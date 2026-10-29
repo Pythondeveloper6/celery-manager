@@ -205,3 +205,35 @@ with session_factory() as session:
     }, "alice")
     active_windows(session, "nightly", datetime.now(timezone.utc))
 ```
+
+
+## Dashboard definition controls
+
+On **Schedules**, administrators using a writable scheduler backend can choose
+**New schedule**, enter its unique name and registered task name, then describe
+when it runs. The description is parsed by the deterministic grammar described
+above. Enter an optional IANA timezone such as `Europe/Berlin` for calendar
+schedules; leave it blank to use the app timezone. Intervals are elapsed durations
+and do not need a timezone. **Preview next runs** returns the normalized definition
+and renders occurrences in its reported timezone. Changing the description or
+zone invalidates that preview, so creation always uses the reviewed definition.
+
+Creation accepts positional arguments as a JSON array, keyword arguments as a JSON
+object, and delivery options as a JSON object. For example, arguments `[42]`,
+keyword arguments `{"format":"csv"}`, and options `{"queue":"reports","priority":5}`.
+Supported delivery options are `queue`, `exchange`, `routing_key`, `priority`,
+`expires`, and `headers`; the server rejects unsupported keys and reserved
+`cm_` headers. These values are part of the schedule definition and affect future
+scheduled messages.
+
+Operators can expand **Edit arguments and delivery options** on a writable
+schedule. Saving replaces those three complete fields; omitted old keys are
+removed. Existing runs retain their recorded inputs. The normal **Edit schedule**
+sheet supports an explicit timezone on crontabs as well as interval and cron
+fields. Preview errors block saving. Static code-owned backends remain read-only
+for argument and delivery-option changes.
+
+Administrators also see **Schedule backup and reconciliation**. This provides
+export, adoption, and repair with a reviewed before/after plan and explicit apply
+approval. See [durable SQL schedules and ownership](sql-schedules.md) for the
+workflow, supported schedules, and concurrency limits.

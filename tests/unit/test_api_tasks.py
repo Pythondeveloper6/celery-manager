@@ -441,7 +441,7 @@ def test_retry_of_a_run_only_the_events_listener_recorded():
         response = client.post("/api/tasks/listener-only/retry")
 
     assert response.status_code == 200
-    send.assert_called_once_with("demo.plain", args=[5], kwargs={"b": 2})
+    send.assert_called_once_with("demo.plain", args=[5], kwargs={"b": 2}, headers={"cm_initiator": "alice"})
 
 
 def test_date_bounds_with_a_non_utc_offset_name_the_same_instant():

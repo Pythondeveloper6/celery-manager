@@ -288,21 +288,22 @@ it:
   hole. The `Origin` check below still blocks cross-site writes made with your
   app's cookie, whatever its `SameSite` setting; see
   [Security notes](integrations.md#security-notes).
-- **There is no login rate limiting or lockout.** Put a rate limit on
-  `POST /api/auth/login` at your reverse proxy (e.g. nginx `limit_req`,
-  Traefik `RateLimit`, a cloud WAF rule). bcrypt makes each guess cost
-  ~0.2 s of server CPU, which slows brute force but is not a substitute.
-- **Local sessions are stateless signed tokens, valid for 7 days by default.**
-  Set `session_max_age_seconds` to change that lifetime. The
-  `cm_session` cookie *is* the session; nothing is stored server-side.
-  Logging out deletes the cookie from that browser but does **not** revoke
-  a copy someone else already has — a stolen cookie keeps working until it
-  expires. Deleting the user, or changing their role, takes effect on their
-  next request (every request reads the account and its role from the
-  database). Resetting or changing an account's password also ends every
-  session it had: the cookie carries a fingerprint of the password hash and
-  a mismatch is a 401. See [managing accounts](roles.md#managing-accounts).
-  To revoke *every* session at once, rotate `secret_key`.
+- **Local password login has shared database backoff.** Account and direct-peer
+  budgets apply across API instances sharing the database and secret. Configure
+  `login_backoff_threshold`, `login_backoff_max_seconds` and
+  `login_backoff_reset_seconds`; refused attempts return 429 with `Retry-After`.
+  Proxy peer identity must be configured deliberately. External logins retain
+  the host's controls. See [login backoff](auth-sessions.md#shared-login-backoff).
+- **New browser sessions are individually revocable, valid for 7 days by default.**
+  `session_max_age_seconds` controls local-cookie lifetime. HTTP login and bridge
+  issuance register a random session ID in the database; logout revokes it before
+  removing the cookie. Users can list and revoke their own sessions through the
+  API. Live local-role lookup and password fingerprints still apply. Cookies
+  issued before this upgrade, or signed manually without a session ID, remain
+  stateless until expiry; logout cannot revoke a stolen copy of those older
+  cookies. Rotate `secret_key` to invalidate all cookies, or reset a local
+  account's password to invalidate its old cookies. See
+  [session upgrade compatibility](auth-sessions.md#upgrade-compatibility).
 - **`brand_logo_url` may point at an external host.** It lands in an
   `<img src>` on every page, including the login screen, so whoever controls
   that host sees a request (IP address, user agent) from each visitor, and
@@ -355,3 +356,39 @@ collection, storage namespace and scheduler configuration. The beat process uses
 `app.conf.celery_manager_db_url` and `celery_manager_db_schema` when recording
 optional liveness or reading package timing edits. Retention remains configured
 through its existing persistent rules; it is not replaced by a new config flag.
+
+
+## Operations options introduced in 0.3
+
+| Option | Default | Meaning |
+|---|---|---|
+| `lock_provider` | `None` | Explicit cross-process `LockProvider` for singleton execution. Redis brokers infer a Redis provider; other brokers require an explicit provider. There is no process-local production fallback. |
+| `login_backoff_threshold` | `5` | Positive integer: initially admitted local login attempts before exponential backoff begins. Shared account and direct-peer budgets apply. |
+| `login_backoff_max_seconds` | `300` | Positive integer: maximum local login backoff delay. |
+| `login_backoff_reset_seconds` | `3600` | Positive integer: inactivity period after which a login budget resets. |
+| `worker_heartbeat_retention_days` | `7` | Integer 0–3650: retain minute-bucket worker observations for this many days. `0` disables collection and automatic history pruning, preserving existing samples and current WorkerState updates. |
+
+The heartbeat history option supplements task-run retention rules; it does not
+replace them. Keep it consistent in listener and API/maintenance processes. See
+[worker history](workers.md#recorded-heartbeat-history-03),
+[browser sessions](auth-sessions.md) and [singleton execution](singleton.md).
+Use `scheduler_backend=SQLAlchemyBeatBackend(app)` for optional durable SQL
+definitions; initialize the scheduler's own tables explicitly as documented in
+[SQL schedules](sql-schedules.md).
+
+Beat-process settings are Celery app configuration, **not**
+`CeleryManagerConfig` constructor arguments:
+
+| Celery app setting | Default | Meaning |
+|---|---|---|
+| `celery_manager_db_url` | unset | Monitoring database for tick observations and package timing edits; not the optional scheduler definition database. |
+| `celery_manager_db_schema` | unset | Provisioned monitoring schema. |
+| `celery_manager_heartbeat_interval` | `30` | Tick observation interval, bounded to 5–86400 seconds. |
+| `cm_beat_owner_id` | derived identity | Stable logical owner ID; set explicitly for independent production schedulers. |
+| `cm_beat_healthcheck_url` | unset | Opt-in HTTP(S) dead-man monitor URL. No embedded credentials or redirects; paths/query tokens are withheld from logs. |
+| `cm_beat_healthcheck_interval` | `30` | External ping interval, bounded to 5–86400 seconds. |
+| `cm_beat_healthcheck_timeout` | `3` | Socket timeout, bounded to 0.1–10 seconds. DNS may take longer; single-flight requests bound thread growth. |
+
+See [beat liveness](beat-liveness.md) for failure semantics, owner retirement and
+external service configuration. A tick ping establishes scheduler liveness,
+not task success or leader election.
