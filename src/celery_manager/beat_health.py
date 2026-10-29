@@ -23,6 +23,11 @@ def _bounded(value, default, minimum, maximum):
         return default
 
 
+def owner_key(owner_id):
+    # AppSetting.key is VARCHAR(64), including this namespace prefix.
+    return OWNER_PREFIX + hashlib.sha256(owner_id.encode()).hexdigest()[:64 - len(OWNER_PREFIX)]
+
+
 def owner_identity(scheduler):
     explicit = scheduler.app.conf.get("cm_beat_owner_id")
     if explicit:
@@ -96,7 +101,7 @@ def record_tick(scheduler):
             owner = owner_identity(scheduler)
             data = json.dumps({"at": stamp.isoformat(), "hostname": socket.gethostname(),
                                "scheduler": type(scheduler).__name__, "owner_id": owner})
-            key = OWNER_PREFIX + hashlib.sha256(owner.encode()).hexdigest()
+            key = owner_key(owner)
             for setting_key in ("beat_last_tick", key):
                 row = session.get(AppSetting, setting_key)
                 if row is None:

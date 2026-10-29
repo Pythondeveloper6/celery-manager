@@ -112,6 +112,9 @@ function parseInvocation(args: string, kwargs: string, options: string) {
 
 function ScheduleInvocationEditor({ schedule, onChanged }: { schedule: ScheduleSummary; onChanged: () => void }) {
   const uid = useId();
+  const fingerprint = JSON.stringify({ args: schedule.definition?.args, kwargs: schedule.definition?.kwargs, options: schedule.definition?.options });
+  const [baseline, setBaseline] = useState(fingerprint);
+  const stale = baseline !== fingerprint;
   const [args, setArgs] = useState(JSON.stringify(schedule.definition?.args ?? [], null, 2));
   const [kwargs, setKwargs] = useState(JSON.stringify(schedule.definition?.kwargs ?? {}, null, 2));
   const [options, setOptions] = useState(JSON.stringify(schedule.definition?.options ?? {}, null, 2));
@@ -119,14 +122,15 @@ function ScheduleInvocationEditor({ schedule, onChanged }: { schedule: ScheduleS
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   return <details><summary>Edit arguments and delivery options</summary><form className="cm-stack" onSubmit={async (event) => {
-    event.preventDefault(); setBusy(true); setError(null); setNotice(null);
-    try { await call(`/${encodeURIComponent(schedule.name)}`, "PATCH", parseInvocation(args, kwargs, options)); setNotice("Saved arguments and delivery options."); onChanged(); }
+    event.preventDefault(); if (busy || stale) return; setBusy(true); setError(null); setNotice(null);
+    try { const saved = await call(`/${encodeURIComponent(schedule.name)}`, "PATCH", parseInvocation(args, kwargs, options)); setBaseline(JSON.stringify({ args: saved.args, kwargs: saved.kwargs, options: saved.options })); setNotice("Saved arguments and delivery options."); onChanged(); }
     catch (e) { setError(e instanceof Error ? e.message : "Couldn't save arguments."); }
     finally { setBusy(false); }
   }}>
+    {stale && <div role="alert"><p>The backend definition changed. Reload its current arguments and options before saving; this discards your unsaved changes.</p><button type="button" className="cm-btn cm-btn-outline" disabled={busy} onClick={() => { setArgs(JSON.stringify(schedule.definition?.args ?? [], null, 2)); setKwargs(JSON.stringify(schedule.definition?.kwargs ?? {}, null, 2)); setOptions(JSON.stringify(schedule.definition?.options ?? {}, null, 2)); setBaseline(fingerprint); setError(null); setNotice(null); }}>Reload current definition</button></div>}
     {[{ key: "args", label: "Arguments (JSON array)", value: args, set: setArgs }, { key: "kwargs", label: "Keyword arguments (JSON object)", value: kwargs, set: setKwargs }, { key: "options", label: "Delivery options (JSON object)", value: options, set: setOptions }].map((field) => <div className="cm-field" key={field.key}><label htmlFor={`${uid}-${field.key}`}>{field.label}</label><textarea className="cm-input" id={`${uid}-${field.key}`} value={field.value} disabled={busy} onChange={(event) => field.set(event.target.value)} /></div>)}
     <p className="cm-field-hint">Saving replaces these three fields. Existing runs keep their original arguments. Reserved tracking headers cannot be changed.</p>
-    <button className="cm-btn cm-btn-outline" disabled={busy}>Save arguments and options</button>
+    <button className="cm-btn cm-btn-outline" disabled={busy || stale}>Save arguments and options</button>
     {notice && <p role="status">{notice}</p>}{error && <p className="cm-error" role="alert">{error}</p>}
   </form></details>;
 }

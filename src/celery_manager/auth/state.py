@@ -110,14 +110,21 @@ def admit_login(session, config, username, client_host):
     keys = [hmac.new(config.secret_key.encode(), value.encode(), hashlib.sha256).hexdigest()
             for value in ("account:" + username, "peer:" + client_host)]
     at, rows = now(), []
+    # An already denied peer/account must not create an unlimited number of
+    # counterpart rows as callers rotate usernames or client addresses. This
+    # read only rejects; admission still rechecks under the sorted row locks.
+    existing = session.scalars(select(LoginBackoff).where(LoginBackoff.key.in_(keys))).all()
+    wait = _backoff_wait(existing, at, config)
+    if wait > 0:
+        session.commit()
+        return wait, keys
     # Stable order prevents two-key deadlocks on supporting SQL backends.
     for key in sorted(set(keys)):
         row = _locked_backoff(session, key)
         if utc(row.updated_at) < at - timedelta(seconds=config.login_backoff_reset_seconds):
             row.attempts, row.blocked_until = 0, None
         rows.append(row)
-    wait = max((math.ceil((utc(r.blocked_until) - at).total_seconds())
-                for r in rows if r.blocked_until is not None), default=0)
+    wait = _backoff_wait(rows, at, config)
     if wait > 0:
         session.commit()
         return wait, keys
@@ -142,3 +149,9 @@ def login_succeeded(session, keys, config):
     if peer.attempts < config.login_backoff_threshold:
         peer.blocked_until = None
     session.commit()
+
+
+def _backoff_wait(rows, at, config):
+    reset_before = at - timedelta(seconds=config.login_backoff_reset_seconds)
+    return max((math.ceil((utc(row.blocked_until) - at).total_seconds())
+                for row in rows if row.blocked_until is not None and utc(row.updated_at) >= reset_before), default=0)

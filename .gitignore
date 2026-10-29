@@ -40,3 +40,6 @@ htmlcov/
 *.db-wal
 *.db-shm
 .env
+
+# Separate agent checkouts are not source for this checkout.
+.claude/worktrees/

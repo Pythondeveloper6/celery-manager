@@ -34,7 +34,11 @@ class SQLAlchemyBeatBackend:
         self.sessions = sessionmaker(bind=self.engine, expire_on_commit=False)
         self.Model, self.metadata = PeriodicTask, ModelBase.metadata
         if create_tables:
-            self.initialize()
+            try:
+                self.initialize()
+            except Exception:
+                self.close()
+                raise
 
     def initialize(self):
         """Explicit deployment step. Provision named schemas before calling."""
@@ -123,7 +127,7 @@ class SQLAlchemyBeatBackend:
                       schedule_model=self._schedule_model(session, entry.schedule), expires=None, expire_seconds=None)
         expires = entry.options.get("expires")
         if isinstance(expires, str):
-            expires = datetime.fromisoformat(expires)
+            expires = datetime.fromisoformat(expires.replace("Z", "+00:00"))
         if isinstance(expires, datetime):
             if expires.tzinfo is None:
                 raise ValueError("Absolute expiry must include a timezone")

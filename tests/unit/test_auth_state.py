@@ -195,3 +195,28 @@ def test_success_uses_same_sorted_lock_order_and_preserves_account_row(environme
         state.login_succeeded(db, ["z-account", "a-peer"], config)
         assert locked == ["a-peer", "z-account"]
         assert db.get(LoginBackoff, "z-account").attempts == 0
+
+
+@pytest.mark.parametrize("rotating", ["username", "client_host"])
+def test_blocked_budget_cannot_create_unbounded_counterpart_rows(environment, monkeypatch, rotating):
+    from celery_manager.auth import state
+    config, _, sessions = environment
+    config.login_backoff_threshold = 1
+    at = now()
+    monkeypatch.setattr(state, "now", lambda: at)
+    with sessions() as db:
+        assert admit_login(db, config, "target", "peer")[0] == 0
+    for i in range(20):
+        kwargs = {"username": "target", "client_host": "peer", rotating: f"rotating-{i}"}
+        with sessions() as db:
+            assert admit_login(db, config, **kwargs)[0] > 0
+    with sessions() as db:
+        assert len(list(db.scalars(select(LoginBackoff)))) == 2
+
+
+@pytest.mark.parametrize("cookie", [b"not-a-signed-session", b"\xff", b"...", b"{\"sid\":\"forged\"}"])
+def test_malformed_cookie_never_authenticates_or_raises_server_error(environment, cookie):
+    _, app, _ = environment
+    client = TestClient(app, base_url="https://testserver")
+    response = client.get("/api/whoami", headers=[(b"cookie", b"cm_session=" + cookie)])
+    assert response.status_code == 401

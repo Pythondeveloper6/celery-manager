@@ -50,6 +50,18 @@ must pass before treating this candidate as production-validated.
 - Login success and admission acquire locks in one order; cleanup rechecks
   expiry before deleting rows refreshed concurrently.
 
+- Task exports preserve initiator/started-by-me filters; failure review ignores
+  stale responses after switching tasks; refreshed schedule forms require an
+  explicit reload before replacing newer backend arguments.
+- Already-blocked login requests cannot create unlimited counterpart throttle
+  rows. Singleton key callables receive consumed-metadata-free task arguments,
+  and lock inspection stays inside its exact namespace.
+- Beat-owner keys fit the monitoring database's 64-character key column on
+  strict SQL servers. Malformed OIDC identity/role claims fail cleanly.
+- Required adapter/storage CI gates reject skipped tests, cover optional
+  adapters on Python 3.10 and 3.12, and verify previous-release data survives
+  upgrade, rollback and repeated deployment.
+
 ### Previous release follow-up fixes
 
 

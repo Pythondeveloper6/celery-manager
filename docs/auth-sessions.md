@@ -81,3 +81,5 @@ on login/bridge issuance, in batches of at most 1000 rows from each indexed
 table. Revoked rows remain until their original expiry, allowing investigation.
 An idle deployment retains expired rows until subsequent sign-in activity;
 this is not a separate periodic background purge.
+
+An already-blocked account or direct peer is checked before creating a new counterpart budget row. Rotating usernames during a peer backoff therefore does not create a new account row for every denied request; the atomic reservation still rechecks both budgets when admission is allowed.

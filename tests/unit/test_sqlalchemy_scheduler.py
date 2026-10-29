@@ -153,6 +153,8 @@ def test_sql_absolute_expiry_keeps_instant_across_sqlite_roundtrip(backend):
     value = replace(entry(), options={"expires": "2030-01-01T10:00:00+02:00"})
     backend.create(value)
     assert backend.get("sample").options["expires"] == datetime(2030, 1, 1, 8, tzinfo=timezone.utc)
+    backend.update("sample", options={"expires": "2030-01-01T08:00:00Z"})
+    assert backend.get("sample").options["expires"] == datetime(2030, 1, 1, 8, tzinfo=timezone.utc)
     with pytest.raises(ValueError, match="timezone"):
         backend.update("sample", options={"expires": "2030-01-01T10:00:00"})
 

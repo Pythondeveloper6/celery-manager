@@ -228,7 +228,10 @@ scheduled messages.
 
 Operators can expand **Edit arguments and delivery options** on a writable
 schedule. Saving replaces those three complete fields; omitted old keys are
-removed. Existing runs retain their recorded inputs. The normal **Edit schedule**
+removed. If a refresh discovers changed backend arguments or options, saving is
+blocked until **Reload current definition** is chosen; reloading discards unsaved
+form edits. This guards against an already observed stale form, not concurrent
+writes that happen after the last refresh. Existing runs retain their recorded inputs. The normal **Edit schedule**
 sheet supports an explicit timezone on crontabs as well as interval and cron
 fields. Preview errors block saving. Static code-owned backends remain read-only
 for argument and delivery-option changes.
