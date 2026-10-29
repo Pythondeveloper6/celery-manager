@@ -1,5 +1,4 @@
 """Beat liveness must never dispatch work or block on a monitor request."""
-import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -14,6 +13,7 @@ from celery_manager.beat_health import (
     _maybe_ping,
     _NoRedirect,
     _send_ping,
+    owner_key,
     record_tick,
 )
 from celery_manager.control.health import beat_health
@@ -81,11 +81,11 @@ def test_durable_owners_cannot_mask_each_other_and_legacy_shape_remains():
         assert record_tick(beat) == 30
     with sessions() as session:
         assert session.get(AppSetting, "beat_last_tick") is not None
-        key = OWNER_PREFIX + hashlib.sha256(b"orders").hexdigest()
+        key = owner_key("orders")
         data = json.loads(session.get(AppSetting, key).value)
         assert data["owner_id"] == "orders"
         now = datetime.fromisoformat(data["at"])
-        row = AppSetting(key=OWNER_PREFIX + hashlib.sha256(b"billing").hexdigest(),
+        row = AppSetting(key=owner_key("billing"),
                          value=json.dumps({"at": (now - timedelta(seconds=121)).isoformat(), "owner_id": "billing"}),
                          updated_at=now)
         session.add(row)
@@ -132,3 +132,8 @@ def test_beat_owner_retirement_is_admin_only_and_audited():
     assert client.get("/api/health/beat").json()["state"] == "unknown"
     with sessions() as session:
         assert session.query(AuditLog).filter_by(action="beat.retire_owner").count() == 1
+
+
+def test_owner_key_fits_every_supported_database_column():
+    assert len(owner_key("a" * 500)) <= AppSetting.__table__.c.key.type.length
+    assert owner_key("orders") != owner_key("billing")

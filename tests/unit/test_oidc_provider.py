@@ -77,3 +77,12 @@ def test_key_rotation_by_kid_and_custom_mapper(env):
                           "exp": int(time.time()) + 60}, key, algorithm="RS256", headers={"kid": "two"})
     with patch.object(jwt.PyJWKClient, "fetch_data", return_value={"keys": [jwk]}):
         assert client.get("/api/whoami", headers={"Authorization": "Bearer " + encoded}).json()["role"] == "operator"
+
+
+@pytest.mark.parametrize("changes, status", [
+    ({"roles": None}, 403), ({"roles": 12}, 401), ({"roles": {}}, 401),
+    ({"preferred_username": ["invalid"]}, 401), ({"preferred_username": "   "}, 401),
+])
+def test_untrusted_claim_shapes_are_auth_responses_not_server_errors(env, changes, status):
+    _, client, token = env
+    assert client.get("/api/whoami", headers={"Authorization": "Bearer " + token(**changes)}).status_code == status

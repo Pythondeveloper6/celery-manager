@@ -828,13 +828,13 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
 
         controlled = wrapper
         if singleton is not None and singleton is not False:
-            controlled = _singleton_wrapper(wrapper, func, singleton, singleton_ttl, on_conflict)
+            controlled = _singleton_wrapper(wrapper, func, singleton, singleton_ttl, on_conflict, consume_kwargs)
         return _with_task_runtime(controlled)
 
     return decorator
 
 
-def _singleton_wrapper(wrapped, original, key_spec, ttl, on_conflict):
+def _singleton_wrapper(wrapped, original, key_spec, ttl, on_conflict, consume_kwargs):
     @functools.wraps(wrapped)
     def controlled(*args, **kwargs):
         from celery_manager.locks import (
@@ -852,7 +852,10 @@ def _singleton_wrapper(wrapped, original, key_spec, ttl, on_conflict):
             task = current_task._get_current_object()
         user_args = args[1:] if args and isinstance(args[0], Task) else args
         try:
-            key = task_name if key_spec is True else key_spec(*user_args, **kwargs) if callable(key_spec) else key_spec
+            # Match the task body's public argument contract; routing-only
+            # schedule metadata is consumed by the tracking wrapper below.
+            key_kwargs = {key: value for key, value in kwargs.items() if key not in consume_kwargs}
+            key = task_name if key_spec is True else key_spec(*user_args, **key_kwargs) if callable(key_spec) else key_spec
             validate_key(key)
             provider = provider_for(_settings())
             acquired, lease = provider.acquire(key, task_id, task_name, ttl)

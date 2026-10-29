@@ -27,12 +27,10 @@ def _beat_row(row, stale_seconds, now):
 
 
 def beat_health(session, *, stale_seconds=120, now=None, owner_id=None):
-    import hashlib
-
-    from celery_manager.beat_health import OWNER_PREFIX
+    from celery_manager.beat_health import OWNER_PREFIX, owner_key
     now = aware(now or datetime.now(timezone.utc))
     if owner_id is not None:
-        key = OWNER_PREFIX + hashlib.sha256(owner_id.encode()).hexdigest()
+        key = owner_key(owner_id)
         return _beat_row(session.get(AppSetting, key), stale_seconds, now)
     result = _beat_row(session.get(AppSetting, "beat_last_tick"), stale_seconds, now)
     rows = session.query(AppSetting).filter(AppSetting.key.startswith(OWNER_PREFIX, autoescape=True)).order_by(AppSetting.key).all()

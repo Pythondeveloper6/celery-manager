@@ -32,13 +32,12 @@ def runs(request: Request, stuck_seconds: int = Query(3600, ge=60, le=604800)):
 @router.delete("/beat/owner")
 def retire_beat_owner(request: Request, owner_id: str = Query(min_length=1, max_length=500),
                       username: str = Depends(require_admin)):
-    import hashlib
     import json
 
-    from celery_manager.beat_health import OWNER_PREFIX
+    from celery_manager.beat_health import owner_key
     from celery_manager.control.audit import record
     from celery_manager.db.models import AppSetting
-    key = OWNER_PREFIX + hashlib.sha256(owner_id.encode()).hexdigest()
+    key = owner_key(owner_id)
     with request.app.state.cm_session_factory() as session:
         row = session.get(AppSetting, key)
         if row is not None:

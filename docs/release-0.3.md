@@ -145,12 +145,12 @@ acceptance gates.
 
 | Check | Result |
 |---|---|
-| Python 3.12 broad runnable suite | 1,395 passed, 27 skipped, 4 deselected |
+| Python 3.12 broad runnable pre-push suite | 1,417 passed, 29 skipped, 4 deselected |
 | Server-independent RabbitMQ cases, run separately | 19 passed |
 | New shared-storage login admission/revocation contract | Passed against a file-backed SQLite database |
 | Targeted final auth/singleton/SQL/timezone/roles regressions | 349 passed, 2 live Redis cases skipped |
-| Widget JavaScript tests | 4 passed |
-| Python lint and whitespace | Passed; unrelated pre-existing `.claude` worktrees excluded from local lint |
+| Widget and operator-form JavaScript tests | 9 passed |
+| Python lint and whitespace | Passed; separate pre-existing `.claude/worktrees` are ignored as checkout artifacts |
 | Frontend build/lint and committed static bundle comparison | Passed; existing branding fast-refresh and bundle-size warnings remain |
 | Strict documentation build | Passed |
 | Wheel/sdist build and strict Twine metadata checks | Passed |
@@ -162,8 +162,24 @@ webhook-server cases because this environment cannot bind those servers. Other
 skips include opt-in live broker/database gates. The configured real Redis CI
 service exercises lease expiry and atomic contention; server storage jobs also
 include SQL scheduler persistence and shared-auth admission/revocation. Configuring
-a service in CI is not evidence that it has run for this candidate. Browser
-visual smoke, Python-version CI, live servers and the host-application trial are
-still pending. The checkout could not fetch the report's published remote commit
+a service in CI is not evidence that it has run for this candidate. Native Safari visual smoke passed against the built bundle with a labelled mocked API: desktop and 390-pixel forms, preview invalidation, lock-release warning and current-session confirmation. This is a UI check, not an end-to-end live backend result. Python-version CI, live servers and the host-application trial remain pending. The checkout could not fetch the report's published remote commit
 because GitHub DNS resolution failed, so remote-main ancestry has not been
 reconciled here. Work is kept on the local release branch.
+
+
+### Additional pre-push review
+
+The review fixed identity filters lost by frontend exports, stale failure-review
+responses/notes, stale schedule argument forms, denied-login throttle row growth,
+singleton metadata-key arguments and nested namespace inspection. Beat-owner
+keys now fit strict server column limits. Malformed OIDC claims return clean
+authentication responses rather than server errors. Focused security/upgrade
+checks passed locally; the final identity-claim hardening also passed 56 targeted
+tests. The rebuilt wheel smoke covers local login, actor-filtered dispatch,
+session revocation, migrations and the shipped widget.
+
+The configured disposable SQLite server-contract run passed five checks,
+including 0014-to-0017 upgrade/rollback data preservation. Real-server CI now
+executes those contracts and rejects any skipped required checks. Optional
+adapters run on Python 3.10 and 3.12; syntax checks alone do not substitute for
+those interpreter runs.

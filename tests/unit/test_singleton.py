@@ -278,3 +278,35 @@ def test_invalid_ttl_rejected_at_decoration(ttl):
 
 def test_real_redis_atomic_contention(live_provider):
     test_atomic_contention_and_inspection(live_provider)
+
+
+def test_callable_key_uses_same_consumed_kwargs_contract_as_task_body(provider, tmp_path):
+    app = Celery("singleton_identity", broker="memory://", backend="cache+memory://")
+    setup(CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / 'identity.db'}", lock_provider=provider))
+    @app.task(name="singleton_identity.run", shared=False)
+    @track(singleton=lambda value: f"resource:{value}",
+           schedule_from=lambda args, kwargs: kwargs.get("schedule_identity"), consume_kwargs=("schedule_identity",))
+    def task(value):
+        return value
+    assert task.apply(kwargs={"value":42, "schedule_identity":"daily"}, throw=True).get() == 42
+
+
+@pytest.mark.parametrize("decode_responses", [False, True])
+def test_inspection_does_not_cross_into_nested_provider_namespace(decode_responses):
+    import json
+    from dataclasses import asdict
+    class RedisScan:
+        def __init__(self):
+            self.rows = {}
+        def scan(self, cursor, **kwargs):
+            return 0, list(self.rows)
+        def eval(self, script, number_of_keys, key):
+            return self.rows[key], 1000
+    client = RedisScan()
+    parent = RedisLockProvider(client=client, prefix="host:")
+    nested = RedisLockProvider(client=client, prefix="host:other:")
+    for provider, key in [(parent, "own"), (nested, "private-other-app")]:
+        storage_key = provider._key(key)
+        client.rows[storage_key if decode_responses else storage_key.encode()] = json.dumps(
+            asdict(Lease(key, key, "owner", "task", "test")))
+    assert [row.key for row in parent.list()] == ["own"]

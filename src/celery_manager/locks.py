@@ -120,9 +120,18 @@ class RedisLockProvider:
         # SCAN is deliberately bounded; a busy/huge namespace can return a
         # partial snapshot, and callers must not treat this as an inventory.
         cursor = 0
+        prefix_bytes = self.prefix.encode()
         for _ in range(100):
-            cursor, keys = self.client.scan(cursor, match=self.prefix + '*', count=100)
+            cursor, keys = self.client.scan(cursor, match=self.prefix + '?' * 64, count=100)
             for key in keys:
+                # A provider's prefix may contain another provider's prefix.
+                # Only inspect our exact prefix + SHA-256 key shape, never a
+                # nested namespace or unrelated data sharing the same Redis.
+                encoded = key.encode() if isinstance(key, str) else key
+                suffix = encoded[len(prefix_bytes):]
+                if (not encoded.startswith(prefix_bytes) or len(suffix) != 64
+                        or any(char not in b"0123456789abcdef" for char in suffix)):
+                    continue
                 if key in seen:
                     continue
                 seen.add(key)

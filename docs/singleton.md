@@ -130,3 +130,5 @@ history with a synchronized test-only provider. Additional contract tests
 start an already-installed local `redis-server` and exercise real Lua/expiry;
 they skip when the binary or socket permission is unavailable. A skipped
 contract does not establish live Redis support for a deployment.
+
+A callable singleton key receives the same user arguments as the task body: names declared in `consume_kwargs` have already been removed. Inspection matches only the configured namespace and its hashed keys, including when another namespace shares its prefix.
