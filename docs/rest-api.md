@@ -25,7 +25,8 @@ unusable answer from your app is a **`500`**, never access.
 
 **Roles.** Every `POST`/`PUT` below except login and logout also needs a
 minimum [role](roles.md): `operator` for day-to-day controls, `admin` for
-queue purge, worker shutdown and branding. Every `GET` works for any role.
+queue purge, worker shutdown and branding. Most operational `GET` routes need
+viewer; local account listings require admin and log reads obey `log_view_role`.
 A signed-in account below the needed role gets
 **`403 {"detail": "Not allowed: this action needs the admin role (you are operator)."}`**
 and nothing happens. The full table is on the [Roles](roles.md) page.
@@ -57,8 +58,14 @@ replaces this with the allowed origins and omits the conflicting XFO header.
 |---|---|---|---|---|
 | `GET` | `/api/auth/options` | none | — | `200 {"local_login": bool, "external": bool, "provider_name": str, "login_url": str \| null, "logout_url": str \| null}`: how this deployment signs people in, for the login screen. `external` is true when a host authenticator or principal provider is configured; `login_url` may contain `{next}`. Unauthenticated, like `GET /api/settings`; it holds nothing secret. |
 | `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str, "role": str, "source": "local"}` on success; `401 {"detail": "invalid credentials"}` on bad username/password; `403` with a sentence naming your app when `local_login_enabled=False`. Sets the `cm_session` cookie. |
-| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires or the account's password changes; see the [security model](configuration.md#security-model). |
+| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Revokes the current tracked browser session and deletes its cookie. Legacy cookies without a registered session ID cannot be revoked individually; see [session upgrade compatibility](auth-sessions.md#upgrade-compatibility). |
 | `GET` | `/api/whoami` | required | — | `200 {"username": str, "role": "viewer" \| "operator" \| "admin", "source": "local" \| "external"}` if authenticated (`external`: signed in by your app); `401` otherwise; `403 {"detail": "Your <app> account (<name>) has no access to this dashboard."}` for a user of your app who has no role here. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
+
+New in 0.3: [browser sessions](auth-sessions.md) documents shared login backoff
+(`429` with `Retry-After`), `GET /api/auth/sessions` and own-session revocation.
+All documented `/api` routes also have equivalent `/api/v1` aliases; see
+[versioned API and widget](embedding.md). Schedule reconciliation, lock leases,
+beat owners and worker history are described in their linked feature guides.
 
 ## Users
 

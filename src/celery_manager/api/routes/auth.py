@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from celery_manager.api.deps import SESSION_COOKIE, Principal, cookie_path, require_role
-from celery_manager.auth.external import SOURCE_LOCAL
+from celery_manager.auth.external import SOURCE_EXTERNAL, SOURCE_LOCAL
 from celery_manager.auth.sessions import sign_session
 from celery_manager.auth.users import session_fingerprint, verify_password
 
@@ -54,12 +54,19 @@ def login(payload: LoginRequest, request: Request, response: Response):
             detail=f"Sign-in with a dashboard password is turned off. Sign in with {config.login_provider_name}.",
         )
     session_factory = request.app.state.cm_session_factory
+    from celery_manager.auth.state import admit_login, create_session, login_succeeded
     with session_factory() as db_session:
+        wait, keys = admit_login(db_session, config, payload.username,
+                                request.client.host if request.client else "unknown")
+        if wait:
+            raise HTTPException(429, "Too many sign-in attempts; try again later", headers={"Retry-After": str(wait)})
         user = verify_password(db_session, payload.username, payload.password)
-    if user is None:
-        raise HTTPException(status_code=401, detail="invalid credentials")
+        if user is None:
+            raise HTTPException(status_code=401, detail="invalid credentials")
+        login_succeeded(db_session, keys, config)
+        sid = create_session(db_session, config, user.username, SOURCE_LOCAL)
     token = sign_session(
-        config.secret_key, user.username, session_fingerprint(config.secret_key, user.password_hash)
+        config.secret_key, user.username, session_fingerprint(config.secret_key, user.password_hash), session_id=sid
     )
     response.set_cookie(
         SESSION_COOKIE,
@@ -76,6 +83,28 @@ def login(payload: LoginRequest, request: Request, response: Response):
 @router.post("/auth/logout")
 def logout(request: Request, response: Response):
     config = request.app.state.cm_config
+    # Logout remains public/idempotent, but a stolen copy of a newly issued
+    # cookie must stop authenticating once its browser session is revoked.
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        from celery_manager.api.deps import CurrentUser
+        from celery_manager.auth.sessions import (
+            browser_session_id,
+            verify_bridge,
+            verify_session_claims,
+        )
+        from celery_manager.auth.state import revoke_session, session_hash
+        claims = verify_session_claims(config.secret_key, token, config.session_max_age_seconds)
+        bridge_claims = verify_bridge(config.secret_key, token, config.bridge_max_age_seconds)
+        if claims is not None or bridge_claims is not None:
+            is_bridge = bridge_claims is not None
+            age = config.bridge_max_age_seconds if is_bridge else config.session_max_age_seconds
+            sid = browser_session_id(config.secret_key, token, age, bridge=is_bridge)
+            if sid:
+                principal = (CurrentUser(**bridge_claims, source=SOURCE_EXTERNAL) if is_bridge
+                             else CurrentUser(claims[0], "viewer"))
+                with request.app.state.cm_session_factory() as db_session:
+                    revoke_session(db_session, session_hash(sid), principal)
     # Same attributes as the login cookie: some browsers ignore a deletion
     # whose Secure/SameSite don't match, and a mismatched path deletes nothing.
     response.delete_cookie(
@@ -112,7 +141,42 @@ def bridge(request: Request, response: Response, principal: Principal, username:
     if external is None or external.role is None:
         raise HTTPException(401, "Fresh external authentication is required")
     from celery_manager.auth.sessions import sign_bridge
-    response.set_cookie(SESSION_COOKIE, sign_bridge(config.secret_key, external.username, external.role, external.subject),
+    from celery_manager.auth.state import create_session
+    with request.app.state.cm_session_factory() as db_session:
+        sid = create_session(db_session, config, external.username, SOURCE_EXTERNAL, external.subject,
+                             lifetime=config.bridge_max_age_seconds)
+    response.set_cookie(SESSION_COOKIE, sign_bridge(config.secret_key, external.username, external.role, external.subject,
+                                                  session_id=sid),
                         max_age=config.bridge_max_age_seconds, path=cookie_path(request),
                         httponly=True, secure=config.cookie_secure, samesite="lax")
     return {"username": external.username, "role": external.role, "expires_in": config.bridge_max_age_seconds}
+
+
+@router.get("/auth/sessions")
+def own_sessions(request: Request, principal: Principal):
+    from sqlalchemy import select
+
+    from celery_manager.auth.state import now, session_hash, utc
+    from celery_manager.db.auth_state import BrowserSession
+    with request.app.state.cm_session_factory() as session:
+        rows = session.scalars(select(BrowserSession).where(
+            BrowserSession.username == principal.username, BrowserSession.source == principal.source,
+            BrowserSession.subject == principal.subject, BrowserSession.expires_at > now(),
+            BrowserSession.revoked_at.is_(None)
+        ).order_by(BrowserSession.created_at.desc()).limit(100)).all()
+        return {"sessions": [{"session_id": row.session_id, "created_at": utc(row.created_at).isoformat(),
+                              "expires_at": utc(row.expires_at).isoformat(),
+                              "current": bool(principal.session_id and row.session_id == session_hash(principal.session_id))}
+                             for row in rows]}
+
+
+@router.post("/auth/sessions/{session_id}/revoke")
+def revoke_own_session(session_id: str, request: Request, principal: Principal,
+                       username: str = Depends(require_viewer)):
+    from celery_manager.auth.state import revoke_session
+    from celery_manager.control.audit import record
+    with request.app.state.cm_session_factory() as session:
+        if not revoke_session(session, session_id, principal):
+            raise HTTPException(404, "Unknown active session")
+        record(session, username, "revoke_session", "browser_session", session_id)
+    return {"revoked": True}

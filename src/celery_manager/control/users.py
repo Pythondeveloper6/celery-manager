@@ -119,6 +119,7 @@ def reset_password(
     user = _get(session, username)
     new_password = generate_password() if generate else password
     user.password_hash = hash_password(new_password, enforce_minimum=True)
+    _revoke_local_sessions(session, username)
     session.commit()
     record_audit(session, actor, "reset_password", "user", username, {"generated": generate})
     return new_password if generate else None
@@ -131,6 +132,7 @@ def change_own_password(session, username: str, current_password: str, new_passw
         raise PermissionError("current password is incorrect")
     user = _get(session, username)
     user.password_hash = hash_password(new_password, enforce_minimum=True)
+    _revoke_local_sessions(session, username)
     session.commit()
     record_audit(session, username, "change_password", "user", username)
     return user
@@ -143,6 +145,15 @@ def delete_user(session, actor: str, username: str) -> None:
     if user.role == ADMIN and len(_lock_admins(session)) <= 1:
         raise UserConflict(f"{username!r} is the only admin and can't be deleted.")
     role = user.role
+    _revoke_local_sessions(session, username)
     session.delete(user)
     session.commit()
     record_audit(session, actor, "delete_user", "user", username, {"role": role})
+
+
+def _revoke_local_sessions(session, username):
+    from celery_manager.auth.state import now
+    from celery_manager.db.auth_state import BrowserSession
+    session.execute(BrowserSession.__table__.update().where(
+        BrowserSession.username == username, BrowserSession.source == "local", BrowserSession.revoked_at.is_(None)
+    ).values(revoked_at=now()))

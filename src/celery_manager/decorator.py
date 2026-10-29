@@ -558,7 +558,8 @@ def _initiator(task_self):
     return value if isinstance(value, str) and 0 < len(value) <= 255 else None
 
 
-def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwargs: tuple[str, ...] = ()):
+def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwargs: tuple[str, ...] = (),
+          singleton=None, singleton_ttl: float = 1800, on_conflict: str = "skip"):
     """Decorator for Celery tasks. Apply directly below @app.task:
 
         @app.task(name="demo.echo", bind=True)
@@ -582,6 +583,14 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
     Without it the wrapper degrades to a pass-through — the task body still
     runs, but with no pause/skip check and no log capture.
     """
+
+    if singleton is not None and singleton is not False:
+        from celery_manager.locks import ttl_ms
+        ttl_ms(singleton_ttl)
+        if on_conflict not in ("skip", "retry"):
+            raise ValueError("on_conflict must be 'skip' or 'retry'")
+        if singleton is not True and not isinstance(singleton, str) and not callable(singleton):
+            raise ValueError("singleton must be True, a key string, or a callable")
 
     def decorator(func):
         if isinstance(func, Task):
@@ -817,6 +826,53 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                     )
                     return result
 
-        return _with_task_runtime(wrapper)
+        controlled = wrapper
+        if singleton is not None and singleton is not False:
+            controlled = _singleton_wrapper(wrapper, func, singleton, singleton_ttl, on_conflict)
+        return _with_task_runtime(controlled)
 
     return decorator
+
+
+def _singleton_wrapper(wrapped, original, key_spec, ttl, on_conflict):
+    @functools.wraps(wrapped)
+    def controlled(*args, **kwargs):
+        from celery_manager.locks import (
+            SingletonConflict,
+            SingletonUnavailable,
+            provider_for,
+            validate_key,
+        )
+        from celery_manager.singleton import maintain_lease
+        task, task_id, task_name = _identify_run(args, original)
+        if not task_id:
+            raise SingletonUnavailable("singleton tasks must execute through Celery with a request id")
+        if task is None:
+            from celery import current_task
+            task = current_task._get_current_object()
+        user_args = args[1:] if args and isinstance(args[0], Task) else args
+        try:
+            key = task_name if key_spec is True else key_spec(*user_args, **kwargs) if callable(key_spec) else key_spec
+            validate_key(key)
+            provider = provider_for(_settings())
+            acquired, lease = provider.acquire(key, task_id, task_name, ttl)
+            if not acquired:
+                reason = f"singleton lock held by task {lease.task_id} ({lease.task_name})"
+                if on_conflict == "retry":
+                    _persist_run(task_id, task_name=task_name, status="retried", exception=reason)
+                    raise task.retry(exc=SingletonConflict(reason), countdown=min(ttl / 3, 60))
+                _persist_run(task_id, task_name=task_name, status="skipped", skip_reason=reason[:255],
+                             args=_safe_json(user_args), kwargs=_safe_json(kwargs),
+                             finished_at=datetime.now(timezone.utc))
+                return None
+            with maintain_lease(provider, lease, ttl):
+                return wrapped(*args, **kwargs)
+        except Retry:
+            raise
+        except Exception as exc:
+            # Explicit singleton enforcement is fail-closed, unlike ordinary
+            # observability. A lock outage must never run an unguarded body.
+            _persist_run(task_id, task_name=task_name, status="failed", exception=_describe_exception(exc)[0],
+                         finished_at=datetime.now(timezone.utc))
+            raise
+    return controlled

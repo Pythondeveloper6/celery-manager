@@ -45,6 +45,15 @@ from celery_manager.db.models import AuditLog, User
 # (method, path, json body, minimum role). One entry per state-changing route;
 # `test_matrix_covers_every_state_changing_route` keeps it complete.
 WRITE_ROUTES = [
+    ("DELETE", "/api/health/beat/owner?owner_id=missing", None, "admin"),
+    ("POST", "/api/auth/sessions/missing/revoke", None, "viewer"),
+    ("POST", "/api/dead-letters/t1/reopen", {}, "operator"),
+    ("POST", "/api/dead-letters/t1/ignore", {}, "operator"),
+    ("POST", "/api/dead-letters/t1/acknowledge", {}, "operator"),
+    ("POST", "/api/schedule-reconciliation/apply", {}, "admin"),
+    ("POST", "/api/schedule-reconciliation/plan", {}, "admin"),
+    ("POST", "/api/schedules/pause-import", {"csv":"schedule_name,paused_until\n"}, "admin"),
+    ("POST", "/api/locks/release", {"key":"x", "lease_id":"x"}, "admin"),
     ("POST", "/api/auth/bridge", None, "viewer"),
     ("POST", "/api/schedules", {"name":"example", "task":"demo.echo", "schedule":{"type":"interval","seconds":60}}, "admin"),
     ("PATCH", "/api/schedules/nightly", {"enabled":False}, "operator"),
@@ -133,6 +142,15 @@ WRITE_ROUTES = [
 
 # The same matrix by route template, as the app declares it.
 ROUTE_ROLES = {
+    ("DELETE", "/api/health/beat/owner"): "admin",
+    ("POST", "/api/auth/sessions/{session_id}/revoke"): "viewer",
+    ("POST", "/api/dead-letters/{task_id}/reopen"): "operator",
+    ("POST", "/api/dead-letters/{task_id}/ignore"): "operator",
+    ("POST", "/api/dead-letters/{task_id}/acknowledge"): "operator",
+    ("POST", "/api/schedule-reconciliation/apply"): "admin",
+    ("POST", "/api/schedule-reconciliation/plan"): "admin",
+    ("POST", "/api/schedules/pause-import"): "admin",
+    ("POST", "/api/locks/release"): "admin",
     ("POST", "/api/auth/bridge"): "viewer",
     ("POST", "/api/schedules"): "admin",
     ("PATCH", "/api/schedules/{name}"): "operator",
@@ -430,7 +448,9 @@ def test_matrix_covers_every_state_changing_route(make_app):
         for method in route.methods - {"GET", "HEAD", "OPTIONS"}:
             if (method, path) not in PUBLIC_WRITE_ROUTES:
                 declared[(method, path)] = route_required_role(route, dependencies)
-    assert declared == ROUTE_ROLES
+    expected = {**ROUTE_ROLES, **{(method, path.replace("/api/", "/api/v1/", 1)): role
+                                 for (method, path), role in ROUTE_ROLES.items()}}
+    assert declared == expected
     assert len(WRITE_ROUTES) == len(ROUTE_ROLES)
 
 

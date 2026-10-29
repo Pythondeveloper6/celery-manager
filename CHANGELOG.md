@@ -6,7 +6,52 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0a1] — 2026-10-29
+
+One report-driven release candidate. Monitoring migrations now reach `0017`.
+See the [release guide](docs/release-0.3.md) for deployment, compatibility and
+explicit remaining work. Live database/Redis and application rollout gates
+must pass before treating this candidate as production-validated.
+
+### Added
+
+- Optional SQLAlchemy Celery Beat backend and stamping scheduler, explicit SQL
+  authority/initialization, lossless export, reviewed adoption/repair plans,
+  stale-snapshot conflicts and non-destructive reconciliation UI.
+- Deterministic weekday lists/ranges, multiple daily times with a shared minute,
+  exact supported time windows, readable descriptions and per-entry IANA
+  timezones with preview/editor support. Unsupported meanings are refused.
+- JSON arguments, keyword arguments and delivery options in schedule forms.
+- Redis singleton execution leases with ownership tokens, renewal, explicit
+  conflict policy, inspection and audited conditional administrative release.
+- Individual/consecutive failure, stuck/lost, stale beat, SLA, regression and
+  daily digest alert kinds with bounded evidence and unknown-data behavior.
+- Failure acknowledgement/ignore/reopen, notes and durable review history.
+- Owner-aware beat health, owner retirement and throttled external health pings.
+- Minute-bucket worker heartbeat history, bounded retention, history API and UI.
+- Shared-database login backoff and individually revocable local/bridge browser
+  sessions, including password-change session reissue and session controls.
+- “Started by me” task filtering across list/count/export/bulk cancellation,
+  dispatch actor stamping, and worker-child initiator propagation.
+- Validated atomic CSV import of legacy pauses, dry-run by default, via CLI/API.
+- Read-only definition/history drift and opt-in observed-consumer diagnostics.
+- Versioned `/api/v1` aliases, OpenAPI operations and an authenticated JavaScript
+  status widget with bounded polling and safe text rendering.
+
 ### Fixed
+
+- Windowed scheduling respects interval steps and refuses inexact boundaries.
+  Per-entry zones now become due correctly, survive serialization and project
+  across UTC offsets and DST changes using Celery's calendar behavior.
+- Alert safety caps apply after task/time scoping, so unrelated retained history
+  cannot disable a specific rule. Failure review state/history/audit commit together.
+- SQL scheduler startup preserves operator-edited authoritative rows; intervals
+  unsupported by upstream integer storage are refused instead of truncated.
+- Login success and admission acquire locks in one order; cleanup rechecks
+  expiry before deleting rows refreshed concurrently.
+
+### Previous release follow-up fixes
+
 
 - Publishing checks whether the tested version exists on PyPI, so an unchanged
   version can publish after CI fixes. Registry errors fail the check explicitly.

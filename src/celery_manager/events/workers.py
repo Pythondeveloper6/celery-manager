@@ -1,13 +1,16 @@
 """Durable last-seen worker status from Celery events."""
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
+
+_last_pruned = {}
 
 from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 
-from celery_manager.db.models import WorkerState
+from celery_manager.db.models import WorkerHeartbeatSample, WorkerState
 
 
-def record_worker_event(session, event):
+def record_worker_event(session, event, *, retention_days=7):
     if event.get("type") not in ("worker-online", "worker-heartbeat", "worker-offline"):
         return
     hostname = event.get("hostname")
@@ -48,9 +51,32 @@ def record_worker_event(session, event):
         row = session.execute(query).scalar_one()
     previous = row.last_seen_at
     previous = previous.replace(tzinfo=timezone.utc) if previous.tzinfo is None else previous.astimezone(timezone.utc)
-    if previous > stamp:
+    if previous > stamp or (previous == stamp and row.state == "offline" and event["type"] != "worker-offline"):
         return
     row.last_seen_at = stamp
     row.state = "offline" if event["type"] == "worker-offline" else "online"
-    row.active = event.get("active") if isinstance(event.get("active"), int) else None
-    row.processed = event.get("processed") if isinstance(event.get("processed"), int) else None
+    def counter(value):
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+    row.active = counter(event.get("active"))
+    row.processed = counter(event.get("processed"))
+
+    # The WorkerState row remains locked through the caller's commit. All
+    # writers for this hostname therefore serialize sample get/create too.
+    if retention_days:
+        now = datetime.now(timezone.utc)
+        if stamp < now - timedelta(days=retention_days):
+            return
+        bucket = stamp.replace(second=0, microsecond=0)
+        sample = session.get(WorkerHeartbeatSample, (hostname, bucket))
+        if sample is None:
+            sample = WorkerHeartbeatSample(hostname=hostname, bucket_at=bucket)
+            session.add(sample)
+        sample.observed_at, sample.state = stamp, row.state
+        sample.active, sample.processed = row.active, row.processed
+        key = id(session.get_bind())
+        if time.monotonic() - _last_pruned.get(key, 0) >= 3600:
+            # No commit here: do not release the worker row lock halfway through
+            # recording. Flush/commit remains owned by the event listener.
+            session.query(WorkerHeartbeatSample).filter(
+                WorkerHeartbeatSample.observed_at < now-timedelta(days=retention_days)).delete(synchronize_session=False)
+            _last_pruned[key] = time.monotonic()

@@ -39,7 +39,7 @@ from celery_manager.control.tasks import (
     _decode_stored_call_argument,
     start_task,
 )
-from celery_manager.db.models import TaskRun
+from celery_manager.db.models import FailureResolution, TaskRun
 from celery_manager.db.runs import lock_task_run
 
 # Most runs one re-run request may touch. Over it the request is refused, not
@@ -102,6 +102,7 @@ def _dead_letter_query(session, *, task_name: str | None = None, since: datetime
     later = aliased(TaskRun)
     query = session.query(TaskRun).filter(
         TaskRun.status == "failed",
+        ~exists().where((FailureResolution.task_id == TaskRun.task_id) & FailureResolution.state.in_(("acknowledged", "ignored"))).correlate(TaskRun),
         ~exists().where(later.retried_from_id == TaskRun.task_id).correlate(TaskRun),
     )
     if task_name is not None:

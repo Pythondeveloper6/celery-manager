@@ -82,3 +82,35 @@ def test_namespaced_writes_utc_defaults_and_batched_prune(database):
             assert abs((datetime.now(timezone.utc) - stamp).total_seconds()) < 30
     finally:
         engine.dispose()
+
+
+def test_login_admission_and_revocation_use_shared_server_locks(database):
+    from celery_manager.api.deps import CurrentUser
+    from celery_manager.auth.state import (
+        active_session,
+        admit_login,
+        create_session,
+        revoke_session,
+    )
+    from celery_manager.db.auth_state import LoginBackoff
+    database.secret_key = "storage-contract-private-test-key"
+    database.login_backoff_threshold = 100
+    engine = init_db(database)
+    sessions = get_session_factory(engine)
+    try:
+        def reserve(_):
+            with sessions() as session:
+                return admit_login(session, database, "race-account", "contract-peer")[0]
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            assert list(executor.map(reserve, range(20))) == [0] * 20
+        with sessions() as session:
+            assert sorted(row.attempts for row in session.query(LoginBackoff)) == [20, 20]
+            sid = create_session(session, database, "operator", "local")
+            assert active_session(session, sid, "operator", "local")
+        with sessions() as session:
+            from celery_manager.auth.state import session_hash
+            assert revoke_session(session, session_hash(sid), CurrentUser("operator", "operator"))
+        with sessions() as session:
+            assert not active_session(session, sid, "operator", "local")
+    finally:
+        engine.dispose()

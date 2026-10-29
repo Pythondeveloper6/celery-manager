@@ -106,6 +106,10 @@ without touching your beat schedule or restarting anything.
 </tr>
 </table>
 
+New in the [0.3 release candidate](docs/release-0.3.md): SQL-owned schedules,
+reviewed reconciliation, singleton leases, deeper alerts, failure review,
+revocable browser sessions, heartbeat history and a versioned status widget.
+
 Production adoption: the [0.2 guide](docs/production.md) covers external schedulers,
 OIDC, dispatch policies, bounded logs/results and storage isolation. The
 [requirements roadmap](docs/roadmap.md) tracks the real-project review and follow-ups.

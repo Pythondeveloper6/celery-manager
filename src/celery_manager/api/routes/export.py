@@ -23,6 +23,8 @@ def export_tasks(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
+    started_by_me: bool = False,
     username: str = Depends(get_current_user),
 ):
     """Download every task run matching the list filters, as CSV or JSON.
@@ -37,6 +39,7 @@ def export_tasks(
     filters = {
         "status": status, "task_name": task_name, "q": q,
         "date_from": utc_bound(date_from), "date_to": utc_bound(date_to),
+            "initiator": (getattr(username, "subject", None) or str(username)) if started_by_me else initiator,
     }
     session_factory = request.app.state.cm_session_factory
 

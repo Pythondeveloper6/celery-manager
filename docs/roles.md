@@ -9,8 +9,8 @@ the role before it can.
 
 | Role | For | Can |
 |---|---|---|
-| `viewer` | People who watch: support, on-call shadowing, managers | Read operational data, subject to log access policy. Change nothing. |
-| `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, manage maintenance windows, skip single runs, and the worker controls you can undo from the dashboard. |
+| `viewer` | People who watch: support, on-call shadowing, managers | Read operational data, subject to log access policy; manage own browser sessions. No operational writes. |
+| `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, manage maintenance windows, skip single runs, review failure inbox entries, and the worker controls you can undo from the dashboard. |
 | `admin` | People who own the deployment | Everything, including purging queues, deleting or moving single queued messages, shutting down workers, changing branding and setting up alerts. |
 
 The server checks the role on every request that changes something. A
@@ -25,7 +25,7 @@ operator or admin for captured logs. See [production policies](production.md#saf
 
 | Action | Endpoint | Role needed |
 |---|---|---|
-| Look at anything: task lists and details, schedules, workers, queues, broker health, Insights, the audit log, the live stream | every `GET` | `viewer` |
+| Read task lists/details, schedules, workers, queues, broker health, Insights, audit log and live stream | corresponding `GET` routes; exceptions below | `viewer` (logs may require `log_view_role`) |
 | See a queue's depth history | `GET /api/queues/{name}/history` | `viewer` |
 | Export tasks to CSV or JSON | `GET /api/tasks/export` | `viewer` |
 | Create a backend schedule | `POST /api/schedules` | `admin` |
@@ -33,6 +33,18 @@ operator or admin for captured logs. See [production policies](production.md#saf
 | Delete a backend schedule | `DELETE /api/schedules/{name}` | `admin` |
 | Preview a new schedule | `POST /api/schedules/preview` | `viewer` |
 | Skip next or run a schedule now | `POST /api/schedules/{name}/skip-next`, `.../run-now` | `operator` |
+| Read worker heartbeat samples | `GET /api/workers/{worker}/heartbeats` | `viewer` |
+| Inspect singleton leases | `GET /api/locks` | `viewer` |
+| Conditionally release a singleton lease | `POST /api/locks/release` | `admin`; current lease ID and durable audit required |
+| Read failure review history | `GET /api/dead-letters/{task_id}/history` | `viewer` |
+| Acknowledge, ignore or reopen a failure | `POST /api/dead-letters/{task_id}/acknowledge`, `.../ignore`, `.../reopen` | `operator` |
+| Export scheduler definitions | `GET /api/schedule-reconciliation/export` | `viewer` |
+| Generate or apply an adoption/repair plan | `POST /api/schedule-reconciliation/plan`, `.../apply` | `admin` |
+| Import legacy schedule pauses (including dry-run) | `POST /api/schedules/pause-import` | `admin` |
+| Inspect beat owners and definition/consumer drift | `GET /api/health/beat`, `GET /api/schedules/health` | `viewer` |
+| Retire a recorded beat owner | `DELETE /api/health/beat/owner?owner_id=...` | `admin` |
+| List own tracked browser sessions | `GET /api/auth/sessions` | any signed-in role; own identity only |
+| Revoke own tracked browser session | `POST /api/auth/sessions/{session_id}/revoke` | any signed-in role; own identity only |
 | Bridge external authentication | `POST /api/auth/bridge` | `viewer` with fresh external authentication; opt-in |
 | Force cancellation of an unknown task ID | `POST /api/tasks/{id}/cancel?force=true` | `admin` |
 | Start a task | `POST /api/tasks/start` | `operator` |
@@ -145,9 +157,16 @@ Rules the server enforces, with the reason shown in the dashboard:
 **A password change signs the account out everywhere.** The session cookie
 carries a fingerprint of the account's password hash, checked on every
 request, so a reset or change ends every session issued before it. When you
-change your own password, the browser you did it in stays signed in. Cookies
-issued by earlier versions have no fingerprint, so upgrading signs everyone
-out once.
+change your own password, the browser you did it in stays signed in. Very old cookies without a password fingerprint fail that check. Cookies from
+before tracked sessions that do have a valid fingerprint remain stateless until
+expiry, password reset or signing-key rotation; they cannot be individually
+revoked. Newly issued cookies also carry a registered session ID. See
+[browser session compatibility](auth-sessions.md#upgrade-compatibility).
+
+Own-session list/revocation, singleton release, beat-owner retirement and CSV
+imports are documented API/CLI operations; this release does not add dedicated
+dashboard screens for them. Failure review and schedule adoption/repair do have
+dashboard controls. See [0.3 release scope](release-0.3.md).
 
 ### From the command line
 
@@ -227,7 +246,7 @@ Your app then decides each person's role, on every request, through a
 | Flask | none: you pass `role_for` | any function of your user object |
 | FastAPI | none: your function returns the role | anything your token or user record carries |
 
-The same three roles and the same table above apply; only where the role is
+The same three roles and the table above apply to both `/api` and `/api/v1`; only where the role is
 stored changes. Things to know:
 
 - **Changes apply on the next request**, as for local accounts: demote or

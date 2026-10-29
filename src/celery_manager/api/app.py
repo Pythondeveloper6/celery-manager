@@ -86,7 +86,7 @@ _READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 # The only state-changing routes that need no role: they run before (login)
 # or regardless of (logout) a session.
-PUBLIC_WRITE_ROUTES = frozenset({("POST", "/api/auth/login"), ("POST", "/api/auth/logout")})
+PUBLIC_WRITE_ROUTES = frozenset({("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("POST", "/api/v1/auth/login"), ("POST", "/api/v1/auth/logout")})
 
 
 def _role_of(call) -> str | None:
@@ -237,6 +237,8 @@ def create_app(config: CeleryManagerConfig):
                            allow_headers=["Authorization", "Content-Type"])
 
     from celery_manager.api.routes.health import router as health_router
+    from celery_manager.api.routes.locks import router as locks_router
+    app.include_router(locks_router)
     app.include_router(health_router)
     app.include_router(auth_routes.router)
     # Before task_routes: /api/tasks/export must win over /api/tasks/{task_id}.
@@ -247,6 +249,8 @@ def create_app(config: CeleryManagerConfig):
         router as schedule_backend_router,
     )
     app.include_router(schedule_backend_router)
+    from celery_manager.api.routes.schedule_reconcile import router as reconcile_router
+    app.include_router(reconcile_router)
     app.include_router(schedule_routes.router)
     app.include_router(maintenance_routes.router)
     app.include_router(audit_routes.router)
@@ -268,6 +272,9 @@ def create_app(config: CeleryManagerConfig):
         @app.get("/api/stream")
         def stream(request: Request, username: str = Depends(get_current_user)):
             return StreamingResponse(sse_stream(app.state.cm_event_bus), media_type="text/event-stream")
+
+    from celery_manager.api.versioning import install_v1
+    install_v1(app, list(iter_api_routes(app.routes)))
 
     # Fail closed: a new state-changing route that forgot `require_role`
     # would otherwise be open to every signed-in viewer. Refuse to build the

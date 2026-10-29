@@ -11,7 +11,15 @@ export type RuleKind =
   | "queue_wait"
   | "queue_growing"
   // RabbitMQ
-  | "rabbitmq_alarm";
+  | "rabbitmq_alarm"
+  | "task_failed"
+  | "consecutive_failures"
+  | "run_stuck"
+  | "worker_lost"
+  | "beat_stale"
+  | "task_sla"
+  | "duration_regression"
+  | "daily_digest";
 export type ChannelKind = "slack" | "webhook" | "email" | "teams";
 
 export interface AlertRule {

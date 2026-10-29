@@ -134,7 +134,7 @@ def test_run_now_is_allowlist_checked_and_skip_next_is_idempotent(env):
     config.startable_tasks = None
     with patch.object(app, "send_task", return_value=MagicMock(id="manual")) as send:
         assert client.post("/api/schedules/morning/run-now").status_code == 200
-        assert "headers" not in send.call_args.kwargs
+        assert send.call_args.kwargs["headers"] == {"cm_initiator": "person-4"}
     assert client.post("/api/schedules/morning/skip-next").status_code == 200
     assert client.post("/api/schedules/morning/skip-next").status_code == 200
     with sessions() as session:
@@ -172,7 +172,7 @@ def test_run_now_preserves_delivery_routing_without_occurrence_headers(env):
     assert send.call_args.kwargs["routing_key"] == "reports.priority"
     assert send.call_args.kwargs["priority"] == 7
     assert send.call_args.kwargs["expires"] == 60
-    assert send.call_args.kwargs["headers"] == {"domain": "stats"}
+    assert send.call_args.kwargs["headers"] == {"domain": "stats", "cm_initiator": "person-4"}
 
 
 def test_django_expiry_mapping_does_not_drop_absolute_or_relative_expiry():
@@ -185,3 +185,20 @@ def test_django_expiry_mapping_does_not_drop_absolute_or_relative_expiry():
     assert absolute["expires"] == timestamp and absolute["expire_seconds"] is None
     relative = adapter._fields(ScheduleEntry("relative", "task", schedule(60), options={"expires": 120}))
     assert relative["expires"] is None and relative["expire_seconds"] == 120
+
+
+def test_text_preview_explicit_timezone_survives_create_and_edit(env):
+    _, backend, _, _, client, _ = env
+    result = client.post("/api/schedules/preview", json={"type": "text", "text": "weekdays at 06:30", "timezone": "Europe/Berlin"})
+    assert result.status_code == 200
+    assert result.json()["timezone"] == "Europe/Berlin"
+    spec = result.json()["schedule"]
+    assert spec["timezone"] == "Europe/Berlin"
+    value = {**payload(), "schedule": spec, "options": {"queue": "reports", "priority": 5}}
+    assert client.post("/api/schedules", json=value).status_code == 200
+    assert str(backend.get("morning").schedule._cm_timezone) == "Europe/Berlin"
+    assert client.patch("/api/schedules/morning", json={"args": [9], "kwargs": {"x": 1}, "options": {"queue": "other"}}).status_code == 200
+    saved = backend.get("morning")
+    assert saved.args == [9] and saved.kwargs == {"x": 1} and saved.options == {"queue": "other"}
+    assert client.post("/api/schedules/preview", json={"type": "text", "text": "weekdays at 06:30", "timezone": "not/a-zone"}).status_code == 422
+    assert client.post("/api/schedules/preview", json={"type": "text", "text": "weekdays at 06:30", "timezone": []}).status_code == 422

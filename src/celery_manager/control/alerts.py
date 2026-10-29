@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 
 from sqlalchemy import update
 
+from celery_manager.alerts.depth import PARAMS as DEPTH_PARAMS
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import AlertChannel, AlertIncident, AlertRule
 
@@ -32,10 +33,11 @@ RULE_KINDS = (
     "broker_unreachable", "broker_memory", "queue_wait", "queue_growing",
     # RabbitMQ (control/rabbitmq.py).
     "rabbitmq_alarm",
+    *DEPTH_PARAMS,
 )
 # Kinds about the one broker rather than a named thing: their target is
 # always "*" whatever was sent, so a rule can't claim to watch "redis-2".
-BROKER_KINDS = ("broker_unreachable", "broker_memory")
+BROKER_KINDS = ("broker_unreachable", "broker_memory", "beat_stale")
 CHANNEL_KINDS = ("slack", "webhook", "email", "teams")
 
 MAX_NAME_LENGTH = 100
@@ -100,6 +102,8 @@ RULE_PARAMS: dict[str, dict[str, tuple[type, float, float, float]]] = {
     # disk alarm (publishers are blocked until it clears). Nothing to tune.
     "rabbitmq_alarm": {},
 }
+
+RULE_PARAMS.update(DEPTH_PARAMS)
 
 # Email addresses are only shape-checked: the mail server is the authority.
 # What matters here is that nothing can smuggle a header (CR/LF) or a second

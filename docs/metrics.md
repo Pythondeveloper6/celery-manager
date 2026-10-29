@@ -135,3 +135,16 @@ same cached snapshot every time your exporter collects. Only the API is
 needed to import the module; configure the SDK and exporter yourself. Without
 `opentelemetry-api`, `register` raises an `ImportError` that says which extra
 to install. The OpenTelemetry path does not need `metrics_token`.
+
+
+## Alongside an event exporter
+
+The package's metrics summarize stored observations and manager-specific state.
+For continuously accumulating event counters and a wider Grafana/Prometheus
+alerting stack, deploy an independent Celery event exporter alongside it.
+Keep exporter metric names and collection semantics separate from these
+windowed gauges; do not apply `rate()` to a DB-derived windowed gauge.
+Configure events on workers and authenticate network access to both scrape
+endpoints. Existing Prometheus/Alertmanager deployments can remain the
+notification authority while the dashboard supplies run links and manager
+controls. The manager does not install or operate that external stack.

@@ -16,6 +16,7 @@ import {
   type Worker,
   type WorkerSnapshot,
 } from "../api/workers";
+import { WorkerHeartbeatHistory } from "../components/WorkerHeartbeatHistory";
 import { IconX } from "../components/icons";
 import "../styles/workers.css";
 import { useCan } from "../lib/role";
@@ -304,6 +305,7 @@ function WorkerCard({
           )}
         </footer>
       )}
+      <WorkerHeartbeatHistory hostname={worker.name} />
     </article>
   );
 }

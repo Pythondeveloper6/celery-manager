@@ -139,3 +139,35 @@ Task ids with no recorded run are revoked too. Each cancel writes a `cancel`
 
 See [REST API → Workers](rest-api.md#workers) for the endpoints, request
 bodies and responses.
+
+## Recorded heartbeat history (0.3)
+
+The events listener stores one heartbeat observation per worker per UTC minute.
+An observation includes state (online/offline), the sender's event timestamp,
+active tasks and processed count when supplied. Repeated heartbeats in a minute
+update its bucket rather than appending unbounded rows. Recording is serialized
+under the same locked `WorkerState` row used for last-seen state, so concurrent
+listeners do not create duplicate minute samples.
+
+Events older than the worker's latest observation are ignored; late delivery does
+not rewind current state or rewrite history. If offline and online observations
+share a timestamp, offline wins. An ordinary later heartbeat can bring the worker
+online again. Missing samples mean missing observations, not proven downtime.
+
+`worker_heartbeat_retention_days=7` bounds retained history by default. `0` disables
+new history collection while continuing last-seen tracking; it does not immediately
+purge previously stored history. Positive values are limited to 3,650 days.
+Old samples are deleted hourly during collection and through the normal retention
+prune command. Keep this setting consistent between listener and API processes.
+Prune previews include `heartbeats_deleted` and do not delete samples in dry-run mode.
+
+Open **Recorded heartbeat history** on a worker card to load its active-task trend
+and observed-state table. Paging reads 60 samples at a time. This is the event
+listener's durable history, separate from the worker's current inspect reply.
+
+`GET /api/workers/{worker}/heartbeats` accepts `since` and `until` ISO timestamps,
+`limit` (1–1,000, default 120), and `offset` (0–1,000,000). Any authenticated role
+may read it. Naive input timestamps mean UTC; reversed ranges return 422. The
+response is `{items, total, limit, offset, retention_days}`. Items carry UTC
+`bucket_at`, `observed_at`, `state`, `active`, and `processed`. Unknown workers
+return an empty page. History is not a work-completion or availability guarantee.

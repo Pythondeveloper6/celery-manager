@@ -84,11 +84,12 @@ def test_start_forwards_queue_countdown_and_audits_them():
         assert '"queue": "slow"' in row.details
 
 
-def test_start_without_options_sends_no_extra_options():
+def test_start_without_delivery_options_stamps_only_actor():
     client, _ = _registered_client()
     with patch(SEND, return_value=MagicMock(id="n2"), create=True) as send:
         client.post("/api/tasks/start", json={"task_name": "demo.greet"})
-    assert set(send.call_args.kwargs) == {"args", "kwargs"}
+    assert set(send.call_args.kwargs) == {"args", "kwargs", "headers"}
+    assert send.call_args.kwargs["headers"] == {"cm_initiator": "alice"}
 
 
 def test_start_rejects_negative_countdown():

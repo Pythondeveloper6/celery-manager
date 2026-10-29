@@ -274,7 +274,31 @@ def main() -> None:
     prune_parser.add_argument("--dry-run", action="store_true", help="only report what would be deleted")
     prune_parser.add_argument("--batch-size", type=int, default=1000, help="rows per transaction (default 1000)")
 
+    import_parser = subparsers.add_parser("import-pauses", help="validate/import legacy schedule pauses from CSV")
+    _add_config_args(import_parser, required=False)
+    import_parser.add_argument("csv_file")
+    import_parser.add_argument("--actor", required=True)
+    import_parser.add_argument("--apply", action="store_true", help="apply after validation; default is dry-run")
+
     args = parser.parse_args()
+    if args.command == "import-pauses":
+        import json
+        from pathlib import Path
+
+        from celery_manager.control.pause_import import MAX_BYTES, import_pauses
+        from celery_manager.runtime import setup
+        config = _load_config(args.config, args.celery_app, args.db_url)
+        sessions = setup(config)
+        path = Path(args.csv_file)
+        if path.stat().st_size > MAX_BYTES:
+            parser.error("CSV must be at most 1 MB")
+        try:
+            with sessions() as session:
+                print(json.dumps(import_pauses(session, path.read_text(), args.actor, dry_run=not args.apply)))
+        except ValueError as exc:
+            parser.error(str(exc))
+        return
+
 
     if args.command == "prune":
         sys.exit(prune_command(args.db_url, dry_run=args.dry_run, batch_size=args.batch_size, db_schema=args.db_schema))

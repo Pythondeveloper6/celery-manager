@@ -79,3 +79,30 @@ migration; it is left out until then.
 | `POST` | `/api/dead-letters/rerun` | `operator` |
 
 See the [REST API reference](rest-api.md#dead-letters).
+
+## Acknowledge, ignore and reopen (0.3)
+
+The failure inbox excludes failed runs whose current resolution is acknowledged
+or ignored. Their task rows, logs and traceback remain readable; acknowledgement
+is a workflow decision, not a change to Celery's execution result. Reopening makes
+a still-unretried failure appear in the inbox again.
+
+Use **Review failure** next to a run, or enter its full task ID in the failure
+history panel. Operators can acknowledge, ignore or reopen with an optional note
+(up to 2,000 characters). Viewers can inspect the history. Each transition records
+actor, stable subject when available, note and timestamp, and writes an audit
+entry. Repeating the same state and note is idempotent. History has no foreign key
+to task runs so run-retention pruning does not delete it.
+
+| Route | Minimum role |
+|---|---|
+| `POST /api/dead-letters/{task_id}/acknowledge` | operator |
+| `POST /api/dead-letters/{task_id}/ignore` | operator |
+| `POST /api/dead-letters/{task_id}/reopen` | operator |
+| `GET /api/dead-letters/{task_id}/history` | viewer |
+
+POST bodies are optional `{ "note": "Investigating upstream timeout" }` objects.
+Only failed runs can be resolved (409 otherwise), and unknown task IDs return
+404 on writes. History is ordered oldest first and can be read after the original
+run is pruned. Reopening an already retried failure does not undo its retry lineage
+or put it back in the unretried inbox.
