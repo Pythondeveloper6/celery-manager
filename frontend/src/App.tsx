@@ -29,6 +29,8 @@ import { HeldTasks } from "./pages/HeldTasks";
 import { RabbitDeadLetters } from "./pages/RabbitDeadLetters";
 import { Users } from "./pages/Users";
 import { Alerts } from "./pages/Alerts";
+import { Operations } from "./pages/Operations";
+import { installOperatorSafeguards } from "./lib/safeguards";
 
 // Unmatched hash paths render a real page inside the shell rather than a
 // blank body, which reads as a broken app rather than a bad URL.
@@ -59,6 +61,8 @@ export function App() {
   const [checkError, setCheckError] = useState<string | null>(null);
   // The host app signed this person in but gave them no role here.
   const [noAccess, setNoAccess] = useState<string | null>(null);
+
+  useEffect(() => installOperatorSafeguards(authOptions.environment || "", authOptions.sensitive_actions || []), [authOptions]);
 
   const runCheck = useCallback(() => {
     setChecked(false);
@@ -132,6 +136,7 @@ export function App() {
       <AuthOptionsContext.Provider value={authOptions}>
       <SourceContext.Provider value={user.source}>
       <RoleContext.Provider value={user.role}>
+      {authOptions.tenant_scoped && <p className="cm-notice" role="status">Tenant: {user.tenant_id ?? "scoped"} · Read-only task history. Global operations are unavailable.</p>}
         {/* "You" on the Users page means your local account. Someone the
             host signed in is not the local account that shares their name. */}
         <UsernameContext.Provider value={user.source === "local" ? user.username : null}>
@@ -153,6 +158,7 @@ export function App() {
             <Route path="/rabbitmq/dead-letters" element={<RabbitDeadLetters />} />
             <Route path="/users" element={<Users />} />
             <Route path="/alerts" element={<Alerts />} />
+              <Route path="/operations" element={<Operations />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AppShell>

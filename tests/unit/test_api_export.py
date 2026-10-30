@@ -54,7 +54,7 @@ def test_export_csv_columns_and_headers():
     rows = list(csv.DictReader(io.StringIO(response.text)))
     assert list(rows[0].keys()) == [
         "task_id", "task_name", "status", "queue", "worker", "args", "kwargs",
-        "started_at", "finished_at", "runtime_seconds", "retry_count", "exception", "schedule_name",
+        "started_at", "finished_at", "runtime_seconds", "retry_count", "exception", "schedule_name", "source", "tenant_id", "operation_key", "correlation_id",
     ]
     assert [r["task_id"] for r in rows] == ["c", "b", "a"]  # newest first
     assert rows[2]["retry_count"] == "2" and rows[2]["exception"] == "Boom"

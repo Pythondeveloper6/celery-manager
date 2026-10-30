@@ -50,6 +50,9 @@ def get_current_principal(
     needs the principal shares one call per request (FastAPI caches a
     dependency within a request), so the host is asked once, not per use.
     """
+    cached = getattr(request.state, "cm_tenant_principal", None)
+    if cached is not None:
+        return cached
     config = request.app.state.cm_config
     # The host app first. Its answer is authoritative whenever it has one:
     # someone signed in to the host is that person here too, whatever stale
@@ -141,13 +144,15 @@ def require_role(role: str):
     401, from ``get_current_principal``."""
     validate_role(role)
 
-    def dependency(principal: Principal) -> str:
+    def dependency(principal: Principal, request: Request) -> str:
         if not role_allows(principal.role, role):
             raise HTTPException(
                 status_code=403,
                 # Shown as-is by the dashboard, so written for a person.
                 detail=f"Not allowed: this action needs the {role} role (you are {principal.role}).",
             )
+        from celery_manager.safeguards import enforce_sensitive_action
+        enforce_sensitive_action(request, principal)
         return Actor(principal)
 
     setattr(dependency, REQUIRED_ROLE_ATTR, role)

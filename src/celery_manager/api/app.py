@@ -207,7 +207,8 @@ def create_app(config: CeleryManagerConfig):
 
     from celery_manager.schedulers.service import ScheduleService
     config._schedule_service = ScheduleService(config, session_factory)
-    config._schedule_service.refresh(force=True)
+    if config.celery_app is not None:
+        config._schedule_service.refresh(force=True)
 
     app = FastAPI(title="celery-manager")
     from celery_manager.control.policy import DispatchDenied
@@ -216,8 +217,12 @@ def create_app(config: CeleryManagerConfig):
     async def denied(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
 
+    from celery_manager.api.monitoring import MonitoringOnlyMiddleware
+    app.add_middleware(MonitoringOnlyMiddleware, config=config)
     app.state.cm_config = config
     app.state.cm_session_factory = session_factory
+    from celery_manager.tenancy import install_tenant_isolation
+    install_tenant_isolation(app, session_factory, config)
     # The bus polls the DB change feed for writes made by other processes
     # (events listener, workers); see api/sse.py.
     app.state.cm_event_bus = EventBus(session_factory, poll_interval=config.live_poll_interval_seconds)
@@ -234,12 +239,16 @@ def create_app(config: CeleryManagerConfig):
         from starlette.middleware.cors import CORSMiddleware
         app.add_middleware(CORSMiddleware, allow_origins=list(config.trusted_origins),
                            allow_credentials=True, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-                           allow_headers=["Authorization", "Content-Type"])
+                           allow_headers=["Authorization", "Content-Type", "X-CM-Action-Reason", "X-CM-Confirm-Environment"])
 
     from celery_manager.api.routes.health import router as health_router
     from celery_manager.api.routes.locks import router as locks_router
     app.include_router(locks_router)
     app.include_router(health_router)
+    from celery_manager.api.routes.custom_health import router as custom_health_router
+    from celery_manager.api.routes.operations import router as operations_router
+    app.include_router(custom_health_router)
+    app.include_router(operations_router)
     app.include_router(auth_routes.router)
     # Before task_routes: /api/tasks/export must win over /api/tasks/{task_id}.
     app.include_router(export_routes.router)

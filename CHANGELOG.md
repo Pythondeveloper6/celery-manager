@@ -8,12 +8,35 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [0.3.0a1] — 2026-10-29
 
-One report-driven release candidate. Monitoring migrations now reach `0017`.
+One report-driven release candidate. Monitoring migrations now reach `0020`.
 See the [release guide](docs/release-0.3.md) for deployment, compatibility and
 explicit remaining work. Live database/Redis and application rollout gates
 must pass before treating this candidate as production-validated.
 
 ### Added
+
+- Host-owned synchronous/async job observations through `RunObserver`, including
+  queued/start/success/failure/skip/interruption lifecycle, default fail-open
+  telemetry health, sanitized bounded metadata and explicit result opt-in.
+  `celery_app=None` supports observation-only deployments without inventing a
+  broker or replacing the host executor.
+- Trusted tenant-resolved, SQL-scoped read-only task history, counts, exports,
+  workflow/related attempts and failure review reads. Missing scope fails closed;
+  admin cannot bypass global-view/write/event restrictions.
+- Correlation and operation-key metadata, trusted Celery publish context, and
+  same-tenant related/duplicate attempt visibility without duplicate suppression
+  or an exactly-once guarantee. Operator retries/reruns preserve original
+  business/tenant context while identifying the acting operator separately.
+- Explicit host-collected numeric health probes, outbox aggregate helper,
+  freshness/timeout handling and custom-probe alerts. Independent scheduler
+  registrations track heartbeat and expected commands before first observation.
+- Read-only `doctor` CLI/Python preflight with optional outbound checks, and an
+  admin dashboard preflight view. No automatic repair or schema initialization.
+- Environment-scoped deployment/planned-maintenance annotations and Operations
+  health UI. Annotations do not pause jobs or suppress alerts.
+- Opt-in audited sensitive-action reason/environment preconditions, enforced
+  after roles and surfaced by dashboard prompts and capability metadata.
+
 
 - Optional SQLAlchemy Celery Beat backend and stamping scheduler, explicit SQL
   authority/initialization, lossless export, reviewed adoption/repair plans,

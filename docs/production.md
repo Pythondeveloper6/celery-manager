@@ -38,7 +38,11 @@ per-user decision. Unknown names return 422; policy refusals return 403 and are
 audited. Start, retries, bulk retries, failed-run reruns and schedule run-now share
 the policy. A per-task Pydantic model in `args_schemas` validates bound task
 arguments strictly before publication. Queue overrides require explicit opt-in;
-failed-run reruns preserve the original queue.
+failed-run reruns preserve the original queue. Manager retries and failed-run
+reruns preserve the original tenant, correlation ID, operation key and approved
+metadata under the current metadata policy, while recording the acting operator
+as initiator. Invalid stored context fails before publication; bulk requests
+validate every selected row before dispatch.
 
 Single cancellation of an unknown task ID returns 404. An admin may deliberately
 use `?force=true`. Bulk and broker-held-message controls keep their existing
@@ -249,3 +253,14 @@ Microsoft Teams channels use Workflows webhooks with Adaptive Cards and the
 existing alert incident/dedup/delivery machinery. Webhook URLs remain write-only.
 Existing failure-rate, missed-run and worker-offline alerts remain available;
 new health findings do not yet introduce separate alert rule kinds.
+
+
+## Host-owned execution and native operations
+
+The same 0.3 candidate also supports observation-only deployments without a
+Celery application. See [real-world operations](real-world-operations.md) for
+RunObserver, custom probes/outbox metrics, independent scheduler expectations,
+correlation/duplicate visibility, doctor, annotations and action safeguards.
+[Tenant history mode](tenancy.md) is a stricter read-only HTTP boundary, separate
+from initiator filters and ordinary manager-wide roles. Monitoring storage must
+still be provisioned and migrated deliberately when runtime DDL is disabled.

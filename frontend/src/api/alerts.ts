@@ -19,7 +19,9 @@ export type RuleKind =
   | "beat_stale"
   | "task_sla"
   | "duration_regression"
-  | "daily_digest";
+  | "daily_digest"
+  | "custom_probe"
+  | "scheduler_stale";
 export type ChannelKind = "slack" | "webhook" | "email" | "teams";
 
 export interface AlertRule {

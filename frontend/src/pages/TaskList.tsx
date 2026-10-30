@@ -1,3 +1,4 @@
+import { useAuthOptions } from "../lib/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { bulkRetryTasks, listTasks, subscribeToUpdates, type BulkCancelResult, type StreamState, type TaskSummary } from "../api/tasks";
@@ -342,7 +343,9 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
 export function TaskList() {
   // Viewers get no selection column, bulk bar or Start button; the server
   // would refuse those actions anyway (403).
-  const canOperate = useCan("operator");
+  const isOperator = useCan("operator");
+  const options = useAuthOptions();
+  const canOperate = isOperator && !options.monitoring_only;
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [total, setTotal] = useState(0);
 
@@ -596,7 +599,7 @@ export function TaskList() {
   // guarantees "selected never contains an id that isn't currently
   // visible," which the filter-only reset does not.
   useEffect(() => {
-    const visibleIds = new Set(tasks.map((t) => t.task_id));
+    const visibleIds = new Set(tasks.filter((t) => t.source === "celery").map((t) => t.task_id));
     setSelected((prev) => {
       let changed = false;
       const next = new Set<string>();
@@ -1209,6 +1212,7 @@ export function TaskList() {
                               <span className="cm-checkbox">
                                 <input
                                   type="checkbox"
+                                  disabled={t.source !== "celery"}
                                   checked={selected.has(t.task_id)}
                                   onChange={() => toggle(t.task_id)}
                                   aria-label={`Select ${t.task_name} (${t.task_id}) for bulk actions`}

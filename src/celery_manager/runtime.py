@@ -82,5 +82,8 @@ def setup(config: CeleryManagerConfig):
             _current = (config, engine, session_factory)
             config._cm_runtime_record = _current
             _engines.add(engine)
-        _configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds, config=config)
+        # A monitoring-only runtime must not change an existing Celery app's
+        # decorator globals or claim to be a Celery executor.
+        if config.celery_app is not None:
+            _configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds, config=config)
         return session_factory

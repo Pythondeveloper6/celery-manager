@@ -47,33 +47,38 @@ CI job is not evidence that its live gate has run successfully for this release.
 | F10 | Stable API and embedded status UI | Candidate /api/v1 aliases, OpenAPI and dependency-free authenticated task-status widget. Generated language-specific SDKs remain deferred. |
 | F12 | Beat liveness and missed runs | Candidate durable per-owner tick observations, aggregate/owner health, stale-beat rule and external dead-man ping independent of DB writes; unknown owners remain unknown. Missed-run inference still starts from observed schedule identity. |
 | F13 | Drift/orphan health | Candidate unregistered tasks, historical definitions missing from current backend, definition drift and opt-in observed queue consumers. Empty/failed worker inspection is unknown. Arbitrary orphan Redis-key discovery/deletion is deferred. |
-| F14 | Singleton task execution | Candidate track(singleton=...) with explicit keys, Redis owner-token leases, renewal/expiry and skip/retry conflicts; bounded inspection and conditional audited release APIs. No process-local production fallback, fencing guarantee or dedicated lock dashboard. |
+| F14 | Singleton task execution | Candidate track(singleton=...) with explicit keys, Redis owner-token leases, renewal/expiry and skip/retry conflicts; bounded inspection and conditional audited release APIs. No process-local production fallback or fencing guarantee; the dashboard includes bounded inspection and explicit release confirmation. |
 
-## Additional high-value features
+## Native operability from the follow-up review
 
-These follow from the same real-world operating conditions, beyond the original
-review. They are collected requirements, not promises that unfinished features
-are already in the release.
+These ten capabilities are implemented in the same 0.3.0a1 candidate. Detailed
+Python/API signatures, deployment requirements and limitations are in
+[real-world operations](real-world-operations.md). “Candidate” remains a local
+implementation status, not a completed live-rollout claim.
 
-1. **Preflight diagnostics.** A `doctor` command should test configured storage,
-   migrations, broker access, task registration, worker consumers, scheduler
-   stamping, event visibility and auth configuration, with actionable errors and
-   no destructive operations. This would shorten the first production rollout.
-2. **Calendar policy.** Per-entry timezones and previews now ship. A dedicated
-   transition preview, holiday/business calendars and custom repeated/missing
-   local-time policy remain future work; current behavior follows Celery.
-3. **Publish/execute correlation.** Carry an application request ID and trace
-   context through producer, task, retry and workflow lineage so operators can
-   move between their application logs and task history.
-4. **Environment-aware safeguards.** Clearly label production/staging, support
-   read-only mode and require a reason for sensitive operator actions. Task
-   policies remain the enforcement layer.
-5. **Observability resilience.** Reconnect the listener after broker/DB outages,
-   expose collection lag and dropped-write counters, and bound event queues.
-   Operators need to know when an empty dashboard means missing observations.
-6. **Policy-aware task forms.** Reuse argument schemas to render constrained
-   inputs and explain which tasks or argument edits a user can perform before
-   they submit a request that will be refused.
+| Requirement | Candidate scope and boundary |
+|---|---|
+| 1. Observe non-Celery jobs | RunObserver sync/async contexts and decorators; monitoring-only config accepts no Celery app. Host retains its runner and controls. |
+| 2. Tenant visibility/permissions | Trusted sync/async resolver, SQL scoping before paging/count/export, hidden foreign lineage and same-tenant related attempts. Read-only tenant mode denies all writes/global views/events even for admin. |
+| 3. Durable background-work diagnostics | Queued, started and terminal observations; host-reported/cancellation interruption and telemetry health. No new delivery engine, hard-kill inference or automatic resume. |
+| 4. Custom probes/outbox | Explicit host-collected bounded numeric snapshots, timeout/freshness unknown state, outbox depth/oldest age/exhaustion/latency helper and custom-probe alerts. No host-schema discovery or outbox draining. |
+| 5. Scheduler instance expectations | Registered instances, monotonic heartbeat/command observations and first-due checks before first observation; advisory health/UI and alerts. No scheduler replacement or leader election. |
+| 6. Request/business correlation | Tenant/correlation/operation IDs plus sanitized allowlisted metadata; trusted publish hook and observation context. Instrumentation must be installed in publishing processes. |
+| 7. Duplicate visibility | Operation-key Python lookup and same-tenant operation/correlation related-run UI/API. Matching keys never suppress execution and do not provide exactly-once semantics. |
+| 8. Preflight | Read-only doctor CLI/Python and admin Operations view; broker/worker checks are explicit opt-ins. A pass is not end-to-end certification or automatic repair. |
+| 9. Deployment/maintenance context | Environment-scoped audited annotations in API/UI. Notes do not automatically pause jobs, suppress alerts or replace schedule maintenance windows. |
+| 10. Sensitive action safeguards | Opt-in audited reason and exact environment confirmation on enumerated HTTP actions, after role checks. CLI/Python calls retain their own administrative boundary. |
+
+## Remaining high-value work
+
+- Dedicated calendar transition previews, holiday/business calendars and custom
+  missing/repeated-local-time policy; current calendar semantics follow Celery.
+- Listener resilience diagnostics beyond current observer health: cross-process
+  collection lag, dropped-write counters and bounded event-queue instrumentation.
+- Policy-aware task forms generated from argument schemas.
+- Configurable monitoring table prefixes and generated language SDKs.
+- Arbitrary orphan-key discovery/deletion, automatic transactional cross-backend
+  repair and business-specific compensation remain outside this release.
 
 ## Release verification
 

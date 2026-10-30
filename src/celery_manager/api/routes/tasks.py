@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from celery_manager.api.deps import Principal, get_current_user, require_operator
@@ -74,6 +74,8 @@ def list_tasks(
             "items": [
                 {
                     "task_id": r.task_id,
+                    "source": r.source, "tenant_id": r.tenant_id, "operation_key": r.operation_key,
+                    "correlation_id": r.correlation_id, "context_json": r.context_json,
                     "task_name": r.task_name,
                     "status": r.status,
                     "started_at": utc(r.started_at),
@@ -101,6 +103,8 @@ def registered(request: Request, principal: Principal):
     """Task names registered on the Celery app, for the dashboard's task picker."""
     from celery_manager.control.policy import task_allowed
     config = request.app.state.cm_config
+    if config.celery_app is None:
+        return {"items": []}
     return {"items": [t for t in list_registered_tasks(config.celery_app) if task_allowed(config, t["name"], principal)]}
 
 
@@ -111,8 +115,14 @@ def get_task(task_id: str, request: Request, principal: Principal):
         run = get_task_run(session, task_id)
         if run is None:
             raise HTTPException(status_code=404, detail="not found")
+        from celery_manager.tenancy import current_tenant
+        scoped = current_tenant() is not None
+        def visible_reference(value):
+            return value if not scoped or (value and get_task_run(session, value) is not None) else None
         return {
             "task_id": run.task_id,
+            "source": run.source, "tenant_id": run.tenant_id, "operation_key": run.operation_key,
+            "correlation_id": run.correlation_id, "context_json": run.context_json,
             "task_name": run.task_name,
             "status": run.status,
             "args": run.args,
@@ -151,12 +161,12 @@ def get_task(task_id: str, request: Request, principal: Principal):
             # retried from, and the runs retried from it. `retried_by` is a
             # list because an operator can retry the same failed run more than
             # once, and each attempt is its own run.
-            "retried_from_id": run.retried_from_id,
+            "retried_from_id": visible_reference(run.retried_from_id),
             "retried_by": [r.task_id for r in list_retries_of(session, task_id)],
             # Workflow lineage (chain/group/chord); see GET /{task_id}/workflow.
-            "parent_id": run.parent_id,
-            "root_id": run.root_id,
-            "group_id": run.group_id,
+            "parent_id": visible_reference(run.parent_id),
+            "root_id": visible_reference(run.root_id),
+            "group_id": None if scoped else run.group_id,
         }
 
 
@@ -318,3 +328,19 @@ def cancel_bulk(payload: BulkCancelRequest, request: Request, username: str = De
             )
         except BulkCancelTooLarge as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/{task_id}/related")
+def related_runs(task_id: str, request: Request, kind: str = "operation", limit: int = Query(100, ge=1, le=500), username: str = Depends(get_current_user)):
+    from celery_manager.db.identity import exact_identity
+    from celery_manager.db.models import TaskRun
+    if kind not in ("operation", "correlation"):
+        raise HTTPException(422, "kind must be operation or correlation")
+    with request.app.state.cm_session_factory() as session:
+        run = get_task_run(session, task_id)
+        if run is None:
+            raise HTTPException(404, "not found")
+        column = TaskRun.operation_key if kind == "operation" else TaskRun.correlation_id
+        value = run.operation_key if kind == "operation" else run.correlation_id
+        rows = session.query(TaskRun).filter(exact_identity(TaskRun.tenant_id, run.tenant_id), exact_identity(column, value)).order_by(TaskRun.id.desc()).limit(limit + 1).all() if value else []
+        return {"items": [{"task_id": row.task_id, "task_name": row.task_name, "status": row.status} for row in rows[:limit]], "has_more": len(rows) > limit, "kind": kind}

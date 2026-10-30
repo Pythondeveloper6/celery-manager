@@ -30,10 +30,16 @@ def auth_options(request: Request):
     accounts "local". ``login_url`` may contain ``{next}`` for the dashboard
     to fill in with its own address."""
     config = request.app.state.cm_config
+    from celery_manager.safeguards import action_contract
     return {
+        "environment": config.environment_name,
+        "sensitive_actions": action_contract() if config.operator_safeguards else [],
+        "monitoring_only": config.celery_app is None,
         "local_login": config.local_login_enabled,
         "external": config.authenticate_request is not None or bool(config.principal_providers),
-        "live_stream": config.live_stream,
+        "live_stream": "poll" if config.tenant_resolver is not None else config.live_stream,
+        "tenant_scoped": config.tenant_resolver is not None,
+        "read_only": config.tenant_resolver is not None,
         "allow_queue_override": config.allow_queue_override,
         "retry_edit_args": config.retry_edit_args,
         "provider_name": config.login_provider_name,
@@ -118,13 +124,13 @@ def logout(request: Request, response: Response):
 
 
 @router.get("/whoami")
-def whoami(principal: Principal):
+def whoami(principal: Principal, request: Request):
     """The signed-in account and its role. The dashboard uses the role only
     to hide controls the account can't use; the server checks it again on
     every state-changing request. ``source`` is ``"local"`` for
     celery-manager's own accounts and ``"external"`` for someone the host
     app signed in, whose password and sign-out belong to the host."""
-    return {"username": principal.username, "role": principal.role, "source": principal.source, **({"subject": principal.subject} if principal.subject else {})}
+    return {"username": principal.username, "role": principal.role, "source": principal.source, **({"tenant_id": request.state.cm_tenant_id} if hasattr(request.state, "cm_tenant_id") else {}), **({"subject": principal.subject} if principal.subject else {})}
 
 
 @router.post("/auth/bridge")

@@ -54,6 +54,11 @@ Operators (see [Roles](roles.md)) can:
 At most 500 runs can be run again in one go. Selection survives paging and
 filtering, so you can pick runs across pages.
 
+Reruns preserve the original tenant, correlation ID, operation key and approved
+metadata under the current metadata policy. The new initiator identifies the
+acting operator. External observations stay visible for diagnosis but cannot be
+rerun through Celery controls.
+
 Everything is checked before anything is sent. If a selected run is no longer
 a dead letter (someone else ran it again first), or its stored arguments cannot
 be read back, nothing is dispatched and the message says why. For stored
@@ -65,11 +70,11 @@ After a run the page shows links to the new runs. Each run is written to the
 [audit log](rest-api.md#audit-log) as `rerun_dead_letter`, with whether the
 arguments were changed (and the arguments sent, when they were).
 
-## Not included
+## Reviewing without rerunning
 
-There is no "dismiss" for a dead letter you don't intend to run again.
-Remembering that choice needs a column to keep it in, which means a database
-migration; it is left out until then.
+Use acknowledge or ignore to remove a failure from the active inbox without
+changing its execution result. Reopen restores an otherwise eligible failure;
+see the review API below.
 
 ## REST API
 

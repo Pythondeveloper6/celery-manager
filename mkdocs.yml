@@ -109,6 +109,8 @@ nav:
       - Integrating with your app: integrations.md
       - Production adoption: production.md
       - 0.3 release guide: release-0.3.md
+      - Real-world operations: real-world-operations.md
+      - Tenant-scoped history: tenancy.md
       - API and embedding: embedding.md
       - Browser sessions: auth-sessions.md
       - Beat liveness: beat-liveness.md

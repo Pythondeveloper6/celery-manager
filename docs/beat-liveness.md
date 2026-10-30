@@ -82,3 +82,9 @@ refused. URL paths and query parameters may contain monitoring tokens, so neithe
 the URL nor request exceptions appear in external ping logs. A failed ping logs
 a generic warning and never stops scheduling. No successful task execution is
 implied by a successful ping: use task alerts alongside scheduler liveness.
+
+
+For a host scheduler that is not Celery Beat, use the separate
+[instance and expected-command registry](real-world-operations.md#independent-scheduler-liveness-and-expected-commands).
+It checks first-due commands from registration and does not require a Celery task
+history row. It is advisory observation, not scheduling or leader election.

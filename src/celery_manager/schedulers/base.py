@@ -45,6 +45,8 @@ class StaticBeatBackend:
         self.app = celery_app
 
     def list(self):
+        if self.app is None:
+            return []
         return [ScheduleEntry(name, e["task"], maybe_schedule(e["schedule"], app=self.app),
                               list(e.get("args") or []), dict(e.get("kwargs") or {}),
                               dict(e.get("options") or {}), source=self.name)

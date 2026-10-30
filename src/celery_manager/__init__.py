@@ -33,6 +33,7 @@ from celery_manager import control
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.decorator import track
 from celery_manager.links import task_url
+from celery_manager.observation import RunObserver, current_run
 from celery_manager.progress import report_progress
 from celery_manager.publish import install_publish_hook
 from celery_manager.runtime import setup
@@ -41,8 +42,10 @@ __version__ = "0.3.0a1"
 
 __all__ = [
     "CeleryManagerConfig",
+    "RunObserver",
     "__version__",
     "control",
+    "current_run",
     "install_publish_hook",
     "report_progress",
     "setup",

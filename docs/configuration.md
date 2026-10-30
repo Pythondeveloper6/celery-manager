@@ -24,7 +24,7 @@ config = CeleryManagerConfig(
 
 | Field | Type | Default | What it affects |
 |---|---|---|---|
-| `celery_app` | `celery.Celery` | *required* | Your application's Celery instance. Used for task introspection (dispatching tasks via `send_task`, reading `beat_schedule` to compute upcoming occurrences) and control calls (`revoke`/`terminate`). The API app and the events listener must both be given the *same* Celery app configuration (same broker, same `beat_schedule`) or their views of the world will disagree. |
+| `celery_app` | `celery.Celery \| None` | `None` | `None` enables monitoring-only host-job observations; Celery execution/broker/schedule controls return 409. Supply your application's Celery instance for task introspection (dispatching tasks via `send_task`, reading `beat_schedule` to compute upcoming occurrences) and control calls (`revoke`/`terminate`). The API app and the events listener must both be given the *same* Celery app configuration (same broker, same `beat_schedule`) or their views of the world will disagree. |
 | `db_url` | `str` | `"sqlite:///celery_manager.db"` | SQLAlchemy connection URL for celery-manager's own storage (task runs, schedules, overrides, users, audit log — see `celery_manager.db.models`). Any SQLAlchemy-supported backend works; swap to Postgres/MySQL/etc. for production. For `sqlite:///:memory:` specifically, the engine is built with `StaticPool` so every connection shares one in-memory database — needed for it to behave sensibly under FastAPI's threadpool (as used in the test suite); other SQLite URLs use `check_same_thread=False` instead. Every process that needs to see the same data (API app + events listener) must point at the same `db_url`. |
 | `secret_key` | `str` | `"change-me"` (a placeholder) | Signs session cookies for the built-in cookie-based auth (`itsdangerous.URLSafeTimedSerializer`, sessions valid for `session_max_age_seconds`, default 7 days). Anyone who knows the key can forge a valid session cookie for any username, so **`create_app()` raises `ValueError` and refuses to start if it is empty or still `"change-me"`** — set a private random value in every process that serves the dashboard, local development included. Processes that don't serve HTTP (Celery workers calling `celery_manager.setup()`, the events listener) never sign sessions and may leave the default. Rotating it invalidates every existing session (users are signed out). See [`secret_key` in production](#secret_key-in-production). |
 | `eta_tolerance_seconds` | `int` | `60` | How far apart two timestamps of the same occurrence may be: an interval-schedule occurrence stamped by beat vs. a saved `target_time` (in `@track`, capped at half the interval), and a saved `target_time` vs. a recomputed occurrence (in `GET /api/schedules/{name}/occurrences`). It is compared with "now" only for messages without occurrence headers while beat has never stamped any (see [How the skip/cancel check works](decorator.md#how-the-skipcancel-check-works)). See the trade-off below. |
@@ -362,6 +362,7 @@ through its existing persistent rules; it is not replaced by a new config flag.
 
 | Option | Default | Meaning |
 |---|---|---|
+| `tenant_resolver` | `None` | Trusted sync/async `(request, principal)` callable returning a tenant ID. Opts HTTP access into fail-closed, read-only task-history isolation; all global operational surfaces and writes are denied, including for admin. See [tenant scope](tenancy.md). |
 | `lock_provider` | `None` | Explicit cross-process `LockProvider` for singleton execution. Redis brokers infer a Redis provider; other brokers require an explicit provider. There is no process-local production fallback. |
 | `login_backoff_threshold` | `5` | Positive integer: initially admitted local login attempts before exponential backoff begins. Shared account and direct-peer budgets apply. |
 | `login_backoff_max_seconds` | `300` | Positive integer: maximum local login backoff delay. |
@@ -392,3 +393,29 @@ Beat-process settings are Celery app configuration, **not**
 See [beat liveness](beat-liveness.md) for failure semantics, owner retirement and
 external service configuration. A tick ping establishes scheduler liveness,
 not task success or leader election.
+
+
+## Native observation and operations options
+
+See [real-world operations](real-world-operations.md) for working host-runner,
+probe, scheduler and preflight examples. These features remain in the same 0.3
+release; they do not require converting a host executor to Celery.
+
+| Option | Default | Contract |
+|---|---|---|
+| `observer_fail_open` | `True` | Persistence failures report telemetry health without failing or retrying host work. A `RunObserver(..., fail_open=...)` can override this. Input validation still rejects invalid instrumentation. |
+| `observer_context_max_bytes` | `16384` | Integer of at least 64; oversized sanitized metadata is replaced by an explicit truncation object. Also bounds publish-hook metadata. |
+| `observer_metadata_keys` | `("integration", "request_id", "trace_id", "environment", "deployment_id", "resource_id")` | Metadata allowlist; a custom tuple restricts keys, `None` admits all keys before sanitation and limits. Identifiers such as tenant/correlation/operation remain separate fields. |
+| `observer_error_callback` | `None` | Callable receiving sanitized observer health after telemetry failure. Callback errors are contained. |
+| `observer_store_results` | `False` | Opt into sanitized, bounded results for external observations. Uses the existing result size policy; no automatic argument capture. |
+| `environment_name` | `""` | Printable public deployment label, at most 100 characters. Namespaces operation annotations and labels the UI/action audit. It is not a tenant boundary. |
+| `operator_safeguards` | `False` | Require an audited reason and exact environment confirmation for the documented sensitive HTTP actions. Requires a nonblank `environment_name`. Role/task policies still apply. |
+| `health_probes` | `()` | Up to 32 unique `ProbeDefinition(name, provider)` objects. Providers run only during explicit host collection, never on a health GET. |
+| `probe_timeout_seconds` | `3.0` | Finite 0.01–30 seconds; bound collection waiting. A hung synchronous provider remains single-flight rather than being forcibly killed. |
+| `probe_freshness_seconds` | `120.0` | Finite 1–86400 seconds; older probe observations become unknown on reads. Alert rules can set their own freshness threshold. |
+| `health_observation_retention_days` | `7` | Integer 1–3650; explicit collection removes expired latest probe snapshots in bounded batches. This is not a metrics time series. |
+
+`tenant_resolver` is documented above and in [tenant security](tenancy.md).
+Configure it at application construction; do not toggle it per request. Runtime
+monitoring writes remain global, while HTTP reads are request-scoped. Provision
+and migrate monitoring storage separately when using `auto_migrate=False`.

@@ -15,7 +15,7 @@ DEFAULT_EXPORT_MAX_ROWS = 50_000
 
 EXPORT_COLUMNS = [
     "task_id", "task_name", "status", "queue", "worker", "args", "kwargs",
-    "started_at", "finished_at", "runtime_seconds", "retry_count", "exception", "schedule_name",
+    "started_at", "finished_at", "runtime_seconds", "retry_count", "exception", "schedule_name", "source", "tenant_id", "operation_key", "correlation_id",
 ]
 
 # How many rows are pulled from the database per round trip.
@@ -52,6 +52,7 @@ def _iso(value: datetime | None) -> str | None:
 
 def _row(run: TaskRun) -> dict:
     return {
+        "source": run.source, "tenant_id": run.tenant_id, "operation_key": run.operation_key, "correlation_id": run.correlation_id,
         "task_id": run.task_id,
         "task_name": run.task_name,
         "status": run.status,

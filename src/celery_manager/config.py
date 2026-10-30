@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from celery import Celery
 
+from celery_manager.db.identity import portable_text_fits
+
 if TYPE_CHECKING:
     from starlette.requests import Request
 
@@ -192,7 +194,7 @@ class CeleryManagerConfig:
         ``x-dead-letter-exchange`` are found without a pattern.
     """
 
-    celery_app: Celery
+    celery_app: Celery | None = None
     db_url: str = "sqlite:///celery_manager.db"
     secret_key: str = "change-me"
     eta_tolerance_seconds: int = 60
@@ -258,14 +260,48 @@ class CeleryManagerConfig:
     scheduler_backend: object = None
     schedule_sync_interval_seconds: float = 30.0
     cron_parser: object = None
+    tenant_resolver: Callable[[Request, object], str | None | Awaitable[str | None]] | None = None
     lock_provider: object = None  # LockProvider; Redis is inferred only for a Redis broker
+    observer_fail_open: bool = True
+    observer_context_max_bytes: int = 16_384
+    observer_metadata_keys: tuple[str, ...] | None = ("integration", "request_id", "trace_id", "environment", "deployment_id", "resource_id")
+    observer_error_callback: Callable[[dict], None] | None = None
+    observer_store_results: bool = False
     login_backoff_threshold: int = 5
     login_backoff_max_seconds: int = 300
     login_backoff_reset_seconds: int = 3600
 
     worker_heartbeat_retention_days: int = 7
+    environment_name: str = ""
+    operator_safeguards: bool = False
+    health_probes: tuple = ()
+    probe_timeout_seconds: float = 3.0
+    probe_freshness_seconds: float = 120.0
+    health_observation_retention_days: int = 7
+
 
     def __post_init__(self):
+        if self.tenant_resolver is not None and not callable(self.tenant_resolver):
+            raise TypeError("tenant_resolver must be a trusted host callable")
+        if not portable_text_fits(self.environment_name, 100) or (self.environment_name and not self.environment_name.isprintable()):
+            raise ValueError("environment_name must contain at most 100 printable UTF-16 code units")
+        if self.operator_safeguards and not self.environment_name.strip():
+            raise ValueError("operator_safeguards requires an explicit environment_name")
+        import math
+        for name in ("probe_timeout_seconds", "probe_freshness_seconds"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite positive seconds")
+        if not 0.01 <= self.probe_timeout_seconds <= 30 or not 1 <= self.probe_freshness_seconds <= 86400:
+            raise ValueError("Probe timeout must be 0.01..30 and freshness 1..86400 seconds")
+        from celery_manager.health_probes import validate_probes
+        validate_probes(self.health_probes)
+        if isinstance(self.health_observation_retention_days, bool) or not isinstance(self.health_observation_retention_days, int) or not 1 <= self.health_observation_retention_days <= 3650:
+            raise ValueError("health_observation_retention_days must be 1..3650")
+
+        if isinstance(self.observer_context_max_bytes, bool) or not isinstance(self.observer_context_max_bytes, int) or self.observer_context_max_bytes < 64:
+            raise ValueError("observer_context_max_bytes must be an integer of at least 64")
+
         if (isinstance(self.worker_heartbeat_retention_days, bool) or not isinstance(self.worker_heartbeat_retention_days, int)
                 or not 0 <= self.worker_heartbeat_retention_days <= 3650):
             raise ValueError("worker_heartbeat_retention_days must be 0..3650 (0 disables history)")
