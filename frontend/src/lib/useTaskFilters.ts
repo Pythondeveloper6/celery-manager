@@ -16,7 +16,7 @@ import { useLocation, useNavigate } from "react-router-dom";
  *
  *  Defaults are omitted from the URL so a bare `#/` stays a bare `#/`. */
 
-export const STATUS_FILTERS = ["all", "queued", "started", "succeeded", "failed", "retried", "skipped", "revoked"];
+export const STATUS_FILTERS = ["all", "queued", "started", "succeeded", "failed", "retried", "skipped", "revoked", "interrupted"];
 
 export type GroupBy = "none" | "status" | "name" | "date";
 const GROUP_VALUES: GroupBy[] = ["none", "status", "name", "date"];

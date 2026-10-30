@@ -307,3 +307,19 @@ key. Tasks with no `finished_at` do not contribute to completed-run digests.
 Stuck/lost findings never rewrite execution status or automatically retry work.
 A missing heartbeat cannot prove the worker stopped executing; an automatic retry
 could duplicate external side effects.
+
+
+## Host probes and independent schedulers
+
+`custom_probe` targets stored probe-name globs with `stale_seconds=120` by default
+(1–86400). `scheduler_stale` targets registered scheduler-instance globs with
+`seconds=120` (1–86400). Both are available in the alert editor. Degraded evidence
+fires, healthy evidence recovers, and unknown/missing/stale probe evidence never
+resolves an existing incident. Scheduler state can be degraded by heartbeat age
+or an overdue expected command, including its first due occurrence.
+
+The evaluator reads stored observations only; it never invokes a host provider
+or scheduler. Configure and collect them through the
+[host health APIs](real-world-operations.md#custom-health-probes-and-outbox-diagnostics).
+Annotations do not automatically suppress these alerts. Global alert/probe views
+remain unavailable in tenant history mode.

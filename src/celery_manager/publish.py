@@ -12,7 +12,7 @@ from celery_manager.db.runs import lock_task_run
 logger = logging.getLogger(__name__)
 
 
-def install_publish_hook(celery_app, *, session_factory=None, initiator=None):
+def install_publish_hook(celery_app, *, session_factory=None, initiator=None, context=None):
     """Record protocol-v2 messages after successful publish. Returns uninstall().
 
     A before-publish handler adds initiator headers; seeding happens after
@@ -27,6 +27,24 @@ def install_publish_hook(celery_app, *, session_factory=None, initiator=None):
 
     def belongs():
         return current_app._get_current_object() is celery_app
+
+    hook_config = getattr(session_factory, "kw", {}).get("info", {}).get("cm_config")
+
+    def context_before(sender=None, headers=None, **unused):
+        if not belongs() or headers is None:
+            return
+        try:
+            from celery_manager.observation import _context
+            from celery_manager.run_context import normalize_context
+            task = current_task._get_current_object()
+            parent = (getattr(task.request, "headers", None) or {}) if task is not None and task.app is celery_app else {}
+            inherited = _context.get()
+            value = context() if context is not None else inherited or parent.get("cm_context") or headers.get("cm_context")
+            if value is not None:
+                headers["cm_context"] = normalize_context(value, hook_config)
+        except Exception:  # noqa: BLE001 - telemetry must preserve producer outcome
+            headers.pop("cm_context", None)
+            logger.warning("celery-manager: invalid host context was withheld")
 
     def before(sender=None, headers=None, **unused):
         if not belongs() or headers is None:
@@ -56,12 +74,18 @@ def install_publish_hook(celery_app, *, session_factory=None, initiator=None):
             eta = headers.get("eta")
             eta = datetime.fromisoformat(eta) if isinstance(eta, str) else None
             with session_factory() as session:
-                lock_task_run(session, headers["id"], seed={
+                row = lock_task_run(session, headers["id"], seed={
                     "task_name": sender or headers.get("task") or "unknown", "status": "queued",
                     "args": json.dumps(args, default=repr), "kwargs": json.dumps(kwargs, default=repr),
                     "queue": routing_key, "eta": eta, "initiator": headers.get("cm_initiator"),
                     "sent_at": datetime.now(timezone.utc),
                 })
+                if headers.get("cm_context") is not None:
+                    from celery_manager.run_context import (
+                        merge_storage_context,
+                        normalize_context,
+                    )
+                    merge_storage_context(row, normalize_context(headers["cm_context"], hook_config))
                 session.commit()
         except Exception:
             logger.exception("celery-manager: published task could not be recorded")
@@ -70,10 +94,12 @@ def install_publish_hook(celery_app, *, session_factory=None, initiator=None):
     old = getattr(celery_app, "_cm_uninstall_publish_hook", None)
     if old:
         old()
+    signals.before_task_publish.connect(context_before, weak=False)
     signals.before_task_publish.connect(before, weak=False)
     signals.after_task_publish.connect(after, weak=False)
 
     def uninstall():
+        signals.before_task_publish.disconnect(context_before)
         signals.before_task_publish.disconnect(before)
         signals.after_task_publish.disconnect(after)
         if getattr(celery_app, "_cm_uninstall_publish_hook", None) is uninstall:

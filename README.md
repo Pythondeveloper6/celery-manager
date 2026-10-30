@@ -109,6 +109,11 @@ without touching your beat schedule or restarting anything.
 New in the [0.3 release candidate](docs/release-0.3.md): SQL-owned schedules,
 reviewed reconciliation, singleton leases, deeper alerts, failure review,
 revocable browser sessions, heartbeat history and a versioned status widget.
+The same release adds [host-job observation and operational diagnostics](docs/real-world-operations.md):
+`RunObserver` for synchronous/async work without Celery, tenant-scoped read-only
+history, custom probes/outbox health, first-due scheduler expectations, correlated
+attempts, preflight, deployment notes and audited environment safeguards. These
+observe the host's existing execution; they do not replace it.
 
 Production adoption: the [0.2 guide](docs/production.md) covers external schedulers,
 OIDC, dispatch policies, bounded logs/results and storage isolation. The

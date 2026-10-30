@@ -1,3 +1,5 @@
+import { OperationalContext } from "../components/OperationalContext";
+import { RelatedRuns } from "../components/RelatedRuns";
 import "../styles/task-detail.css";
 
 import { useCallback, useEffect, useState } from "react";
@@ -15,6 +17,7 @@ import { WorkflowCard } from "../components/WorkflowCard";
 import { TaskCallDialog } from "../components/TaskCallDialog";
 import { StatusBadge } from "../components/Status";
 import { useCan } from "../lib/role";
+import { useAuthOptions } from "../lib/auth";
 import {
   elapsedSeconds,
   formatDuration,
@@ -145,7 +148,9 @@ function CopyButton({ value }: { value: string }) {
 
 export function TaskDetail() {
   // Viewers see everything here but no action buttons (server returns 403).
-  const canOperate = useCan("operator");
+  const isOperator = useCan("operator");
+  const options = useAuthOptions();
+  const canOperate = isOperator && !options.monitoring_only;
   const { taskId } = useParams<{ taskId: string }>();
   const [task, setTask] = useState<TaskDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -408,12 +413,13 @@ export function TaskDetail() {
               </h1>
               <div className="cm-detail-sub">
                 <StatusBadge status={task.status} />
+                <span>{task.source === "external" ? "External observation · host controls execution" : "Celery"}</span>
                 <code className="cm-detail-id">{task.task_id}</code>
                 <CopyButton value={task.task_id} />
               </div>
             </div>
 
-            {canOperate && (canCancel || task.status === "failed") && (
+            {canOperate && task.source === "celery" && (canCancel || task.status === "failed") && (
               <div className="cm-task-actions" role="group" aria-label="Task actions">
                 {confirmTerminate && canTerminate ? (
                   <>
@@ -483,7 +489,7 @@ export function TaskDetail() {
             )}
           </header>
 
-          {editOpen && (
+          {editOpen && canOperate && task.source === "celery" && (
             <TaskCallDialog
               mode="retry"
               retryOf={{ taskId: task.task_id, taskName: task.task_name, args: task.args, kwargs: task.kwargs }}
@@ -495,6 +501,14 @@ export function TaskDetail() {
             />
           )}
 
+          {!options.tenant_scoped && (task.started_at || task.sent_at) && <OperationalContext at={(task.started_at || task.sent_at)!} />}
+          {(task.operation_key || task.correlation_id) && <RelatedRuns taskId={task.task_id} />}
+          {task.source === "external" && <section className="cm-detail-section">
+            <h2>Observation context</h2>
+            <p>Tenant: {task.tenant_id ?? "unassigned"} · Correlation: {task.correlation_id ?? "none"}</p>
+            <p>Operation key: {task.operation_key ?? "none"}. Equal keys reveal related attempts; they do not prevent duplicate execution.</p>
+            <pre>{task.context_json ?? "{}"}</pre>
+          </section>}
           {cancelNotice && (
             <p className="cm-notice" role="status">
               {cancelNotice}

@@ -10,7 +10,7 @@ export function mountTaskStatus(element, { taskId, baseUrl = "", interval = 5000
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   element.replaceChildren(status);
-  const terminal = new Set(["succeeded", "failed", "skipped", "revoked"]);
+  const terminal = new Set(["succeeded", "failed", "skipped", "revoked", "interrupted"]);
   async function update() {
     if (stopped) return;
     controller = new AbortController();

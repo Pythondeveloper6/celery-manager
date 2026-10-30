@@ -14,11 +14,12 @@ const hooks = {
   useId() { return "test-id"; },
   useEffect(effect, deps) { const runner = active, slot = runner.cursor++, previous = runner.slots[slot]; if (!previous || deps.some((value, index) => value !== previous.deps[index])) { runner.effects.push(() => { previous?.cleanup?.(); runner.slots[slot] = { deps, cleanup: effect() }; }); } },
 };
-function load(file) {
+function load(file, overrides = {}) {
   const filename = resolve(root, file);
   const source = ts.transpileModule(readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} };
   const imports = id => {
+    if (Object.hasOwn(overrides, id)) return overrides[id];
     if (id === "react") return hooks;
     if (id.includes("/api/base") || id === "./base") return { API_BASE: "api" };
     if (id.includes("/api/tasks")) return { errorMessage: async (_, fallback) => fallback };
@@ -149,4 +150,20 @@ test("a completed resolution for the previous failure cannot annotate the new ta
     assert.doesNotMatch(text(state.tree), /Failure ignored/);
     assert.equal(field(state, "textarea").props.value, "");
   } finally { globalThis.fetch = previous; }
+});
+
+
+test("read-only capabilities suppress operator/admin controls without hiding viewer content", () => {
+  let readOnly = true;
+  const role = load("lib/role.tsx", {
+    react: { createContext: value => ({ value }), useContext: context => context.value },
+    "./auth": { useAuthOptions: () => ({ read_only: readOnly }) },
+  });
+  role.RoleContext.value = "admin";
+  assert.equal(role.useCan("operator"), false);
+  assert.equal(role.useCan("admin"), false);
+  assert.equal(role.useCan("viewer"), true);
+  readOnly = false;
+  assert.equal(role.useCan("operator"), true);
+  assert.equal(role.useCan("admin"), true);
 });

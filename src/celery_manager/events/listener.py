@@ -195,6 +195,8 @@ def upsert_task_run(session, event: dict, config=None) -> None:
         "task_name": event.get("name") or "unknown",
         "status": status,
     })
+    if run.source != "celery":
+        return  # An external observation's identity is never a Celery lifecycle.
     status_applied = _accepts_status(run.status, status)
     if status_applied:
         run.status = status

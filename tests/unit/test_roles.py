@@ -45,6 +45,8 @@ from celery_manager.db.models import AuditLog, User
 # (method, path, json body, minimum role). One entry per state-changing route;
 # `test_matrix_covers_every_state_changing_route` keeps it complete.
 WRITE_ROUTES = [
+    ("DELETE", "/api/health/schedulers/missing", None, "admin"),
+    ("POST", "/api/operations/annotations", {"kind":"deployment","label":"test"}, "admin"),
     ("DELETE", "/api/health/beat/owner?owner_id=missing", None, "admin"),
     ("POST", "/api/auth/sessions/missing/revoke", None, "viewer"),
     ("POST", "/api/dead-letters/t1/reopen", {}, "operator"),
@@ -142,6 +144,8 @@ WRITE_ROUTES = [
 
 # The same matrix by route template, as the app declares it.
 ROUTE_ROLES = {
+    ("DELETE", "/api/health/schedulers/{instance_id}"): "admin",
+    ("POST", "/api/operations/annotations"): "admin",
     ("DELETE", "/api/health/beat/owner"): "admin",
     ("POST", "/api/auth/sessions/{session_id}/revoke"): "viewer",
     ("POST", "/api/dead-letters/{task_id}/reopen"): "operator",

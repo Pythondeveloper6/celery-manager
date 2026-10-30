@@ -13,6 +13,17 @@ the role before it can.
 | `operator` | People who run things day to day | Everything a viewer can, plus retry (including dead letters), cancel and terminate tasks, start a task, pause, resume and edit schedules, manage maintenance windows, skip single runs, review failure inbox entries, and the worker controls you can undo from the dashboard. |
 | `admin` | People who own the deployment | Everything, including purging queues, deleting or moving single queued messages, shutting down workers, changing branding and setting up alerts. |
 
+With `tenant_resolver` enabled, [tenant history mode](tenancy.md) adds a stricter
+boundary: all operational writes and global views are denied even for admin.
+Only scoped history reads are admitted; the role table below describes the
+normal manager-wide deployment.
+
+External (`source="external"`) observations remain under host execution control:
+Celery retry/cancel/rerun is refused regardless of role. With
+`operator_safeguards=True`, the documented sensitive actions also need audited
+reason/environment headers after passing role checks; see
+[operator preconditions](real-world-operations.md#reasons-and-environment-confirmation-for-sensitive-actions).
+
 The server checks the role on every request that changes something. A
 request the role doesn't allow gets `403` and does nothing. The dashboard
 also hides the buttons a role can't use, but that's only for convenience.
@@ -33,6 +44,12 @@ operator or admin for captured logs. See [production policies](production.md#saf
 | Delete a backend schedule | `DELETE /api/schedules/{name}` | `admin` |
 | Preview a new schedule | `POST /api/schedules/preview` | `viewer` |
 | Skip next or run a schedule now | `POST /api/schedules/{name}/skip-next`, `.../run-now` | `operator` |
+| Read related operation/correlation attempts | `GET /api/tasks/{task_id}/related` | `viewer`; same tenant as selected run |
+| Read stored custom probe/scheduler health | `GET /api/health/probes`, `.../schedulers` | `viewer` |
+| Retire an independent scheduler's monitoring expectations | `DELETE /api/health/schedulers/{instance_id}` | `admin` |
+| Read deployment/maintenance annotations | `GET /api/operations/annotations` | `viewer`; configured environment |
+| Record a deployment/maintenance annotation | `POST /api/operations/annotations` | `admin` |
+| Run local/configuration preflight | `GET /api/operations/preflight` | `admin` |
 | Read worker heartbeat samples | `GET /api/workers/{worker}/heartbeats` | `viewer` |
 | Inspect singleton leases | `GET /api/locks` | `viewer` |
 | Conditionally release a singleton lease | `POST /api/locks/release` | `admin`; current lease ID and durable audit required |

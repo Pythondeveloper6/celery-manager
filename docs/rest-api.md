@@ -121,7 +121,7 @@ All parameters are optional and combine with AND.
 
 | Param | Type | Default | Meaning |
 |---|---|---|---|
-| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`. An unknown value is not an error — it just matches nothing. |
+| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`, `interrupted`. An unknown value is not an error — it just matches nothing. |
 | `task_name` | `str` | — | **Exact** match on the registered task name. Not a prefix and not a substring: `task_name=send` does *not* match `myapp.send_mail`. Use `q` for partial names. |
 | `q` | `str` | — | Case-insensitive substring search across four columns — see below. |
 | `date_from` | datetime | — | `started_at >= date_from`. |
@@ -795,7 +795,7 @@ scheduler ownership, dispatch validation and the deployment checklist.
 | `DELETE` | `/api/schedules/{name}` | admin | Deletes the backend definition; run and override history remain. |
 | `POST` | `/api/schedules/{name}/skip-next` | operator | Records the next enabled occurrence as a one-off skip. Repeated calls use existing tolerance-based idempotence. No available occurrence returns 409. |
 | `POST` | `/api/schedules/{name}/run-now` | operator | Dispatches the entry arguments through the task policy. Returns `{task_id}`; carries no occurrence header and consumes no scheduled skip. |
-| `GET` | `/api/schedules/health` | viewer | Backend name and unregistered-task findings. This is not yet a complete reconciliation/drift report. |
+| `GET` | `/api/schedules/health` | viewer | Backend/definition drift, unregistered tasks and historical entries missing from the backend. Optional `inspect_consumers=true` adds bounded observed-consumer diagnostics; unknown replies do not prove absent workers. |
 | `GET` | `/api/health/beat` | viewer | Healthy/stale/unknown beat state, last tick and age. Optional `stale_seconds` threshold. |
 | `GET` | `/api/health/workers` | viewer | Durable last-seen worker online/offline observations. |
 | `GET` | `/api/health/runs` | viewer | Advisory `worker_lost`/`suspect_stuck` findings; optional `stuck_seconds`. Never changes execution status. |
@@ -816,3 +816,54 @@ explicitly request `?force=true` (other roles receive 403).
 
 With `live_stream="poll"`, `/api/stream` is absent and the SPA polls. Teams is an
 additional alert-channel kind with `{url}` configuration; the URL is write-only.
+
+
+## Native observations and operator context (0.3)
+
+[Real-world operations](real-world-operations.md) documents Python `RunObserver`,
+probe collection, scheduler registration, metadata/privacy and preflight.
+Observation writes belong to trusted host code; there is no anonymous HTTP
+endpoint for inventing observations or assigning tenants.
+
+Task list/detail responses add `source`, `tenant_id`, `correlation_id`,
+`operation_key` and bounded `context_json`. `source="external"` identifies work
+whose execution remains owned by the host; Celery retry/cancel/rerun refuses it
+with 409. External lifecycle states include `interrupted`; an unreported hard
+crash can still leave a started row. Related-run matching is visibility only.
+Manager retries, bulk retries and failed-run reruns preserve original
+tenant/correlation/operation metadata under the current metadata policy, while
+recording the acting operator as initiator. Invalid stored context fails before
+publication, including full-scope validation before a bulk batch is sent.
+
+| Method | Endpoint | Role | Request/response contract |
+|---|---|---|---|
+| `GET` | `/api/tasks/{task_id}/related` | viewer | `kind=operation` (default) or `correlation`; `limit=100`, 1–500. Same-tenant matches from either source, newest first; `{items,has_more,kind}`. No key returns an empty list, unknown run 404. |
+| `GET` | `/api/health/probes` | viewer | Stored latest sanitized measurements and freshness; no provider invocation. `{items}` with name/state/metrics/reason/observation age. More than 1,000 persisted names returns 503 instead of a partial inventory. |
+| `GET` | `/api/health/schedulers` | viewer | Stored independent scheduler heartbeats and command expectations, including first-run due state; `{items}`. Does not contact or start the host scheduler. More than 1,000 instances returns 503. |
+| `DELETE` | `/api/health/schedulers/{instance_id}` | admin | Audit and retire monitoring expectations; `{removed}`. Does not stop execution. |
+| `GET` | `/api/operations/annotations` | viewer | Configured environment only; optional start-time `date_from`/`date_to`, `limit=50` (1–200), `offset=0`. `{items,has_more,environment}`. |
+| `GET` | `/api/operations/context` | viewer | Required `at` timestamp. Latest deployment at/before it and maintenance active at it, scoped to configured environment. `{at,environment,deployment,maintenance,has_more}`; maintenance capped at 200. No suppression or causal inference. |
+| `POST` | `/api/operations/annotations` | admin | `{kind,label,revision?,note?,starts_at?,ends_at?}`; `kind` deployment/maintenance. Maintenance requires a later end. Returns stored annotation with ID/environment/actor; creation is audited. No edit/delete endpoint. |
+| `GET` | `/api/operations/preflight` | admin | Read-only storage/configuration diagnostic report `{ok,environment,checked_at,checks}`. Outbound broker/worker checks require CLI/Python opt-in. |
+
+All have equivalent `/api/v1` aliases. Monitoring-only deployments
+(`celery_app=None`) refuse Celery broker/worker/scheduler execution controls with
+409. [Tenant history mode](tenancy.md) is more restrictive: SQL-scoped task reads
+only, all global views and operational writes denied even for admin, including
+metrics/events/annotations/preflight. Newly added endpoints are denied until
+explicitly admitted to its reviewed allowlist.
+
+Auth options add `monitoring_only`, `tenant_scoped`, `read_only`, `environment`
+and `sensitive_actions`. The latter is the enabled sensitive-action pattern list;
+with safeguards disabled it is empty. Tenant mode forces `live_stream="poll"`.
+`whoami` includes its resolved tenant when scoped. These flags help the dashboard
+hide controls; server enforcement does not depend on the flags reaching a client.
+
+With `operator_safeguards=True`, protected HTTP requests must send UTF-8
+percent-encoded `X-CM-Action-Reason` (decoded printable 1–500 characters) and
+`X-CM-Confirm-Environment` (exact configured environment). Missing/invalid
+preconditions return 428, unavailable intent audit returns 503, and neither
+performs the action. Authentication, role and task-policy restrictions still
+apply. Accepted intent does not imply successful completion. The complete
+[action list and audit semantics](real-world-operations.md#reasons-and-environment-confirmation-for-sensitive-actions)
+apply equally to mounted and versioned routes.

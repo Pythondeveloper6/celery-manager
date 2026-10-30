@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { useAuthOptions } from "./auth";
 import type { Role } from "../api/client";
 
 // Cosmetic only: hides or disables controls the signed-in role can't use so
@@ -21,7 +22,9 @@ export function useRole(): Role {
 
 /** True if the signed-in account may use controls that need `required`. */
 export function useCan(required: Role): boolean {
-  return roleAllows(useRole(), required);
+  const role = useRole();
+  const { read_only } = useAuthOptions();
+  return !(read_only && required !== "viewer") && roleAllows(role, required);
 }
 
 /** Tooltip for a control the signed-in role can't use. */

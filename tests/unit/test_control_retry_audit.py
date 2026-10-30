@@ -244,3 +244,35 @@ def test_explicit_args_bypass_decoding_entirely():
     retry_task(app, session, "truncated-2", username="alice", args=[1], kwargs={})
 
     app.send_task.assert_called_once_with("demo.plain", args=[1], kwargs={}, headers={"cm_initiator": "alice"})
+
+
+def test_operator_retry_preserves_business_context_and_records_acting_operator():
+    import json
+    session = _session_with_runs()
+    original = get_task_run(session, "t1")
+    original.tenant_id = "tenant-a"
+    original.correlation_id = "request-42"
+    original.operation_key = "invoice-42"
+    original.context_json = json.dumps({"integration": "billing"})
+    session.commit()
+    app = MagicMock(spec=Celery)
+    app.send_task.return_value = MagicMock(id="context-retry")
+    new_id = retry_task(app, session, "t1", username="alice")
+    headers = app.send_task.call_args.kwargs["headers"]
+    assert headers["cm_initiator"] == "alice"
+    assert headers["cm_context"] == {"tenant_id": "tenant-a", "correlation_id": "request-42",
+                                      "operation_key": "invoice-42", "metadata": {"integration": "billing"}}
+    row = get_task_run(session, new_id)
+    assert (row.tenant_id, row.correlation_id, row.operation_key) == ("tenant-a", "request-42", "invoice-42")
+    assert row.initiator == "alice"
+    assert json.loads(row.context_json) == {"integration": "billing"}
+
+
+def test_bulk_retry_invalid_context_prevents_every_publication():
+    session = _session_with_runs()
+    get_task_run(session, "t2").context_json = "not JSON"
+    session.commit()
+    app = MagicMock(spec=Celery)
+    with pytest.raises(ValueError, match="context"):
+        bulk_retry(app, session, ["t1", "t2"], username="alice")
+    app.send_task.assert_not_called()

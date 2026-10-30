@@ -9,6 +9,11 @@ import { API_BASE as BASE, forbiddenMessage } from "./base";
 export interface TaskSummary {
   task_id: string;
   task_name: string;
+  source: string;
+  tenant_id: string | null;
+  operation_key: string | null;
+  correlation_id: string | null;
+  context_json: string | null;
   status: string;
   started_at: string | null;
   finished_at: string | null;

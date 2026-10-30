@@ -134,52 +134,75 @@ acceptance criteria. This release does not claim them as completed:
 - Domain-specific failure summaries. Host applications still own business
   context and downstream side-effect safety.
 
-Database migrations 0015–0017 add failure review, authentication state and
-worker samples. Back up the database and run `celery-manager migrate --check`
-after upgrading. The optional SQL scheduler has its own initialization/upgrade
-procedure. Local unit tests cannot certify Azure SQL/Redis behavior; the real
-storage CI jobs and a rollout in each application's topology remain release
-acceptance gates.
+Database migrations now reach **0020**. 0015–0017 add failure review,
+authentication state and worker samples; 0018 adds source/tenant/context and
+operation/correlation identifiers; 0019 adds custom health and independent
+scheduler expectations; 0020 adds operation annotations. Back up monitoring
+storage and run explicit deployment migrations with a DDL credential, then
+`celery-manager migrate --db-url ... --check`. `auto_migrate=False` prevents
+runtime DDL; it does not provision tables. The optional SQL scheduler has its
+own initialization/upgrade procedure.
 
-## Local verification record — 29 October 2026
+## Ten native operability additions in this same release
 
-| Check | Result |
-|---|---|
-| Python 3.12 broad runnable pre-push suite | 1,417 passed, 29 skipped, 4 deselected |
-| Server-independent RabbitMQ cases, run separately | 19 passed |
-| New shared-storage login admission/revocation contract | Passed against a file-backed SQLite database |
-| Targeted final auth/singleton/SQL/timezone/roles regressions | 349 passed, 2 live Redis cases skipped |
-| Widget and operator-form JavaScript tests | 9 passed |
-| Python lint and whitespace | Passed; separate pre-existing `.claude/worktrees` are ignored as checkout artifacts |
-| Frontend build/lint and committed static bundle comparison | Passed; existing branding fast-refresh and bundle-size warnings remain |
-| Strict documentation build | Passed |
-| Wheel/sdist build and strict Twine metadata checks | Passed |
-| Isolated built-wheel import, migrations, v1 API and widget smoke | Passed |
-| CI trigger assertions | Main pushes only; publishing remains downstream of successful main CI |
+The follow-up real-application review expanded this candidate without introducing
+another release or changing a host application's runner:
 
-The broad local sweep excludes socket-backed RabbitMQ-management cases and four
-webhook-server cases because this environment cannot bind those servers. Other
-skips include opt-in live broker/database gates. The configured real Redis CI
-service exercises lease expiry and atomic contention; server storage jobs also
-include SQL scheduler persistence and shared-auth admission/revocation. Configuring
-a service in CI is not evidence that it has run for this candidate. Native Safari visual smoke passed against the built bundle with a labelled mocked API: desktop and 390-pixel forms, preview invalidation, lock-release warning and current-session confirmation. This is a UI check, not an end-to-end live backend result. Python-version CI, live servers and the host-application trial remain pending. The checkout could not fetch the report's published remote commit
-because GitHub DNS resolution failed, so remote-main ancestry has not been
-reconciled here. Work is kept on the local release branch.
+1. `RunObserver` records synchronous/async host jobs without a Celery app.
+2. Trusted tenant resolution restricts HTTP to read-only SQL-scoped history,
+   with no admin bypass for global views, events or writes.
+3. Queued/started/terminal lifecycle observations expose durable background-work
+   diagnostics; explicit interruption and fail-open telemetry health preserve
+   host execution semantics.
+4. Host-collected custom numeric probes and an outbox aggregate helper report
+   depth, oldest age, exhausted retries and delivery latency.
+5. Independent scheduler registrations monitor liveness and expected commands
+   from the first due occurrence, without waiting for a completed historical run.
+6. Tenant/request/business identifiers and bounded metadata connect observations
+   and instrumented Celery publications to the host.
+7. Operation-key and correlation matching reveal related attempts without
+   preventing duplicates or claiming exactly-once side effects.
+8. Read-only doctor/preflight checks storage and configuration, with explicit
+   CLI/Python opt-ins for outbound broker/worker checks.
+9. Environment-scoped deployment and planned-maintenance annotations provide
+   context without automatically pausing jobs or suppressing alerts.
+10. Sensitive HTTP actions can require audited reasons and exact environment
+    confirmation in addition to the existing role/task policies.
 
+See [real-world operations](real-world-operations.md) for exact signatures,
+configuration, lifecycle/privacy contracts and examples, and
+[tenant security](tenancy.md) for the restricted-mode boundary. The Operations
+page displays stored probe/scheduler health, annotation history and admin
+preflight. Task detail shows observation source/context, same-tenant related
+attempts, and the deployment/maintenance context at the run's start or send time
+outside tenant mode. External observations cannot be retried or cancelled through Celery
+controls. These are package-native features; no host application's execution,
+outbox schema or migration policy is silently rewritten.
 
-### Additional pre-push review
+## Verification status for the expanded candidate
 
-The review fixed identity filters lost by frontend exports, stale failure-review
-responses/notes, stale schedule argument forms, denied-login throttle row growth,
-singleton metadata-key arguments and nested namespace inspection. Beat-owner
-keys now fit strict server column limits. Malformed OIDC claims return clean
-authentication responses rather than server errors. Focused security/upgrade
-checks passed locally; the final identity-claim hardening also passed 56 targeted
-tests. The rebuilt wheel smoke covers local login, actor-filtered dispatch,
-session revocation, migrations and the shipped widget.
+Local verification for the expanded candidate on 2026-10-30:
 
-The configured disposable SQLite server-contract run passed five checks,
-including 0014-to-0017 upgrade/rollback data preservation. Real-server CI now
-executes those contracts and rejects any skipped required checks. Optional
-adapters run on Python 3.10 and 3.12; syntax checks alone do not substitute for
-those interpreter runs.
+- The final broad Python regression sweep passed **1,542 tests**. Thirty optional/service
+  tests skipped locally; four socket-server notification tests and the
+  socket-server RabbitMQ module were excluded because this environment cannot
+  bind local test servers. The 19 RabbitMQ cases that do not require a server
+  passed separately.
+- All 13 frontend behavior tests passed. Frontend lint and production build
+  passed, and the packaged static assets match the generated bundle exactly.
+- Ruff, whitespace checks and the strict documentation build passed.
+- Wheel and source distributions built successfully and passed strict Twine
+  metadata checks. An isolated installation of the built wheel passed native
+  lifecycle/concurrency, exact Unicode identity, health/scheduler, tenant API,
+  dashboard assets, doctor and migration 0014→0020→0014→0020 smoke checks.
+- A final 16-test native-observation regression run also covers refusing a
+  database collation alias of an existing external attempt ID.
+
+These are local test results, not a certification of a live host deployment.
+
+Live PostgreSQL/MySQL/SQL Server storage, optional scheduler contracts, real
+broker/Redis behavior, supported Python interpreter runs and a host-application
+trial remain acceptance gates unless explicitly recorded as executed. A
+configured CI service is not evidence of a passing live test; mocked browser
+checks do not establish end-to-end backend behavior. Publishing remains downstream of successful main CI; a local merge does not
+publish a package.

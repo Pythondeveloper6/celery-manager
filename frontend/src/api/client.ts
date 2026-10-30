@@ -13,10 +13,16 @@ export interface CurrentUser {
   username: string;
   role: Role;
   source: AccountSource;
+  tenant_id?: string;
 }
 
 /** How this deployment signs people in: `GET /api/auth/options`. */
 export interface AuthOptions {
+  environment?: string;
+  monitoring_only?: boolean;
+  sensitive_actions?: import("../lib/safeguards").SensitiveAction[];
+  tenant_scoped?: boolean;
+  read_only?: boolean;
   local_login: boolean;
   external: boolean;
   provider_name: string;

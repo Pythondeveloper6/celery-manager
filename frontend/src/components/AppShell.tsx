@@ -60,6 +60,7 @@ const NAV_ITEMS: {
   { to: "/alerts", label: "Alerts", icon: IconBell },
   { to: "/users", label: "Users", icon: IconUsers, needs: "admin" },
   { to: "/settings", label: "Settings", icon: IconSettings },
+  { to: "/operations", label: "Operations", icon: IconServer },
 ];
 
 const SHORTCUT_LABEL = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘B" : "Ctrl+B";
@@ -229,7 +230,7 @@ export function AppShell({
 
         <nav className="cm-sidebar-content" aria-label="Primary">
           <ul className="cm-sidebar-menu">
-            {NAV_ITEMS.filter((item) => !item.needs || roleAllows(role, item.needs)).map(({ to, end, label, icon: Icon }) => (
+            {NAV_ITEMS.filter(item => (!item.needs || roleAllows(role, item.needs)) && (!authOptions.tenant_scoped || ["/", "/dead-letters"].includes(item.to)) && (!authOptions.monitoring_only || !["/schedules", "/workers", "/queues", "/held"].includes(item.to))).map(({ to, end, label, icon: Icon }) => (
               <li key={to} className="cm-sidebar-item">
                 <NavLink to={to} end={end} className="cm-sidebar-button">
                   <Icon />
@@ -248,21 +249,21 @@ export function AppShell({
               settings screen: it is the one preference someone changes
               because of the room they're in. */}
           <ThemeSwitch />
-          <div className="cm-sidebar-item">
+          {!authOptions.tenant_scoped && !authOptions.monitoring_only && <div className="cm-sidebar-item">
             <button type="button" className="cm-sidebar-button" onClick={() => setInspectingLocks(true)}>
               <IconKey /><span className="cm-sidebar-label">Singleton locks</span>
             </button>
             <span className="cm-tooltip" aria-hidden="true">Singleton locks</span>
-          </div>
-          <div className="cm-sidebar-item">
+          </div>}
+          {!authOptions.tenant_scoped && <div className="cm-sidebar-item">
             <button type="button" className="cm-sidebar-button" onClick={() => setManagingSessions(true)}>
               <IconKey /><span className="cm-sidebar-label">Browser sessions</span>
             </button>
             <span className="cm-tooltip" aria-hidden="true">Browser sessions</span>
-          </div>
+          </div>}
           {/* Someone the host app signed in has no password here; theirs
               is changed in the host app. */}
-          {external || (
+          {external || authOptions.tenant_scoped || (
             <div className="cm-sidebar-item">
               <button type="button" className="cm-sidebar-button" onClick={() => setChangingPassword(true)}>
                 <IconKey />
@@ -345,6 +346,7 @@ export function AppShell({
           </button>
           <span className="cm-separator cm-separator-vertical" aria-hidden="true" />
           <span className="cm-topbar-title">{sectionLabel(pathname)}</span>
+          {authOptions.environment && <span className="cm-run-hint">{authOptions.environment}</span>}
         </header>
         <main className="cm-main">{children}</main>
       </div>

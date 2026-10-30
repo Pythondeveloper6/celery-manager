@@ -280,7 +280,23 @@ def main() -> None:
     import_parser.add_argument("--actor", required=True)
     import_parser.add_argument("--apply", action="store_true", help="apply after validation; default is dry-run")
 
+    doctor_parser = subparsers.add_parser("doctor", help="read-only deployment preflight")
+    _add_config_args(doctor_parser, required=False)
+    doctor_parser.add_argument("--check-broker", action="store_true")
+    doctor_parser.add_argument("--check-workers", action="store_true")
+    doctor_parser.add_argument("--timeout", type=float, default=5)
+
     args = parser.parse_args()
+    if args.command == "doctor":
+        from celery_manager.doctor import doctor, render_report
+        config = _load_config(args.config, args.celery_app, args.db_url)
+        try:
+            result = doctor(config, check_broker=args.check_broker, check_workers=args.check_workers, timeout=args.timeout)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(render_report(result))
+        sys.exit(0 if result["ok"] else 1)
+
     if args.command == "import-pauses":
         import json
         from pathlib import Path
@@ -321,6 +337,8 @@ def main() -> None:
 
     if args.command == "events":
         config = _load_config(args.config, args.celery_app, args.db_url)
+        if config.celery_app is None:
+            parser.error("The events listener requires Celery; native jobs use RunObserver instrumentation")
         engine = init_db(config)
         session_factory = get_session_factory(engine)
         session_factory.configure(info={"cm_config": config})
