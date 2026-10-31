@@ -117,7 +117,7 @@ observe the host's existing execution; they do not replace it.
 
 Production adoption: the [0.2 guide](docs/production.md) covers external schedulers,
 OIDC, dispatch policies, bounded logs/results and storage isolation. The
-[requirements roadmap](docs/roadmap.md) tracks the real-project review and follow-ups.
+[requirements roadmap](docs/roadmap.md) tracks requirements and follow-ups.
 
 ## What you get
 

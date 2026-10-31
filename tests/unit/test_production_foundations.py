@@ -1,4 +1,4 @@
-"""Production adoption regressions from the real-project review."""
+"""Production adoption regressions."""
 import json
 import logging
 import threading

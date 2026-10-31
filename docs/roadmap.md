@@ -1,13 +1,13 @@
 # Production requirements and roadmap
 
-The real-project adoption review is the requirements baseline. The production
+Adoption requirements for existing Celery deployments are the baseline. The production
 foundations shipped in **0.2.0a1**; **0.3.0a1** adds the operational features below
 in one release. See [0.3 release scope](release-0.3.md) and
 [production adoption](production.md) for contracts and limitations.
 
 “Candidate” means implemented with local regression coverage, not certified in
 every deployment. Live PostgreSQL/MySQL/SQL Server, optional scheduler and Redis
-contracts, and a real application rollout remain acceptance gates. A configured
+contracts, and a production rollout remain acceptance gates. A configured
 CI job is not evidence that its live gate has run successfully for this release.
 
 ## Adoption requirements
@@ -32,7 +32,7 @@ CI job is not evidence that its live gate has run successfully for this release.
 | P2-16 | Decorator placement is unambiguous | Candidate corrected docs and import-time rejection of reversed decorator order |
 | P2-17 | Import a host's legacy cancellation table safely | Candidate validated, all-or-nothing CSV pause import through CLI/admin API; existing Python pause/occurrence controls remain |
 
-## Broader product requirements from the review
+## Broader product requirements
 
 | Review ID | Capability | Coverage / remaining acceptance criteria |
 |---|---|---|
@@ -49,7 +49,7 @@ CI job is not evidence that its live gate has run successfully for this release.
 | F13 | Drift/orphan health | Candidate unregistered tasks, historical definitions missing from current backend, definition drift and opt-in observed queue consumers. Empty/failed worker inspection is unknown. Arbitrary orphan Redis-key discovery/deletion is deferred. |
 | F14 | Singleton task execution | Candidate track(singleton=...) with explicit keys, Redis owner-token leases, renewal/expiry and skip/retry conflicts; bounded inspection and conditional audited release APIs. No process-local production fallback or fencing guarantee; the dashboard includes bounded inspection and explicit release confirmation. |
 
-## Native operability from the follow-up review
+## Native operability
 
 These ten capabilities are implemented in the same 0.3.0a1 candidate. Detailed
 Python/API signatures, deployment requirements and limitations are in
@@ -89,7 +89,7 @@ implementation status, not a completed live-rollout claim.
 - Live SQLite/PostgreSQL/MySQL/SQL Server contracts must cover concurrent migrations,
   task-run races, schema isolation, UTC defaults and batched pruning.
 - Build, lint, docs, packaged static assets and local install smoke checks must pass.
-- A real application trial must verify SSO, deep links, queue routing, separate
+- A production trial must verify SSO, deep links, queue routing, separate
   schedules for one task, one-off skips and rollback before retiring Flower or a
   host's existing scheduler layer.
 

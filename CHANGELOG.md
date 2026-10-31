@@ -8,9 +8,9 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [0.3.0a1] — 2026-10-29
 
-One report-driven release candidate. Monitoring migrations now reach `0020`.
+One operations-focused release candidate. Monitoring migrations now reach `0020`.
 See the [release guide](docs/release-0.3.md) for deployment, compatibility and
-explicit remaining work. Live database/Redis and application rollout gates
+explicit remaining work. Live database/Redis and deployment gates
 must pass before treating this candidate as production-validated.
 
 ### Added
@@ -136,7 +136,7 @@ starting application processes, or leave automatic migrations enabled. See
 - Durable last-seen worker state, advisory stuck/lost-run health, optional beat
   heartbeat health, and Microsoft Teams Workflows alert channels.
 - Optional-adapter CI and live PostgreSQL/MySQL/SQL Server storage contracts.
-  These integrations require their CI and real-application gates; local SQL
+  These integrations require their CI and deployment gates; local SQL
   compilation alone does not establish live backend compatibility.
 
 ### Changed

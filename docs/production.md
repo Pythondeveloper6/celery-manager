@@ -1,7 +1,7 @@
 # Production adoption
 
-The 0.2 release combines the production foundations and external scheduler work
-identified in the real-project review. Optional adapters remain opt-in. Database
+The 0.2 release combines the production foundations and external scheduler
+work needed to run celery-manager beside an existing deployment. Optional adapters remain opt-in. Database
 and adapter CI jobs are release gates; local SQL compilation is not evidence of a
 successful SQL Server deployment.
 
