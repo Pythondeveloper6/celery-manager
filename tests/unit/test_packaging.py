@@ -35,3 +35,11 @@ def test_publish_steps_request_attestations():
     publishes = text.count("pypa/gh-action-pypi-publish@")
     assert publishes == 2
     assert text.count("attestations: true") == publishes
+
+
+def test_workflow_actions_are_pinned_to_commits_and_checkouts_drop_credentials():
+    for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
+        text = workflow.read_text()
+        for ref in re.findall(r"uses: (\S+)", text):
+            assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), f"{workflow.name}: {ref}"
+        assert text.count("actions/checkout@") == text.count("persist-credentials: false"), workflow.name

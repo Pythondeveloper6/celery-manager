@@ -67,6 +67,9 @@ All notable changes to celery-manager are recorded here. The format follows
   attestations. Pushing to `main` no longer publishes.
 
 ### Security
+- GitHub Actions are pinned to commit SHAs (Dependabot keeps them current),
+  checkouts no longer persist the token, and every elevated permission is
+  documented; `zizmor` and `actionlint` report no findings.
 - `celery-manager create-user` now applies the dashboard's rules: passwords
   of at least 8 characters and the same username format. It used to accept a
   one-character password and any username.
