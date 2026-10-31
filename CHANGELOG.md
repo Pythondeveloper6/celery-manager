@@ -7,6 +7,10 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- [Flower-compatible read endpoints](docs/flower-compat.md):
+  `/api/flower/tasks`, `/api/flower/task/info/{id}` and
+  `/api/flower/workers` answer in Flower's shapes, so scripts and dashboards
+  built on Flower keep working behind celery-manager's authentication.
 - `examples/docker/`: a Docker Compose deployment (dashboard, worker, one
   beat, events listener with alerts, PostgreSQL, Redis, one-shot migration),
   built and smoke-tested in CI.
