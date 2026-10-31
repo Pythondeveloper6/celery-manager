@@ -415,6 +415,7 @@ release; they do not require converting a host executor to Celery.
 | `probe_timeout_seconds` | `3.0` | Finite 0.01–30 seconds; bound collection waiting. A hung synchronous provider remains single-flight rather than being forcibly killed. |
 | `probe_freshness_seconds` | `120.0` | Finite 1–86400 seconds; older probe observations become unknown on reads. Alert rules can set their own freshness threshold. |
 | `health_observation_retention_days` | `7` | Integer 1–3650; explicit collection removes expired latest probe snapshots in bounded batches. This is not a metrics time series. |
+| `max_request_body_bytes` | `4194304` | Requests to state-changing routes with a larger body get 413 before anything parses them, whether or not they send `Content-Length`. Keep your proxy's own limit at or below this. |
 
 `tenant_resolver` is documented above and in [tenant security](tenancy.md).
 Configure it at application construction; do not toggle it per request. Runtime

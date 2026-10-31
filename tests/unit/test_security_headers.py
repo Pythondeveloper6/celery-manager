@@ -48,3 +48,25 @@ def test_configured_frame_ancestors_are_kept():
     response = _client(frame_ancestors=("https://host.example",)).get("/")
     assert _policy(response)["frame-ancestors"] == "https://host.example"
     assert "x-frame-options" not in response.headers
+
+
+def test_oversized_request_bodies_are_refused_before_parsing():
+    client = _client(max_request_body_bytes=1024)
+    big = "x" * 4096
+    response = client.post("/api/auth/login", json={"username": "a", "password": big})
+    assert response.status_code == 413
+
+    def chunks():
+        for _ in range(8):
+            yield b"x" * 512
+
+    streamed = client.post("/api/auth/login", content=chunks(), headers={"content-type": "application/json"})
+    assert streamed.status_code == 413
+    # Small bodies still reach the route.
+    assert client.post("/api/auth/login", json={"username": "a", "password": "b"}).status_code == 401
+
+
+def test_body_limit_must_be_positive():
+    import pytest
+    with pytest.raises(ValueError):
+        CeleryManagerConfig(celery_app=Celery("h"), max_request_body_bytes=0)

@@ -67,6 +67,9 @@ All notable changes to celery-manager are recorded here. The format follows
   attestations. Pushing to `main` no longer publishes.
 
 ### Security
+- Request bodies are capped (`max_request_body_bytes`, 4 MiB by default):
+  an unauthenticated client could previously post an arbitrarily large JSON
+  body to the login route and have it read into memory.
 - GitHub Actions are pinned to commit SHAs (Dependabot keeps them current),
   checkouts no longer persist the token, and every elevated permission is
   documented; `zizmor` and `actionlint` report no findings.

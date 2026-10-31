@@ -241,7 +241,8 @@ def create_app(config: CeleryManagerConfig):
     validate_role(config.log_view_role)
     from celery_manager.api.security import inline_script_hashes
     app.add_middleware(SecurityMiddleware, trusted_origins=config.trusted_origins, frame_ancestors=config.frame_ancestors,
-                       script_hashes=inline_script_hashes(Path(__file__).parent.parent / "dashboard" / "static" / "index.html"))
+                       script_hashes=inline_script_hashes(Path(__file__).parent.parent / "dashboard" / "static" / "index.html"),
+                       max_body_bytes=config.max_request_body_bytes)
     if config.trusted_origins:
         from starlette.middleware.cors import CORSMiddleware
         app.add_middleware(CORSMiddleware, allow_origins=list(config.trusted_origins),

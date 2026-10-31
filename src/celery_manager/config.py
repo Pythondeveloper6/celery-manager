@@ -280,9 +280,14 @@ class CeleryManagerConfig:
     probe_timeout_seconds: float = 3.0
     probe_freshness_seconds: float = 120.0
     health_observation_retention_days: int = 7
+    # Requests with a larger body get 413 before anything parses them. The
+    # biggest legitimate body is a schedule CSV import (1 MB of text).
+    max_request_body_bytes: int = 4 * 1024 * 1024
 
 
     def __post_init__(self):
+        if not isinstance(self.max_request_body_bytes, int) or self.max_request_body_bytes < 1:
+            raise ValueError("max_request_body_bytes must be a positive integer")
         if self.tenant_resolver is not None and not callable(self.tenant_resolver):
             raise TypeError("tenant_resolver must be a trusted host callable")
         if not portable_text_fits(self.environment_name, 100) or (self.environment_name and not self.environment_name.isprintable()):

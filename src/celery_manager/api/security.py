@@ -121,8 +121,9 @@ class SecurityMiddleware:
     can't set that header without a CORS preflight this app never approves.
     """
 
-    def __init__(self, app, trusted_origins=(), frame_ancestors=(), script_hashes=()):
+    def __init__(self, app, trusted_origins=(), frame_ancestors=(), script_hashes=(), max_body_bytes=None):
         self.app = app
+        self.max_body_bytes = max_body_bytes
         for origin in (*trusted_origins, *frame_ancestors):
             parts = urlsplit(origin)
             if (parts.scheme not in ("https", "http") or not parts.netloc or parts.username
@@ -148,6 +149,51 @@ class SecurityMiddleware:
             await self._reject(send)
             return
 
+        if self.max_body_bytes is not None and scope["method"] in _UNSAFE_METHODS:
+            limit = self.max_body_bytes
+            for name, value in scope.get("headers", []):
+                if name.lower() == b"content-length":
+                    try:
+                        too_big = int(value) > limit
+                    except ValueError:
+                        too_big = True
+                    if too_big:
+                        await self._reject(send, 413, "request body too large")
+                        return
+            received = 0
+            rejected = False
+            inner_receive, outer_send = receive, send
+
+            async def receive():
+                # Chunked bodies carry no Content-Length; count as they
+                # arrive. Past the limit, answer 413 and tell the app the
+                # client went away, so it stops reading.
+                nonlocal received, rejected
+                if rejected:
+                    return {"type": "http.disconnect"}
+                message = await inner_receive()
+                if message["type"] == "http.request":
+                    received += len(message.get("body", b""))
+                    if received > limit:
+                        rejected = True
+                        await self._reject(outer_send, 413, "request body too large")
+                        return {"type": "http.disconnect"}
+                return message
+
+            async def send(message):
+                if not rejected:
+                    await outer_send(message)
+
+            try:
+                await self._serve(scope, receive, send)
+            except Exception:
+                if not rejected:
+                    raise
+            return
+
+        await self._serve(scope, receive, send)
+
+    async def _serve(self, scope, receive, send):
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
@@ -184,12 +230,12 @@ class SecurityMiddleware:
         return any(origin_host in _host_header_forms(c) for c in candidates if c)
 
     @staticmethod
-    async def _reject(send):
-        body = json.dumps({"detail": "cross-origin request refused"}, separators=(",", ":")).encode("utf-8")
+    async def _reject(send, status=403, detail="cross-origin request refused"):
+        body = json.dumps({"detail": detail}, separators=(",", ":")).encode("utf-8")
         await send(
             {
                 "type": "http.response.start",
-                "status": 403,
+                "status": status,
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode("latin-1")),
