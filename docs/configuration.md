@@ -409,6 +409,7 @@ release; they do not require converting a host executor to Celery.
 | `observer_error_callback` | `None` | Callable receiving sanitized observer health after telemetry failure. Callback errors are contained. |
 | `observer_store_results` | `False` | Opt into sanitized, bounded results for external observations. Uses the existing result size policy; no automatic argument capture. |
 | `environment_name` | `""` | Printable public deployment label, at most 100 characters. Namespaces operation annotations and labels the UI/action audit. It is not a tenant boundary. |
+| `require_typed_confirmation` | `False` | HTTP purge must send `confirm` equal to the queue name, and bulk retry `confirm_count` equal to the number of ids. Clients sending either value are always checked; this makes them mandatory. The dashboard always sends them. |
 | `operator_safeguards` | `False` | Require an audited reason and exact environment confirmation for the documented sensitive HTTP actions. Requires a nonblank `environment_name`. Role/task policies still apply. |
 | `health_probes` | `()` | Up to 32 unique `ProbeDefinition(name, provider)` objects. Providers run only during explicit host collection, never on a health GET. |
 | `probe_timeout_seconds` | `3.0` | Finite 0.01–30 seconds; bound collection waiting. A hung synchronous provider remains single-flight rather than being forcibly killed. |

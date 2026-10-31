@@ -198,7 +198,9 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ task_ids: taskIds }),
+    // confirm_count echoes the scope the operator approved; the server refuses
+    // the batch if it differs (and requires it with require_typed_confirmation).
+    body: JSON.stringify({ task_ids: taskIds, confirm_count: taskIds.length }),
   });
   if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (!response.ok) throw new Error("Bulk retry failed.");

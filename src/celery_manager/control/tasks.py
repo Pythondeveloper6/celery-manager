@@ -490,8 +490,24 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     return new_id
 
 
-def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str) -> list[str]:
+# Most runs one bulk retry may dispatch. Above this the request is refused,
+# not truncated, for the same reason as MAX_BULK_CANCEL.
+MAX_BULK_RETRY = 500
+
+
+class BulkRetryRejected(ValueError):
+    """The batch is too large or repeats an id; nothing was dispatched."""
+
+
+def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str, *, dry_run: bool = False) -> list[str]:
+    """Re-dispatch each stored run. With `dry_run`, validate the whole batch
+    exactly as a real retry would (unknown ids, origin, dispatch policy) and
+    return the ids that would be retried, publishing nothing."""
     from celery_manager.run_context import context_for_run
+    if len(task_ids) > MAX_BULK_RETRY:
+        raise BulkRetryRejected(f"bulk retry is limited to {MAX_BULK_RETRY} runs at a time")
+    if len(set(task_ids)) != len(task_ids):
+        raise BulkRetryRejected("bulk retry ids must be unique")
     for task_id in task_ids:
         candidate = get_task_run(session, task_id)
         _require_celery_origin(candidate)
@@ -509,6 +525,11 @@ def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str) 
             kwargs = _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
             validate_dispatch(session.info["cm_config"], run.task_name, args, kwargs,
                               session=session, principal=session.info.get("cm_principal"))
+    if dry_run:
+        for task_id in task_ids:
+            if get_task_run(session, task_id) is None:
+                raise TaskRunNotFound(f"no task run found for {task_id}")
+        return list(task_ids)
     return [retry_task(celery_app, session, task_id, username) for task_id in task_ids]
 
 

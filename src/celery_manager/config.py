@@ -273,6 +273,9 @@ class CeleryManagerConfig:
     worker_heartbeat_retention_days: int = 7
     environment_name: str = ""
     operator_safeguards: bool = False
+    # Destructive bulk endpoints (queue purge, bulk retry) refuse requests that
+    # do not echo the scope back: the queue name, or the number of runs.
+    require_typed_confirmation: bool = False
     health_probes: tuple = ()
     probe_timeout_seconds: float = 3.0
     probe_freshness_seconds: float = 120.0

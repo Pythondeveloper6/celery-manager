@@ -7,6 +7,11 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- Safe bulk actions: `POST /api/queues/{name}/purge` accepts `dry_run`
+  (current depth and runs that would be marked, nothing purged) and a
+  `confirm` queue name checked server-side; `POST /api/tasks/retry-bulk`
+  accepts `dry_run` and `confirm_count`. `require_typed_confirmation=True`
+  makes the confirmations mandatory. The dashboard sends both.
 - `examples/monitoring/`: an importable Grafana dashboard and ten Prometheus
   alerting rules for `/metrics`, tested against the exported metric names.
 - `celery-manager demo`: a dashboard seeded with a week of sample history on
@@ -35,6 +40,8 @@ All notable changes to celery-manager are recorded here. The format follows
 - `celery_manager.cli.build_parser()`; `main()` accepts an optional `argv`.
 
 ### Changed
+- `POST /api/tasks/retry-bulk` refuses more than 500 ids or repeated ids
+  with 400 instead of dispatching them.
 - Publishing runs only for pushed `v*` tags that match the package version,
   re-runs the unit tier on the tagged commit and uploads PEP 740
   attestations. Pushing to `main` no longer publishes.
