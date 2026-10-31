@@ -7,6 +7,11 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- `celery-manager demo`: a dashboard seeded with a week of sample history on
+  SQLite, with a random-password admin account; no broker or worker needed.
+- [Is celery-manager the right tool?](docs/choosing.md): a decision guide
+  against Flower, Sentry Crons, Grafana and orchestrators, plus short
+  FastAPI, Flask, Django and observe-only quickstarts.
 - `celery-manager copy-schedules --from redbeat|code|sql --to sql|redbeat`
   and `schedulers.reconcile.copy_schedules`: a dry-run-first migration of
   schedule definitions between scheduler backends.

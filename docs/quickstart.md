@@ -1,5 +1,25 @@
 # Quickstart
 
+## Try it in one minute
+
+```bash
+pip install --pre "celery-manager[standalone]"
+celery-manager demo
+```
+
+`demo` creates a SQLite database in a new temporary directory, seeds a week of
+sample history (grouped failures with tracebacks, a slow task, skipped
+occurrences, a running task with progress) and four periodic schedules, creates
+an admin account with a random password, and serves the dashboard on
+`http://127.0.0.1:8765/`. It prints the password and the directory; delete the
+directory to remove everything. No broker or worker is involved, so actions that
+need one (retry, revoke, purge) answer with the broker's error. Flags:
+`--dir`, `--host`, `--port`, `--no-browser`.
+
+Not sure celery-manager is what you need? See
+[Is celery-manager the right tool?](choosing.md), which also has a short
+quickstart per framework.
+
 ## Install
 
 celery-manager is an alpha, so pass `--pre` to pip:

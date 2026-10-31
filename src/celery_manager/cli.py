@@ -300,6 +300,12 @@ def build_parser() -> argparse.ArgumentParser:
     copy_parser.add_argument("--allow-updates", action="store_true",
                              help="also overwrite target entries whose definition differs")
     copy_parser.add_argument("--apply", action="store_true", help="write the plan; default prints it only")
+
+    demo_parser = subparsers.add_parser("demo", help="serve a dashboard seeded with sample history (needs uvicorn)")
+    demo_parser.add_argument("--dir", help="empty directory for the demo database (default: a new temp dir)")
+    demo_parser.add_argument("--host", default="127.0.0.1")
+    demo_parser.add_argument("--port", type=int, default=8765)
+    demo_parser.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
     return parser
 
 
@@ -383,6 +389,13 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(str(exc))
         return
 
+
+    if args.command == "demo":
+        from pathlib import Path
+
+        from celery_manager.demo import run as run_demo
+        sys.exit(run_demo(Path(args.dir) if args.dir else None, host=args.host, port=args.port,
+                          open_browser=not args.no_browser))
 
     if args.command == "copy-schedules":
         if args.config:

@@ -105,6 +105,7 @@ nav:
   - Home: index.md
   - Features: features.md
   - Guide:
+      - Is it the right tool?: choosing.md
       - Quickstart: quickstart.md
       - Integrating with your app: integrations.md
       - Production adoption: production.md

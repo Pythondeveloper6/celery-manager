@@ -163,6 +163,16 @@ OIDC, dispatch policies, bounded logs/results and storage isolation. The
 
 ## Install
 
+Try it first, with no broker, worker or database server:
+
+```bash
+pip install --pre "celery-manager[standalone]"
+celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
+```
+
+See [Is celery-manager the right tool?](docs/choosing.md) for how it compares
+with Flower, Sentry Crons and Grafana, and a 10-line quickstart per framework.
+
 celery-manager is an alpha, so pass `--pre` to pip:
 
 ```bash
