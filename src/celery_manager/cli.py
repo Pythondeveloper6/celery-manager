@@ -208,7 +208,9 @@ def _add_config_args(parser: argparse.ArgumentParser, *, required: bool) -> None
     )
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """The `celery-manager` argument parser, separate from `main` so tests and
+    documentation tooling can inspect the command set without running it."""
     parser = argparse.ArgumentParser(prog="celery-manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -285,8 +287,12 @@ def main() -> None:
     doctor_parser.add_argument("--check-broker", action="store_true")
     doctor_parser.add_argument("--check-workers", action="store_true")
     doctor_parser.add_argument("--timeout", type=float, default=5)
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if args.command == "doctor":
         from celery_manager.doctor import doctor, render_report
         config = _load_config(args.config, args.celery_app, args.db_url)
