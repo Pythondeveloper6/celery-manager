@@ -6,6 +6,29 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `py.typed` marker and the `Typing :: Typed` classifier: type checkers now use
+  the package's annotations.
+- [Stability and upgrade policy](docs/stability.md): the API, CLI, metrics,
+  header and schema surfaces now covered by a deprecation promise, enforced by
+  `tests/unit/test_stability_contract.py`.
+- Test tiers: `pytest -m unit` (no services) and `pytest -m integration`;
+  `pytest-xdist` and `pytest-cov` in the `dev` extra.
+- CI: runs on pull requests and manual dispatch, a coverage floor on the unit
+  tier, and a live Redis 7 + RabbitMQ 3 broker job behind the release gate.
+- `celery_manager.cli.build_parser()`; `main()` accepts an optional `argv`.
+
+### Changed
+- Publishing runs only for pushed `v*` tags that match the package version,
+  re-runs the unit tier on the tagged commit and uploads PEP 740
+  attestations. Pushing to `main` no longer publishes.
+
+### Fixed
+- SQL Server: concurrent login attempts could lose backoff increments because
+  the locked read returned a row cached by the earlier unlocked read. Found by
+  the live SQL Server 2022 storage gate.
+- RabbitMQ integration tests used a session stand-in without `info`.
+
 ## [0.3.0a1] — 2026-10-29
 
 One operations-focused release candidate. Monitoring migrations now reach `0020`.
