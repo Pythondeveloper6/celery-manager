@@ -210,7 +210,12 @@ def create_app(config: CeleryManagerConfig):
     if config.celery_app is not None:
         config._schedule_service.refresh(force=True)
 
-    app = FastAPI(title="celery-manager")
+    from celery_manager import __version__
+
+    # No public schema or interactive docs: the route list is served only to
+    # signed-in users (below), and Swagger/ReDoc would load third-party
+    # scripts into the dashboard's origin.
+    app = FastAPI(title="celery-manager", version=__version__, openapi_url=None, docs_url=None, redoc_url=None)
     from celery_manager.control.policy import DispatchDenied
 
     @app.exception_handler(DispatchDenied)
@@ -284,6 +289,10 @@ def create_app(config: CeleryManagerConfig):
 
     from celery_manager.api.versioning import install_v1
     install_v1(app, list(iter_api_routes(app.routes)))
+
+    @app.get("/openapi.json", include_in_schema=False)
+    def openapi_document(username: str = Depends(get_current_user)):
+        return JSONResponse(app.openapi())
 
     # Fail closed: a new state-changing route that forgot `require_role`
     # would otherwise be open to every signed-in viewer. Refuse to build the

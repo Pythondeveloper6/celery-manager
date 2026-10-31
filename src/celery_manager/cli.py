@@ -303,6 +303,10 @@ def build_parser() -> argparse.ArgumentParser:
                              help="also overwrite target entries whose definition differs")
     copy_parser.add_argument("--apply", action="store_true", help="write the plan; default prints it only")
 
+    openapi_parser = subparsers.add_parser(
+        "openapi", help="write the REST API's OpenAPI document (for generating clients)")
+    openapi_parser.add_argument("--output", "-o", help="file to write (default: stdout)")
+
     demo_parser = subparsers.add_parser("demo", help="serve a dashboard seeded with sample history (needs uvicorn)")
     demo_parser.add_argument("--dir", help="empty directory for the demo database (default: a new temp dir)")
     demo_parser.add_argument("--host", default="127.0.0.1")
@@ -360,6 +364,28 @@ def copy_schedules_command(app, source: str, target: str, *, apply: bool = False
     return 0
 
 
+def openapi_command(output: str | None) -> int:
+    """`celery-manager openapi`: the document a deployment serves at
+    `/openapi.json`, built offline against a throwaway in-memory app."""
+    import json
+    import secrets
+
+    from celery import Celery
+
+    from celery_manager.api.app import create_app
+
+    config = CeleryManagerConfig(celery_app=Celery("celery-manager-openapi", broker="memory://"),
+                                 db_url="sqlite:///:memory:", secret_key=secrets.token_hex(32))
+    app, _ = create_app(config)
+    text = json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n"
+    if output:
+        with open(output, "w", encoding="utf-8") as handle:
+            handle.write(text)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -395,6 +421,9 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(str(exc))
         return
 
+
+    if args.command == "openapi":
+        sys.exit(openapi_command(args.output))
 
     if args.command == "demo":
         from pathlib import Path

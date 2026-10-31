@@ -7,6 +7,8 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- `celery-manager openapi [-o FILE]` writes the REST API's OpenAPI document
+  offline, for generating clients.
 - PagerDuty alert channel (Events API v2): incidents trigger and resolve with
   a stable dedup key; the integration key is never returned by the API.
 - `doctor` reviews Celery settings behind lost or duplicated tasks (acks
@@ -56,6 +58,12 @@ All notable changes to celery-manager are recorded here. The format follows
 - Publishing runs only for pushed `v*` tags that match the package version,
   re-runs the unit tier on the tagged commit and uploads PEP 740
   attestations. Pushing to `main` no longer publishes.
+
+### Security
+- `/openapi.json` now requires a signed-in user, and the Swagger UI and ReDoc
+  pages (which loaded third-party scripts into the dashboard's origin) are no
+  longer served. Previously anyone who could reach the app could read the full
+  route list.
 
 ### Fixed
 - SQL Server: concurrent login attempts could lose backoff increments because
