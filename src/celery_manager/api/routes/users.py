@@ -134,8 +134,10 @@ def change_my_password(
             raise HTTPException(status_code=422, detail=str(exc))
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        from celery_manager.auth.state import create_session
+        sid = create_session(session, config, user.username, SOURCE_LOCAL)
         token = sign_session(
-            config.secret_key, user.username, session_fingerprint(config.secret_key, user.password_hash)
+            config.secret_key, user.username, session_fingerprint(config.secret_key, user.password_hash), session_id=sid
         )
     response.set_cookie(
         SESSION_COOKIE,
@@ -144,5 +146,6 @@ def change_my_password(
         httponly=True,
         samesite="lax",
         secure=config.cookie_secure,
+        max_age=config.session_max_age_seconds,
     )
     return {"ok": True}

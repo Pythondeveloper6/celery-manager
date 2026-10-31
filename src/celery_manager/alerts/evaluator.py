@@ -398,11 +398,25 @@ _CHECKS = {
 }
 
 
+from celery_manager.alerts.depth import PARAMS as DEPTH_PARAMS
+from celery_manager.alerts.depth import check as check_depth
+
+_CHECKS.update({kind: check_depth for kind in DEPTH_PARAMS})
+
 # --- messages ------------------------------------------------------------------------
 
 
 def _summary(rule: AlertRule, key: str, details: dict, event: str) -> str:
     kind = rule.kind
+    if kind in DEPTH_PARAMS:
+        if kind == "daily_digest":
+            return f"Daily task digest: {details.get('total', 0)} completed runs ({details.get('until')})"
+        if kind == "run_late" and event != "resolved" and "late_seconds" in details:
+            state = "started" if details.get("started") else "has not started"
+            return (f"{details.get('task_name')} ({details.get('schedule') or 'scheduled'}) due "
+                    f"{details.get('due_at')} {state} {details['late_seconds']:.0f}s late")
+        label = kind.replace("_", " ")
+        return f"{key}: {label}{' resolved' if event == 'resolved' else ''}"
     if kind == "failure_rate":
         if event == "resolved":
             return f"{key}: failure rate is back under {details.get('threshold', 0):.0%}"
@@ -457,6 +471,12 @@ def dashboard_link(config: CeleryManagerConfig, kind: str | None, key: str | Non
         return base + "task-types/" + quote(key, safe="")
     if kind == "missed_run" and key:
         return base + "schedules/" + quote(key, safe="")
+    # Rules whose incident key is one run: link straight to that run.
+    if kind in ("task_failed", "task_sla", "run_stuck", "worker_lost", "run_late") and key:
+        return base + "tasks/" + quote(key, safe="")
+    # Rules whose incident key is a task name.
+    if kind in ("consecutive_failures", "duration_regression") and key:
+        return base + "task-types/" + quote(key, safe="")
     if kind in ("queue_backlog", "broker_unreachable", "broker_memory", "queue_wait", "queue_growing",
                 "rabbitmq_alarm"):
         return base + "queues"

@@ -25,7 +25,8 @@ unusable answer from your app is a **`500`**, never access.
 
 **Roles.** Every `POST`/`PUT` below except login and logout also needs a
 minimum [role](roles.md): `operator` for day-to-day controls, `admin` for
-queue purge, worker shutdown and branding. Every `GET` works for any role.
+queue purge, worker shutdown and branding. Most operational `GET` routes need
+viewer; local account listings require admin and log reads obey `log_view_role`.
 A signed-in account below the needed role gets
 **`403 {"detail": "Not allowed: this action needs the admin role (you are operator)."}`**
 and nothing happens. The full table is on the [Roles](roles.md) page.
@@ -57,8 +58,14 @@ replaces this with the allowed origins and omits the conflicting XFO header.
 |---|---|---|---|---|
 | `GET` | `/api/auth/options` | none | — | `200 {"local_login": bool, "external": bool, "provider_name": str, "login_url": str \| null, "logout_url": str \| null}`: how this deployment signs people in, for the login screen. `external` is true when a host authenticator or principal provider is configured; `login_url` may contain `{next}`. Unauthenticated, like `GET /api/settings`; it holds nothing secret. |
 | `POST` | `/api/auth/login` | none | `{"username": str, "password": str}` | `200 {"username": str, "role": str, "source": "local"}` on success; `401 {"detail": "invalid credentials"}` on bad username/password; `403` with a sentence naming your app when `local_login_enabled=False`. Sets the `cm_session` cookie. |
-| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Deletes the `cm_session` cookie in this browser. There is no server-side session store to invalidate — the cookie itself is the only state — so a copy of the cookie taken before logout stays valid until it expires or the account's password changes; see the [security model](configuration.md#security-model). |
+| `POST` | `/api/auth/logout` | none | — | `200 {"ok": true}`. Revokes the current tracked browser session and deletes its cookie. Legacy cookies without a registered session ID cannot be revoked individually; see [session upgrade compatibility](auth-sessions.md#upgrade-compatibility). |
 | `GET` | `/api/whoami` | required | — | `200 {"username": str, "role": "viewer" \| "operator" \| "admin", "source": "local" \| "external"}` if authenticated (`external`: signed in by your app); `401` otherwise; `403 {"detail": "Your <app> account (<name>) has no access to this dashboard."}` for a user of your app who has no role here. This is what the dashboard SPA calls on load to decide whether to show the login screen. |
+
+New in 0.3: [browser sessions](auth-sessions.md) documents shared login backoff
+(`429` with `Retry-After`), `GET /api/auth/sessions` and own-session revocation.
+All documented `/api` routes also have equivalent `/api/v1` aliases; see
+[versioned API and widget](embedding.md). Schedule reconciliation, lock leases,
+beat owners and worker history are described in their linked feature guides.
 
 ## Users
 
@@ -86,7 +93,7 @@ rule (duplicate username, last admin, deleting yourself).
 | `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}, "queue": str?, "countdown": number?, "eta": ISO datetime?}` | `200 {"task_id": str}`. Dispatches via `celery_app.send_task(...)` (`queue`, `countdown` >= 0 and `eta` are passed through only when set; a naive `eta` is read as UTC), seeds a `queued` run row so the run's detail page opens immediately, and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}` plus `queue`/`countdown`/`eta` when given). `422` for a wrongly-typed field. An unregistered task returns 422 before publication; allowlist, queue and argument-schema checks also apply. Explicit queue override is refused unless enabled. |
 | `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Unknown IDs return 404 unless an admin explicitly supplies `force=true`. |
 | `POST` | `/api/tasks/{task_id}/retry` | required | optional `{"args": [...]?, "kwargs": {...}?}` | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them (or, if the body supplies `args` and/or `kwargs`, those instead; a field left out keeps the stored value, and no body behaves exactly as before; `422` if `args` is not a list or `kwargs` not an object) as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`; for an edited retry also `"args_edited": true` and the `args`/`kwargs` actually sent). The new run records `retried_from_id` either way). `404 {"detail": "not found"}` if no run exists for `task_id`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
-| `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...]}` | `200 {"new_task_ids": [str, ...]}`. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. The HTTP API validates the whole requested scope before publishing: an unknown ID returns 404 and a policy denial returns 403/422 without dispatch. Broker failures during actual publication can still be partial. |
+| `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...], "dry_run"?: bool, "confirm_count"?: int}` | `200 {"new_task_ids": [str, ...]}`; with `dry_run`, `200 {"dry_run": true, "would_retry": [...], "count": int}` after the same validation, publishing nothing. At most 500 unique ids (`400` otherwise). A `confirm_count` different from the number of ids is `400`; `require_typed_confirmation` makes it mandatory. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. The HTTP API validates the whole requested scope before publishing: an unknown ID returns 404 and a policy denial returns 403/422 without dispatch. Broker failures during actual publication can still be partial. |
 | `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | Changes a task's rate limit on running workers (not persisted). Documented with the other worker controls under [Workers](#workers). |
 
 | `POST` | `/api/tasks/cancel-bulk` | required | `{"task_ids": [str, ...]}` **or** `{"filter": {"status", "task_name", "q", "date_from", "date_to"}}` (exactly one; the filter fields mean what they mean on `GET /api/tasks`), plus `"terminate": bool = false`, `"dry_run": bool = false` | `200 {"revoked": int, "matched": int, "skipped_finished": int, "unknown": int, "limit": 1000, "dry_run": bool}`. Revokes only runs in `queued`/`started`/`retried`; finished runs are counted in `skipped_finished`, ids with no stored run in `unknown` (and not revoked). `dry_run` counts without revoking or auditing. `400` if both or neither selector is sent, or if more than 1,000 runs would be cancelled (nothing is revoked then). One `cancel_bulk` audit row per call. See [Bulk cancel](queues.md#bulk-cancel). |
@@ -114,7 +121,7 @@ All parameters are optional and combine with AND.
 
 | Param | Type | Default | Meaning |
 |---|---|---|---|
-| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`. An unknown value is not an error — it just matches nothing. |
+| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`, `interrupted`. An unknown value is not an error — it just matches nothing. |
 | `task_name` | `str` | — | **Exact** match on the registered task name. Not a prefix and not a substring: `task_name=send` does *not* match `myapp.send_mail`. Use `q` for partial names. |
 | `q` | `str` | — | Case-insensitive substring search across four columns — see below. |
 | `date_from` | datetime | — | `started_at >= date_from`. |
@@ -631,7 +638,7 @@ broker failures raise `WorkerControlError`.
 | `GET` | `/api/queues` | required | Query param `workers` (bool, default `true`): set `false` to skip the worker `active_queues` inspect (1s timeout, cached 30s). | `200 {"broker": {"transport": str\|null, "error": str\|null, "unsupported": bool, "workers_replied": bool\|null}, "queues": [...], "recorded_queued_unassigned": int, "wait_window_seconds": 900}`. Each queue is `{"name", "sources", "depth", "consumers", "exists", "reason", "recorded_queued", "wait"}`, where `wait` is `{"runs", "p50", "p95", "max"}` in seconds (queue wait over the last `wait_window_seconds`, ETA time excluded) or `null` when no timed run started in it, default queue first, then by name. `depth` is the broker's message count (`null` if the broker couldn't be asked; `reason` says why), `consumers` is `null` on Redis and other kombu virtual transports, which can't report it. `recorded_queued` counts `task_runs` still `queued` in that queue. **Always `200`**: an unreachable, slow (3s deadline) or `memory://` broker is reported in `broker.error`, not as an HTTP error. |
 | `GET` | `/api/broker/health` | required | — | `200 {"transport": str\|null, "reachable": bool, "latency_ms": number\|null, "url": str\|null, "error": str\|null, "sentinel": bool, "details": object\|null, "details_note": str\|null, "checked_at": ISO}`. `url` is the broker URL with the password masked. On Redis, `details` is `{"version", "used_memory", "maxmemory" (0 = unlimited), "memory_ratio" (null when unlimited), "maxmemory_policy", "connected_clients", "blocked_clients", "evicted_keys", "rejected_connections", "uptime_seconds", "persistence": {"rdb_last_save_status", "rdb_last_save_at", "rdb_changes_since_save", "aof_enabled", "aof_last_write_status"}, "warnings": [str]}`; on RabbitMQ over AMQP, `{"product", "version", "cluster_name", "management": "not configured", "warnings": []}`; on other transports `details` is `null` and `details_note` reads "details not available for <transport>". **Always `200`**: an unreachable or slow (3s deadline) broker is `reachable: false` with `error`. See [Broker health](queues.md#broker-health). |
 | `GET` | `/api/queues/{name}/history` | required (any role) | Query `hours` (number, default `24`, more than 0 and at most 720). | `200 {"queue", "hours", "bucket_seconds", "samples", "points": [{"at": ISO 8601, "depth": int}]}`. Depth samples recorded by the events listener, downsampled to at most 240 buckets; each point is the highest depth in its bucket, stamped with the bucket start, and empty buckets are left out. `points` is `[]` for a queue never sampled (not a `404`). `422` for a bad `hours`. See [Depth history](queues.md#depth-history). |
-| `POST` | `/api/queues/{name}/purge` | required | — | `200 {"queue": str, "messages_removed": int, "runs_marked_revoked": int}`. Purges ready messages from that one queue, then — only if at least one message was removed — marks this queue's `queued` runs without an ETA as `revoked`. Writes a `purge` audit row. `404` if the broker reports no such queue (RabbitMQ), `503` if the broker is unreachable, timed out, or `memory://`; nothing is marked or audited on failure. |
+| `POST` | `/api/queues/{name}/purge` | required | optional `{"dry_run": bool, "confirm": str}` | With `dry_run`: `200 {"queue", "dry_run": true, "messages_waiting", "runs_that_would_be_marked_revoked"}`, nothing purged or audited. A `confirm` that is not exactly the queue name is `400` before the broker is touched; `require_typed_confirmation` makes `confirm` mandatory. Otherwise `200 {"queue": str, "messages_removed": int, "runs_marked_revoked": int}`. Purges ready messages from that one queue, then — only if at least one message was removed — marks this queue's `queued` runs without an ETA as `revoked`. Writes a `purge` audit row. `404` if the broker reports no such queue (RabbitMQ), `503` if the broker is unreachable, timed out, or `memory://`; nothing is marked or audited on failure. |
 | `GET` | `/api/queues/{name}/messages` | `viewer` | Query `limit` (default 50, 1–200), `offset` (default 0) | `200 {"queue", "transport", "supported": bool, "reason": str\|null, "approximate": bool, "side_effects": [str], "args_visible": bool, "total": int\|null, "offset", "limit", "messages": [...]}`. Messages in the order workers will take them. Each is `{"position", "task_id", "task_name", "eta", "retries", "priority", "priority_step", "size_bytes", "sent_at", "age_seconds", "args", "kwargs", "args_note", "run"}`; `run` is `{"status"}` of the recorded run with that id, or `null`. `args`/`kwargs` are text (the producer's `argsrepr`, or the JSON body decoded), cut to 2,000 characters, and `null` when `queue_browser_show_args` is off; `args_note` says why they are missing otherwise (a pickled or over-64 KB body is never decoded). The raw body is never returned. `sent_at`/`age_seconds` are `null` unless beat stamped the message or its run records a send time. Redis: exact and read-only. RabbitMQ: `supported: false` unless `queue_browser_amqp` is on, then `approximate: true`, at most 20 messages, with `side_effects` listed. Other transports: `supported: false` with a `reason`. `503` if the broker can't be reached. |
 | `DELETE` | `/api/queues/{name}/messages/{task_id}` | `admin` | — | `200 {"queue", "task_id", "run_marked_revoked": bool}`. Removes that one waiting message for good (Redis only) and marks its run `revoked` if it was recorded as `queued`. Audit: `delete_message`. `404` if no message with that task id is waiting there, `409` if a worker took it while we were removing it ("already taken by a worker") or the broker isn't Redis, `503` broker unreachable. Nothing is changed or audited on failure. |
 | `POST` | `/api/queues/{name}/messages/{task_id}/move` | `admin` | `{"target": str}` | `200 {"queue", "task_id", "target"}`. Moves the message to the end of `target` (it keeps its priority), and sets its run's `queue` to `target`. Audit: `move_message`. `400` if `target` is the same queue or not a known queue (configured, routed, seen on a run, or consumed by a worker); otherwise as delete. |
@@ -788,7 +795,7 @@ scheduler ownership, dispatch validation and the deployment checklist.
 | `DELETE` | `/api/schedules/{name}` | admin | Deletes the backend definition; run and override history remain. |
 | `POST` | `/api/schedules/{name}/skip-next` | operator | Records the next enabled occurrence as a one-off skip. Repeated calls use existing tolerance-based idempotence. No available occurrence returns 409. |
 | `POST` | `/api/schedules/{name}/run-now` | operator | Dispatches the entry arguments through the task policy. Returns `{task_id}`; carries no occurrence header and consumes no scheduled skip. |
-| `GET` | `/api/schedules/health` | viewer | Backend name and unregistered-task findings. This is not yet a complete reconciliation/drift report. |
+| `GET` | `/api/schedules/health` | viewer | Backend/definition drift, unregistered tasks and historical entries missing from the backend. Optional `inspect_consumers=true` adds bounded observed-consumer diagnostics; unknown replies do not prove absent workers. |
 | `GET` | `/api/health/beat` | viewer | Healthy/stale/unknown beat state, last tick and age. Optional `stale_seconds` threshold. |
 | `GET` | `/api/health/workers` | viewer | Durable last-seen worker online/offline observations. |
 | `GET` | `/api/health/runs` | viewer | Advisory `worker_lost`/`suspect_stuck` findings; optional `stuck_seconds`. Never changes execution status. |
@@ -809,3 +816,54 @@ explicitly request `?force=true` (other roles receive 403).
 
 With `live_stream="poll"`, `/api/stream` is absent and the SPA polls. Teams is an
 additional alert-channel kind with `{url}` configuration; the URL is write-only.
+
+
+## Native observations and operator context (0.3)
+
+[Real-world operations](real-world-operations.md) documents Python `RunObserver`,
+probe collection, scheduler registration, metadata/privacy and preflight.
+Observation writes belong to trusted host code; there is no anonymous HTTP
+endpoint for inventing observations or assigning tenants.
+
+Task list/detail responses add `source`, `tenant_id`, `correlation_id`,
+`operation_key` and bounded `context_json`. `source="external"` identifies work
+whose execution remains owned by the host; Celery retry/cancel/rerun refuses it
+with 409. External lifecycle states include `interrupted`; an unreported hard
+crash can still leave a started row. Related-run matching is visibility only.
+Manager retries, bulk retries and failed-run reruns preserve original
+tenant/correlation/operation metadata under the current metadata policy, while
+recording the acting operator as initiator. Invalid stored context fails before
+publication, including full-scope validation before a bulk batch is sent.
+
+| Method | Endpoint | Role | Request/response contract |
+|---|---|---|---|
+| `GET` | `/api/tasks/{task_id}/related` | viewer | `kind=operation` (default) or `correlation`; `limit=100`, 1–500. Same-tenant matches from either source, newest first; `{items,has_more,kind}`. No key returns an empty list, unknown run 404. |
+| `GET` | `/api/health/probes` | viewer | Stored latest sanitized measurements and freshness; no provider invocation. `{items}` with name/state/metrics/reason/observation age. More than 1,000 persisted names returns 503 instead of a partial inventory. |
+| `GET` | `/api/health/schedulers` | viewer | Stored independent scheduler heartbeats and command expectations, including first-run due state; `{items}`. Does not contact or start the host scheduler. More than 1,000 instances returns 503. |
+| `DELETE` | `/api/health/schedulers/{instance_id}` | admin | Audit and retire monitoring expectations; `{removed}`. Does not stop execution. |
+| `GET` | `/api/operations/annotations` | viewer | Configured environment only; optional start-time `date_from`/`date_to`, `limit=50` (1–200), `offset=0`. `{items,has_more,environment}`. |
+| `GET` | `/api/operations/context` | viewer | Required `at` timestamp. Latest deployment at/before it and maintenance active at it, scoped to configured environment. `{at,environment,deployment,maintenance,has_more}`; maintenance capped at 200. No suppression or causal inference. |
+| `POST` | `/api/operations/annotations` | admin | `{kind,label,revision?,note?,starts_at?,ends_at?}`; `kind` deployment/maintenance. Maintenance requires a later end. Returns stored annotation with ID/environment/actor; creation is audited. No edit/delete endpoint. |
+| `GET` | `/api/operations/preflight` | admin | Read-only storage/configuration diagnostic report `{ok,environment,checked_at,checks}`. Outbound broker/worker checks require CLI/Python opt-in. |
+
+All have equivalent `/api/v1` aliases. Monitoring-only deployments
+(`celery_app=None`) refuse Celery broker/worker/scheduler execution controls with
+409. [Tenant history mode](tenancy.md) is more restrictive: SQL-scoped task reads
+only, all global views and operational writes denied even for admin, including
+metrics/events/annotations/preflight. Newly added endpoints are denied until
+explicitly admitted to its reviewed allowlist.
+
+Auth options add `monitoring_only`, `tenant_scoped`, `read_only`, `environment`
+and `sensitive_actions`. The latter is the enabled sensitive-action pattern list;
+with safeguards disabled it is empty. Tenant mode forces `live_stream="poll"`.
+`whoami` includes its resolved tenant when scoped. These flags help the dashboard
+hide controls; server enforcement does not depend on the flags reaching a client.
+
+With `operator_safeguards=True`, protected HTTP requests must send UTF-8
+percent-encoded `X-CM-Action-Reason` (decoded printable 1–500 characters) and
+`X-CM-Confirm-Environment` (exact configured environment). Missing/invalid
+preconditions return 428, unavailable intent audit returns 503, and neither
+performs the action. Authentication, role and task-policy restrictions still
+apply. Accepted intent does not imply successful completion. The complete
+[action list and audit semantics](real-world-operations.md#reasons-and-environment-confirmation-for-sensitive-actions)
+apply equally to mounted and versioned routes.

@@ -6,7 +6,187 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- The **Run now** dialog renders a form from the task's `args_schemas`
+  model (scalars and enums), and `GET /api/tasks/registered` returns the
+  model's JSON Schema as `args_schema`. The server still validates on start.
+- [Troubleshooting and incident runbook](docs/troubleshooting.md).
+- `scripts/benchmark.py` measures listener throughput and dashboard API
+  latency against your own database; results and the live validation matrix
+  are in [Performance and validation](docs/validation.md).
+- SECURITY.md documents the threat model: assets, roles and trust
+  boundaries, controls, and operator responsibilities.
+- CI checks the licenses and advisories of the dashboard's production
+  JavaScript dependencies.
+- [Flower-compatible read endpoints](docs/flower-compat.md):
+  `/api/flower/tasks`, `/api/flower/task/info/{id}` and
+  `/api/flower/workers` answer in Flower's shapes, so scripts and dashboards
+  built on Flower keep working behind celery-manager's authentication.
+- `examples/docker/`: a Docker Compose deployment (dashboard, worker, one
+  beat, events listener with alerts, PostgreSQL, Redis, one-shot migration),
+  built and smoke-tested in CI.
+- `celery-manager openapi [-o FILE]` writes the REST API's OpenAPI document
+  offline, for generating clients.
+- PagerDuty alert channel (Events API v2): incidents trigger and resolve with
+  a stable dedup key; the integration key is never returned by the API.
+- `doctor` reviews Celery settings behind lost or duplicated tasks (acks
+  late, prefetch, visibility timeout, result expiry, time limits, events,
+  single beat) with a fix for each; `--fix-suggestions` prints a Markdown
+  production checklist.
+- `run_late` alert rule: a scheduled occurrence that started more than N
+  seconds after it was due, or has not started yet (cron-monitor "late"
+  semantics alongside `missed_run`, `run_stuck` and `duration_regression`).
+- Alert notifications link to the run for per-run rules and to the task
+  overview for per-task rules, instead of the alerts page.
+- Safe bulk actions: `POST /api/queues/{name}/purge` accepts `dry_run`
+  (current depth and runs that would be marked, nothing purged) and a
+  `confirm` queue name checked server-side; `POST /api/tasks/retry-bulk`
+  accepts `dry_run` and `confirm_count`. `require_typed_confirmation=True`
+  makes the confirmations mandatory. The dashboard sends both.
+- `examples/monitoring/`: an importable Grafana dashboard and ten Prometheus
+  alerting rules for `/metrics`, tested against the exported metric names.
+- `celery-manager demo`: a dashboard seeded with a week of sample history on
+  SQLite, with a random-password admin account; no broker or worker needed.
+- [Is celery-manager the right tool?](docs/choosing.md): a decision guide
+  against Flower, Sentry Crons, Grafana and orchestrators, plus short
+  FastAPI, Flask, Django and observe-only quickstarts.
+- `celery-manager copy-schedules --from redbeat|code|sql --to sql|redbeat`
+  and `schedulers.reconcile.copy_schedules`: a dry-run-first migration of
+  schedule definitions between scheduler backends.
+- [Other task runners](docs/other-runners.md): `celery_manager.adapters` records
+  runs from plain asyncio/thread loops (`run_every`, `run_every_in_thread`,
+  `observed_job`), Dramatiq and Taskiq (middleware) and arq (job wrapper) via
+  `RunObserver`. Observe-only; the runners are not dependencies.
+- Monitoring-only processes no longer import Celery, FastAPI, Starlette,
+  bcrypt or pydantic: package-root names resolve on first use.
+- `py.typed` marker and the `Typing :: Typed` classifier: type checkers now use
+  the package's annotations.
+- [Stability and upgrade policy](docs/stability.md): the API, CLI, metrics,
+  header and schema surfaces now covered by a deprecation promise, enforced by
+  `tests/unit/test_stability_contract.py`.
+- Test tiers: `pytest -m unit` (no services) and `pytest -m integration`;
+  `pytest-xdist` and `pytest-cov` in the `dev` extra.
+- CI: runs on pull requests and manual dispatch, a coverage floor on the unit
+  tier, and a live Redis 7 + RabbitMQ 3 broker job behind the release gate.
+- `celery_manager.cli.build_parser()`; `main()` accepts an optional `argv`.
+
+### Changed
+- `POST /api/tasks/retry-bulk` refuses more than 500 ids or repeated ids
+  with 400 instead of dispatching them.
+- Publishing runs only for pushed `v*` tags that match the package version,
+  re-runs the unit tier on the tagged commit and uploads PEP 740
+  attestations. Pushing to `main` no longer publishes.
+
+### Security
+- Request bodies are capped (`max_request_body_bytes`, 4 MiB by default):
+  an unauthenticated client could previously post an arbitrarily large JSON
+  body to the login route and have it read into memory.
+- GitHub Actions are pinned to commit SHAs (Dependabot keeps them current),
+  checkouts no longer persist the token, and every elevated permission is
+  documented; `zizmor` and `actionlint` report no findings.
+- `celery-manager create-user` now applies the dashboard's rules: passwords
+  of at least 8 characters and the same username format. It used to accept a
+  one-character password and any username.
+- Every response now carries a Content-Security-Policy that only allows
+  scripts from the dashboard's own origin plus its hashed inline theme
+  bootstrap (`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`),
+  and `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`.
+  Injected markup can no longer run script even if a rendering bug let it in.
+- `/openapi.json` now requires a signed-in user, and the Swagger UI and ReDoc
+  pages (which loaded third-party scripts into the dashboard's origin) are no
+  longer served. Previously anyone who could reach the app could read the full
+  route list.
+
 ### Fixed
+- Importing a table module (for example through `CeleryManagerConfig`'s
+  probe validation) before `celery_manager.db.models` no longer fails with a
+  circular import.
+- SQL Server: concurrent login attempts could lose backoff increments because
+  the locked read returned a row cached by the earlier unlocked read. Found by
+  the live SQL Server 2022 storage gate.
+- RabbitMQ integration tests used a session stand-in without `info`.
+
+## [0.3.0a1] — 2026-10-29
+
+One operations-focused release candidate. Monitoring migrations now reach `0020`.
+See the [release guide](docs/release-0.3.md) for deployment, compatibility and
+explicit remaining work. Live database/Redis and deployment gates
+must pass before treating this candidate as production-validated.
+
+### Added
+
+- Host-owned synchronous/async job observations through `RunObserver`, including
+  queued/start/success/failure/skip/interruption lifecycle, default fail-open
+  telemetry health, sanitized bounded metadata and explicit result opt-in.
+  `celery_app=None` supports observation-only deployments without inventing a
+  broker or replacing the host executor.
+- Trusted tenant-resolved, SQL-scoped read-only task history, counts, exports,
+  workflow/related attempts and failure review reads. Missing scope fails closed;
+  admin cannot bypass global-view/write/event restrictions.
+- Correlation and operation-key metadata, trusted Celery publish context, and
+  same-tenant related/duplicate attempt visibility without duplicate suppression
+  or an exactly-once guarantee. Operator retries/reruns preserve original
+  business/tenant context while identifying the acting operator separately.
+- Explicit host-collected numeric health probes, outbox aggregate helper,
+  freshness/timeout handling and custom-probe alerts. Independent scheduler
+  registrations track heartbeat and expected commands before first observation.
+- Read-only `doctor` CLI/Python preflight with optional outbound checks, and an
+  admin dashboard preflight view. No automatic repair or schema initialization.
+- Environment-scoped deployment/planned-maintenance annotations and Operations
+  health UI. Annotations do not pause jobs or suppress alerts.
+- Opt-in audited sensitive-action reason/environment preconditions, enforced
+  after roles and surfaced by dashboard prompts and capability metadata.
+
+
+- Optional SQLAlchemy Celery Beat backend and stamping scheduler, explicit SQL
+  authority/initialization, lossless export, reviewed adoption/repair plans,
+  stale-snapshot conflicts and non-destructive reconciliation UI.
+- Deterministic weekday lists/ranges, multiple daily times with a shared minute,
+  exact supported time windows, readable descriptions and per-entry IANA
+  timezones with preview/editor support. Unsupported meanings are refused.
+- JSON arguments, keyword arguments and delivery options in schedule forms.
+- Redis singleton execution leases with ownership tokens, renewal, explicit
+  conflict policy, inspection and audited conditional administrative release.
+- Individual/consecutive failure, stuck/lost, stale beat, SLA, regression and
+  daily digest alert kinds with bounded evidence and unknown-data behavior.
+- Failure acknowledgement/ignore/reopen, notes and durable review history.
+- Owner-aware beat health, owner retirement and throttled external health pings.
+- Minute-bucket worker heartbeat history, bounded retention, history API and UI.
+- Shared-database login backoff and individually revocable local/bridge browser
+  sessions, including password-change session reissue and session controls.
+- “Started by me” task filtering across list/count/export/bulk cancellation,
+  dispatch actor stamping, and worker-child initiator propagation.
+- Validated atomic CSV import of legacy pauses, dry-run by default, via CLI/API.
+- Read-only definition/history drift and opt-in observed-consumer diagnostics.
+- Versioned `/api/v1` aliases, OpenAPI operations and an authenticated JavaScript
+  status widget with bounded polling and safe text rendering.
+
+### Fixed
+
+- Windowed scheduling respects interval steps and refuses inexact boundaries.
+  Per-entry zones now become due correctly, survive serialization and project
+  across UTC offsets and DST changes using Celery's calendar behavior.
+- Alert safety caps apply after task/time scoping, so unrelated retained history
+  cannot disable a specific rule. Failure review state/history/audit commit together.
+- SQL scheduler startup preserves operator-edited authoritative rows; intervals
+  unsupported by upstream integer storage are refused instead of truncated.
+- Login success and admission acquire locks in one order; cleanup rechecks
+  expiry before deleting rows refreshed concurrently.
+
+- Task exports preserve initiator/started-by-me filters; failure review ignores
+  stale responses after switching tasks; refreshed schedule forms require an
+  explicit reload before replacing newer backend arguments.
+- Already-blocked login requests cannot create unlimited counterpart throttle
+  rows. Singleton key callables receive consumed-metadata-free task arguments,
+  and lock inspection stays inside its exact namespace.
+- Beat-owner keys fit the monitoring database's 64-character key column on
+  strict SQL servers. Malformed OIDC identity/role claims fail cleanly.
+- Required adapter/storage CI gates reject skipped tests, cover optional
+  adapters on Python 3.10 and 3.12, and verify previous-release data survives
+  upgrade, rollback and repeated deployment.
+
+### Previous release follow-up fixes
+
 
 - Publishing checks whether the tested version exists on PyPI, so an unchanged
   version can publish after CI fixes. Registry errors fail the check explicitly.
@@ -56,7 +236,7 @@ starting application processes, or leave automatic migrations enabled. See
 - Durable last-seen worker state, advisory stuck/lost-run health, optional beat
   heartbeat health, and Microsoft Teams Workflows alert channels.
 - Optional-adapter CI and live PostgreSQL/MySQL/SQL Server storage contracts.
-  These integrations require their CI and real-application gates; local SQL
+  These integrations require their CI and deployment gates; local SQL
   compilation alone does not establish live backend compatibility.
 
 ### Changed

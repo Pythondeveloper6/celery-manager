@@ -24,6 +24,7 @@ from celery_manager.control.queues import (
     QueueBrokerError,
     QueueNotFound,
     list_queues,
+    preview_purge,
     purge_queue,
 )
 from celery_manager.control.rabbitmq import annotate_queues
@@ -80,9 +81,21 @@ def get_queue_history(
         return history(session, name, hours)
 
 
+class PurgeRequest(BaseModel):
+    dry_run: bool = False
+    # The queue name typed by the operator. When sent it must match exactly;
+    # with `require_typed_confirmation` on it must always be sent.
+    confirm: str | None = Field(default=None, max_length=_MAX_QUEUE_NAME)
+
+
 @router.post("/{name}/purge")
-def purge(name: str, request: Request, username: str = Depends(require_admin)):
+def purge(name: str, request: Request, payload: PurgeRequest | None = None, username: str = Depends(require_admin)):
     """Remove every ready message from one queue. Destructive; audited.
+
+    `{"dry_run": true}` only reports the current depth and how many recorded
+    runs would be marked revoked; nothing is purged or audited. A `confirm`
+    value must equal the queue name (400 otherwise), and is mandatory when
+    `require_typed_confirmation` is configured.
 
     404 if the broker says the queue doesn't exist (RabbitMQ), 503 if the
     broker can't be reached, timed out, or can't be purged from here (the
@@ -90,10 +103,18 @@ def purge(name: str, request: Request, username: str = Depends(require_admin)):
     """
     if not name or len(name) > _MAX_QUEUE_NAME:
         raise HTTPException(status_code=400, detail="invalid queue name")
-    celery_app = request.app.state.cm_config.celery_app
+    payload = payload or PurgeRequest()
+    config = request.app.state.cm_config
+    celery_app = config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         try:
+            if payload.dry_run:
+                return preview_purge(celery_app, session, name)
+            if payload.confirm is not None and payload.confirm != name:
+                raise HTTPException(status_code=400, detail="confirmation does not match the queue name")
+            if payload.confirm is None and config.require_typed_confirmation:
+                raise HTTPException(status_code=400, detail="type the queue name to confirm this purge")
             return purge_queue(celery_app, session, name, username=username)
         except QueueNotFound:
             raise HTTPException(status_code=404, detail=f"the broker has no queue named {name!r}")

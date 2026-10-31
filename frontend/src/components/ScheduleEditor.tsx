@@ -57,17 +57,19 @@ function splitSeconds(seconds: number): { amount: string; unit: number } {
   return { amount: String(seconds / unit), unit };
 }
 
-function formatRun(value: string): string {
+function formatRun(value: string, timezone?: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
+  try { return parsed.toLocaleString(undefined, {
+    timeZone: timezone,
+    timeZoneName: "short",
     weekday: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     second: parsed.getSeconds() ? "2-digit" : undefined,
-  });
+  }); } catch { return parsed.toISOString(); }
 }
 
 export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
@@ -90,6 +92,7 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
       : DEFAULT_CRON,
   );
   const initialInterval = initial?.type === "interval" ? splitSeconds(initial.seconds) : { amount: "1", unit: 3600 };
+  const [timezone, setTimezone] = useState(initial?.type === "crontab" ? initial.timezone ?? "" : "");
   const [amount, setAmount] = useState(initialInterval.amount);
   const [unit, setUnit] = useState<number>(initialInterval.unit);
 
@@ -101,11 +104,11 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
 
   // The spec the form describes, or a sentence saying why it doesn't yet.
   const draft = useMemo((): { spec?: ScheduleSpec; error?: string } => {
-    if (kind === "crontab") return { spec: { type: "crontab", ...cron } };
+    if (kind === "crontab") return { spec: { type: "crontab", ...cron, ...(timezone.trim() ? { timezone: timezone.trim() } : {}) } };
     const n = Number(amount);
     if (amount.trim() === "" || !Number.isFinite(n) || n <= 0) return { error: "Enter how often it runs, a number above 0." };
     return { spec: { type: "interval", seconds: n * unit } };
-  }, [kind, cron, amount, unit]);
+  }, [kind, cron, amount, unit, timezone]);
 
   const specKey = draft.spec ? JSON.stringify(draft.spec) : null;
 
@@ -306,6 +309,7 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
               </div>
             </div>
           )}
+          {kind === "crontab" && <div className="cm-field"><label htmlFor={`${uid}-timezone`}>Timezone (IANA)</label><input id={`${uid}-timezone`} className="cm-input" value={timezone} placeholder="App timezone" onChange={(event) => setTimezone(event.target.value)} /><p className="cm-field-hint">For example Europe/London. Blank uses the Celery app timezone. Explicit timezones follow local daylight saving changes.</p></div>}
           {kind === "interval" && (
             <p className="cm-field-hint">The next run is counted from the last one, not from when you save.</p>
           )}
@@ -330,7 +334,7 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
             ) : (
               <ol className="cm-schedule-preview-list" data-stale={previewing || undefined}>
                 {preview.map((t) => (
-                  <li key={t}>{formatRun(t)}</li>
+                  <li key={t}>{formatRun(t, kind === "crontab" && timezone.trim() ? timezone.trim() : undefined)}</li>
                 ))}
               </ol>
             )}

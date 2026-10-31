@@ -79,16 +79,23 @@ class OIDCBearerProvider:
         except Exception as exc:
             raise HTTPException(401, "Invalid or expired bearer token") from exc
         subject = claims[self.subject_claim]
-        if not isinstance(subject, str) or not subject or len(subject) > 255:
+        if not isinstance(subject, str) or not subject or len(subject) > 255 or not subject.isprintable():
             raise HTTPException(401, "Invalid token subject")
+        username = claims.get(self.username_claim) or subject
+        if not isinstance(username, str) or not username.strip() or not username.isprintable() or len(username) > 255:
+            raise HTTPException(401, "Invalid token username")
         if self.role_mapper:
             role = self.role_mapper(claims)
         else:
             values = claims.get(self.role_claim, []) if self.role_claim else []
-            if isinstance(values, str):
+            if values is None:
+                values = []
+            elif isinstance(values, str):
                 values = [values]
+            elif not isinstance(values, list):
+                raise HTTPException(401, "Invalid token roles")
             mapped = {self.role_map[v] for v in values if isinstance(v, str) and v in self.role_map}
             role = next((r for r in reversed(ROLES) if r in mapped), None)
-        return ExternalUser(claims.get(self.username_claim) or subject, role, subject)
+        return ExternalUser(username, role, subject)
 
     __call__ = authenticate

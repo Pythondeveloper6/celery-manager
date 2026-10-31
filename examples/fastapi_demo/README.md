@@ -58,3 +58,9 @@ Notes:
   `/celery-manager/`. The dashboard's URLs are relative, so the slash matters.
 - The mounted dashboard has no lifespan/startup hooks to worry about:
   `create_app()` does all its setup eagerly, before the host starts.
+
+## Smoke test
+
+`tests/unit/test_fastapi_example.py` boots this example in eager mode (no Redis),
+calls its routes and loads the mounted dashboard. Run it from the repository
+root with `pytest tests/unit/test_fastapi_example.py`.

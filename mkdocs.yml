@@ -105,9 +105,22 @@ nav:
   - Home: index.md
   - Features: features.md
   - Guide:
+      - Is it the right tool?: choosing.md
       - Quickstart: quickstart.md
       - Integrating with your app: integrations.md
+      - Deployment: deployment.md
+      - Upgrading: upgrading.md
       - Production adoption: production.md
+      - 0.3 release guide: release-0.3.md
+      - Real-world operations: real-world-operations.md
+      - Other task runners: other-runners.md
+      - Moving from Flower: flower-compat.md
+      - Troubleshooting and runbook: troubleshooting.md
+      - Performance and validation: validation.md
+      - Tenant-scoped history: tenancy.md
+      - API and embedding: embedding.md
+      - Browser sessions: auth-sessions.md
+      - Beat liveness: beat-liveness.md
       - The decorator: decorator.md
       - Editing schedules: schedules.md
       - Live progress: progress.md
@@ -121,6 +134,8 @@ nav:
       - Metrics: metrics.md
       - Alerts: alerts.md
       - Roles: roles.md
+  - SQL schedules: sql-schedules.md
+  - Singleton tasks: singleton.md
   - Reference:
       - REST API: rest-api.md
       - Configuration: configuration.md
@@ -128,4 +143,5 @@ nav:
       - Working on celery-manager: contributing.md
       - Changelog: changelog.md
       - Security: security.md
+      - Stability policy: stability.md
       - Roadmap: roadmap.md

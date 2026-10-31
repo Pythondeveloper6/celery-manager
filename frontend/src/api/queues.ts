@@ -80,7 +80,10 @@ export async function listQueues(): Promise<QueueListing> {
 export async function purgeQueue(name: string): Promise<PurgeResult> {
   const response = await fetch(`${BASE}/queues/${encodeURIComponent(name)}/purge`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     credentials: "include",
+    // The name the operator typed; the server re-checks it.
+    body: JSON.stringify({ confirm: name }),
   });
   if (!response.ok) throw new Error(await detail(response, "Purge failed."));
   return response.json();

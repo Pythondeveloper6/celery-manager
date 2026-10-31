@@ -11,20 +11,36 @@ def aware(value):
     return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
 
 
-def beat_health(session, *, stale_seconds=120, now=None):
-    now = now or datetime.now(timezone.utc)
-    row = session.get(AppSetting, "beat_last_tick")
+def _beat_row(row, stale_seconds, now):
     if row is None:
         return {"state": "unknown", "last_tick": None, "age_seconds": None,
                 "reason": "Configure celery_manager_db_url on the stamping beat scheduler to record liveness."}
     try:
         data = json.loads(row.value)
         stamp = aware(datetime.fromisoformat(data["at"]))
-    except (ValueError, TypeError, KeyError):
+    except (ValueError, TypeError, KeyError, AttributeError):
         return {"state": "unknown", "last_tick": None, "age_seconds": None, "reason": "Invalid stored beat heartbeat"}
     age = max(0, (now - stamp).total_seconds())
     return {"state": "stale" if age > stale_seconds else "healthy", "last_tick": stamp.isoformat(),
-            "age_seconds": age, "scheduler": data.get("scheduler"), "hostname": data.get("hostname")}
+            "age_seconds": age, "scheduler": data.get("scheduler"), "hostname": data.get("hostname"),
+            "owner_id": data.get("owner_id")}
+
+
+def beat_health(session, *, stale_seconds=120, now=None, owner_id=None):
+    from celery_manager.beat_health import OWNER_PREFIX, owner_key
+    now = aware(now or datetime.now(timezone.utc))
+    if owner_id is not None:
+        key = owner_key(owner_id)
+        return _beat_row(session.get(AppSetting, key), stale_seconds, now)
+    result = _beat_row(session.get(AppSetting, "beat_last_tick"), stale_seconds, now)
+    rows = session.query(AppSetting).filter(AppSetting.key.startswith(OWNER_PREFIX, autoescape=True)).order_by(AppSetting.key).all()
+    owners = [_beat_row(row, stale_seconds, now) for row in rows]
+    if owners:
+        # A healthy owner must not hide another codebase's stopped scheduler.
+        result["state"] = ("stale" if any(item["state"] == "stale" for item in owners)
+                           else "unknown" if any(item["state"] == "unknown" for item in owners) else "healthy")
+    result["owners"] = owners
+    return result
 
 
 def attention_runs(session, *, stuck_seconds=3600, worker_stale_seconds=120, now=None, limit=100):

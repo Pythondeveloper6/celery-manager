@@ -11,9 +11,9 @@ export interface ExportResult {
  *  bare link) so a failure can be reported and the truncation header read. */
 export async function downloadTaskExport(format: "csv" | "json", filters: TaskQuery): Promise<ExportResult> {
   const query = new URLSearchParams({ format });
-  for (const key of ["status", "task_name", "q", "date_from", "date_to"] as const) {
+  for (const key of ["status", "task_name", "q", "date_from", "date_to", "initiator", "started_by_me"] as const) {
     const value = filters[key];
-    if (value) query.set(key, value);
+    if (value !== undefined && value !== "") query.set(key, String(value));
   }
   const response = await fetch(`${BASE}/tasks/export?${query}`, { credentials: "include" });
   if (!response.ok) throw new Error("Couldn't export these runs. Check your connection and try again.");

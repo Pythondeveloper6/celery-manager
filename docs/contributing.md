@@ -11,9 +11,10 @@ python -m venv venv
 venv/bin/pip install -e ".[dev]"
 ```
 
-The `dev` extra is `pytest`, `httpx` (needed by FastAPI's `TestClient`),
-`ruff`, and `uvicorn`. That is enough to run the whole test suite and the
-linter; nothing in `tests/` imports anything outside it.
+The `dev` extra is `pytest`, `pytest-xdist`, `pytest-cov`, `httpx` (needed by
+FastAPI's `TestClient`), `ruff`, and `uvicorn`. That is enough to run the unit
+tier and the linter. Optional-adapter tests skip unless their extras are
+installed.
 
 Two more extras exist and are deliberately separate:
 
@@ -25,15 +26,51 @@ Two more extras exist and are deliberately separate:
 ## Tests and linting
 
 ```bash
-venv/bin/python -m pytest        # testpaths = ["tests"] is set in pyproject.toml
+venv/bin/python -m pytest -m unit -n auto     # fast tier: no services, about a minute
+venv/bin/python -m pytest -m integration      # live-service tier; skips what is not configured
+venv/bin/python -m pytest -n auto             # everything
 venv/bin/ruff check .
 ```
 
-The tests run entirely against `sqlite:///:memory:` and an eager or stubbed
-Celery app — no broker, no worker, no Redis. There is no `[tool.ruff]`
-section in `pyproject.toml`, so ruff runs with whatever defaults (or
-user-level config) are in play; pin one there if you want reproducible lint
-results across machines.
+`tests/conftest.py` marks every test under `tests/integration/` as
+`integration` and everything else as `unit`. The unit tier runs against
+SQLite and an eager or stubbed Celery app: no broker, no worker, no Redis.
+`-n auto` comes from `pytest-xdist` (in the `dev` extra); serially the unit
+tier takes three to four minutes. The coverage job in CI runs the unit tier
+with `--cov=celery_manager --cov-fail-under=...`; run the same command locally
+before raising or lowering that floor.
+
+Tests that need a live service skip themselves unless the matching variable is
+set. CI sets them in the jobs named below, and pipes each selection through
+`python -m tests.release_gate <junit.xml>`, which fails when any selected test
+skipped, so a missing service cannot pass silently.
+
+| Variable | Service | Example | CI job |
+|---|---|---|---|
+| `CM_STORAGE_DB_URL`, `CM_STORAGE_SCHEMA` | PostgreSQL 16, MySQL 8.4, SQL Server 2022 | `postgresql+psycopg://postgres:pw@localhost:5432/cm_test` | Storage (matrix) |
+| `CM_TEST_DB_URL` | same databases, race tests | as above | Storage, Race tests |
+| `CM_TEST_REDIS_URL` | Redis 7 | `redis://localhost:6379/15` | Optional adapters, Live brokers |
+| `CM_TEST_AMQP_URL` | RabbitMQ 3 | `amqp://guest:guest@localhost:5672//` | Live brokers |
+| `CM_TEST_RABBIT_MGMT_URL`, `_USER`, `_PASSWORD` | RabbitMQ management API | `http://localhost:15672` | Live brokers |
+
+Disposable containers are enough to run every gate locally:
+
+```bash
+docker run -d --name cm-pg -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=cm_test -p 5432:5432 postgres:16
+docker run -d --name cm-redis -p 6379:6379 redis:7
+docker run -d --name cm-rabbit -p 5672:5672 -p 15672:15672 rabbitmq:3-management
+CM_STORAGE_DB_URL=postgresql+psycopg://postgres:pw@localhost:5432/cm_test CM_STORAGE_SCHEMA=cm_contract \
+  venv/bin/python -m pytest tests/integration/test_storage_backends.py tests/integration/test_release_upgrade.py
+```
+
+SQL Server needs Microsoft's ODBC Driver 18 and `pip install pyodbc`. On
+macOS with Homebrew, the driver may fail with "OpenSSL library could not be
+loaded" when the default OpenSSL is newer than 3.x; point it at 3.x with
+`DYLD_LIBRARY_PATH=$(brew --prefix openssl@3)/lib` on the Python command.
+
+There is no `[tool.ruff]` section in `pyproject.toml`, so ruff runs with
+whatever defaults (or user-level config) are in play; pin one there if you
+want reproducible lint results across machines.
 
 ## Documentation
 

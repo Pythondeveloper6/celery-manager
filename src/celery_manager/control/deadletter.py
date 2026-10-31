@@ -37,9 +37,10 @@ from celery_manager.control.audit import record as record_audit
 from celery_manager.control.tasks import (
     TaskRunNotFound,
     _decode_stored_call_argument,
+    _require_celery_origin,
     start_task,
 )
-from celery_manager.db.models import TaskRun
+from celery_manager.db.models import FailureResolution, TaskRun
 from celery_manager.db.runs import lock_task_run
 
 # Most runs one re-run request may touch. Over it the request is refused, not
@@ -102,6 +103,7 @@ def _dead_letter_query(session, *, task_name: str | None = None, since: datetime
     later = aliased(TaskRun)
     query = session.query(TaskRun).filter(
         TaskRun.status == "failed",
+        ~exists().where((FailureResolution.task_id == TaskRun.task_id) & FailureResolution.state.in_(("acknowledged", "ignored"))).correlate(TaskRun),
         ~exists().where(later.retried_from_id == TaskRun.task_id).correlate(TaskRun),
     )
     if task_name is not None:
@@ -280,6 +282,8 @@ def rerun_with_arguments(
     if stale:
         raise NotDeadLetter(stale)
 
+    for run in runs.values():
+        _require_celery_origin(run)
     names = sorted({r.task_name for r in runs.values()})
     if (args is not None or kwargs is not None) and len(names) > 1:
         raise MixedTaskNames(names)
@@ -298,6 +302,8 @@ def rerun_with_arguments(
         from celery_manager.control.policy import validate_dispatch
         validate_dispatch(session.info.get("cm_config"), run.task_name, final_args, final_kwargs,
                           edited=edited, session=session, principal=session.info.get("cm_principal"))
+        from celery_manager.run_context import context_for_run
+        context_for_run(run, session.info.get("cm_config"))
         plan.append((run, final_args, final_kwargs, edited))
 
     reruns: list[dict] = []
@@ -309,6 +315,8 @@ def rerun_with_arguments(
             # row written below is the specific one for this action.
             new_id = start_task(
                 celery_app, run.task_name, final_args, final_kwargs, session=session, queue=run.queue, _preserve_queue=True,
+                principal=session.info.get("cm_principal"),
+                _run_context=context_for_run(run, session.info.get("cm_config")),
             )
         except Exception as exc:  # noqa: BLE001 - a broker failure on one run must not hide the others
             errors.append({"task_id": run.task_id, "error": str(exc) or type(exc).__name__})

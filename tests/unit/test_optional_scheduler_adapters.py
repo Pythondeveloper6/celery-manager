@@ -33,6 +33,8 @@ def adapter(request):
             settings.configure(INSTALLED_APPS=["django_celery_beat"], USE_TZ=True,
                                DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}})
             django.setup()
+        elif "django_celery_beat" not in settings.INSTALLED_APPS:
+            pytest.skip("Django was configured by another module without django_celery_beat")
         from django.core.management import call_command
         from django_celery_beat.models import PeriodicTask
         call_command("migrate", verbosity=0)

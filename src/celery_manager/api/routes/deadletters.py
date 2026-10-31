@@ -108,3 +108,42 @@ def rerun(payload: RerunRequest, request: Request, principal: Principal, usernam
             raise
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+
+class ResolutionRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+def _resolution(task_id, state, payload, request, username):
+    from celery_manager.control.failures import FailureStateConflict, resolve_failure
+    with request.app.state.cm_session_factory() as session:
+        try:
+            row = resolve_failure(session, task_id, state, username, payload.note if payload else None)
+        except TaskRunNotFound as exc:
+            raise HTTPException(404, "Unknown task") from exc
+        except FailureStateConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"task_id": row.task_id, "state": row.state, "actor": row.actor, "note": row.note, "updated_at": utc(row.updated_at)}
+
+
+@router.post("/{task_id}/acknowledge")
+def acknowledge(task_id: str, request: Request, payload: ResolutionRequest | None = None, username: str = Depends(require_operator)):
+    return _resolution(task_id, "acknowledged", payload, request, username)
+
+
+@router.post("/{task_id}/ignore")
+def ignore(task_id: str, request: Request, payload: ResolutionRequest | None = None, username: str = Depends(require_operator)):
+    return _resolution(task_id, "ignored", payload, request, username)
+
+
+@router.post("/{task_id}/reopen")
+def reopen(task_id: str, request: Request, payload: ResolutionRequest | None = None, username: str = Depends(require_operator)):
+    return _resolution(task_id, "open", payload, request, username)
+
+
+@router.get("/{task_id}/history")
+def history(task_id: str, request: Request, username: str = Depends(get_current_user)):
+    from celery_manager.control.failures import resolution_history
+    with request.app.state.cm_session_factory() as session:
+        return {"items": [{"state": r.state, "actor": r.actor, "actor_subject": r.actor_subject, "note": r.note,
+                            "created_at": utc(r.created_at)} for r in resolution_history(session, task_id)]}

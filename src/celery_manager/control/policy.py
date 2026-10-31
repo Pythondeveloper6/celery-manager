@@ -26,6 +26,8 @@ def validate_dispatch(config, name, args, kwargs, *, queue=None, edited=False, s
         return
     try:
         app = config.celery_app
+        if app is None:
+            raise DispatchDenied("Observation-only deployments cannot dispatch Celery tasks.", 409)
         app.loader.import_default_modules()
         if name.startswith("celery.") or name not in app.tasks:
             raise DispatchDenied("Task is not registered on this Celery app.", 422)

@@ -4,8 +4,12 @@ A spec is the small JSON shape the dashboard sends and `periodic_schedules.
 schedule_override` stores::
 
     {"type": "crontab", "minute": "0", "hour": "*/2", "day_of_week": "*",
-     "day_of_month": "*", "month_of_year": "*"}
+     "day_of_month": "*", "month_of_year": "*", "timezone": "Europe/Berlin"}
     {"type": "interval", "seconds": 900}
+
+``timezone`` is optional. It is an IANA name; when present a crontab is read
+in that zone instead of the Celery app's ``timezone``, so two schedules of
+one task can follow different business hours.
 
 Shared by the API (validate, preview, project occurrences) and the beat
 scheduler (`celery_manager.beat.DatabaseScheduler`, which builds the same
@@ -22,6 +26,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from celery.schedules import crontab
 from celery.schedules import schedule as interval_schedule
@@ -37,6 +42,58 @@ _FIELD_LABELS = {
     "day_of_month": "Day of month",
     "month_of_year": "Month",
 }
+
+
+class _TzCrontab(crontab):
+    """A crontab whose ``tz`` is explicit instead of the app's timezone.
+
+    Celery's ``BaseSchedule.tz`` is a cached property over ``app.timezone``.
+    Assigning an instance attribute after construction would work, but a
+    property keeps it correct for code that copies the schedule and reads
+    ``tz`` before touching ``app``.
+    """
+
+    def __init__(self, *args, tz=None, **kwargs):
+        self._cm_timezone = tz
+        super().__init__(*args, **kwargs)
+
+    def __copy__(self):
+        # `copy.copy` goes through the base class's reduce protocol, which
+        # re-evaluates the cached `tz` and drops our marker. Occurrence
+        # projection copies schedules to pin `nowfun`, so keep both.
+        clone = type(self).__new__(type(self))
+        clone.__dict__.update(self.__dict__)
+        return clone
+
+    @property
+    def tz(self):
+        return self._cm_timezone or super().tz
+
+    def remaining_delta(self, last_run_at, tz=None, **kwargs):
+        # Beat passes UTC timestamps while the cron fields describe wall time
+        # in the entry's zone. Keep Celery's calendar calculation, including
+        # its starting-deadline behavior, and convert both inputs first.
+        from copy import copy
+
+        local = copy(self)
+        now = self.now()
+        local.nowfun = lambda: now.astimezone(self.tz)
+        last = last_run_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return crontab.remaining_delta(local, last.astimezone(self.tz), tz=tz, **kwargs)
+
+    def __reduce__(self):
+        # RedBeat and shelve persist schedules using pickle. Celery's default
+        # reduce drops subclass attributes, silently losing the entry zone.
+        return (_restore_zoned_crontab, (
+            {field: getattr(self, f"_orig_{field}") for field in CRONTAB_FIELDS},
+            str(self.tz),
+        ))
+
+
+def _restore_zoned_crontab(fields, zone):
+    return _TzCrontab(**fields, tz=ZoneInfo(zone))
 
 # An interval shorter than a second is a busy loop, not a schedule: beat
 # would fire it on every tick. The upper bound only keeps the datetime
@@ -68,12 +125,21 @@ def normalize_spec(data) -> dict:
         raise ScheduleSpecError("Send the schedule as a JSON object.")
     kind = data.get("type")
     if kind == "crontab":
-        unknown = set(data) - {"type", *CRONTAB_FIELDS}
+        unknown = set(data) - {"type", "timezone", *CRONTAB_FIELDS}
         if unknown:
             raise ScheduleSpecError(f"Unknown crontab field: {', '.join(sorted(unknown))}.")
         spec = {"type": "crontab"}
         for field in CRONTAB_FIELDS:
             spec[field] = _field_text(data.get(field), _FIELD_LABELS[field])
+        timezone_name = data.get("timezone")
+        if timezone_name not in (None, ""):
+            if not isinstance(timezone_name, str):
+                raise ScheduleSpecError("The timezone must be an IANA name such as Europe/Berlin.")
+            try:
+                ZoneInfo(timezone_name)
+            except (ZoneInfoNotFoundError, ValueError) as exc:
+                raise ScheduleSpecError(f"{timezone_name!r} is not a known IANA timezone.") from exc
+            spec["timezone"] = timezone_name
         return spec
     if kind == "interval":
         unknown = set(data) - {"type", "seconds"}
@@ -100,10 +166,58 @@ def build_schedule(spec: dict, app=None):
     if spec["type"] == "interval":
         return interval_schedule(run_every=timedelta(seconds=spec["seconds"]), app=app)
     kwargs = {field: spec[field] for field in CRONTAB_FIELDS}
+    schedule_class = crontab
+    if spec.get("timezone"):
+        schedule_class = _TzCrontab
+        kwargs["tz"] = ZoneInfo(spec["timezone"])
     try:
-        return crontab(app=app, **kwargs)
+        return schedule_class(app=app, **kwargs)
     except Exception as exc:  # ValueError, or Celery's ParseException (not a ValueError)
         raise ScheduleSpecError(_crontab_message(kwargs, exc)) from exc
+
+
+def describe_spec(spec: dict) -> str:
+    """A readable sentence for a canonical spec.
+
+    Uses ``cron-descriptor`` when it is installed (an optional, maintained
+    dependency) and a small deterministic fallback otherwise. The fallback
+    never guesses: an expression it can't phrase is shown as five-field cron.
+    """
+    if spec["type"] == "interval":
+        seconds = int(spec["seconds"]) if float(spec["seconds"]).is_integer() else spec["seconds"]
+        for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+            if seconds >= size and seconds % size == 0:
+                count = seconds // size
+                return f"Every {count} {unit}{'' if count == 1 else 's'}"
+        return f"Every {seconds} second{'' if seconds == 1 else 's'}"
+    expression = " ".join(
+        str(spec[field])
+        for field in ("minute", "hour", "day_of_month", "month_of_year", "day_of_week")
+    )
+    try:
+        from cron_descriptor import get_description
+        text = get_description(expression)
+    except Exception:  # noqa: BLE001 - optional dependency, or a spec it can't phrase
+        text = ""
+    if text:
+        return text
+    day = spec["day_of_week"]
+    if spec["day_of_month"] == "*" and spec["month_of_year"] == "*":
+        names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        try:
+            days = ("every day" if day == "*" else
+                    "Monday through Friday" if day == "1-5" else
+                    ", ".join(names[int(d)] for d in day.split(",")))
+            minute = int(spec["minute"])
+            hours = [int(h) for h in spec["hour"].split(",")]
+            return "At " + " and ".join(f"{h:02d}:{minute:02d}" for h in hours) + ", " + days
+        except (ValueError, IndexError):
+            pass
+    if spec["minute"] == "0" and spec["hour"] == "*":
+        if day == "*":
+            return "Every hour, on the hour"
+        return f"Every hour, on the hour, on days {day}"
+    return f"Cron {expression}"
 
 
 def _crontab_message(kwargs: dict, exc: Exception) -> str:
@@ -173,5 +287,8 @@ def spec_from_schedule(celery_schedule) -> dict | None:
         spec = {"type": "crontab"}
         for field in CRONTAB_FIELDS:
             spec[field] = _orig_text(getattr(celery_schedule, f"_orig_{field}", "*"))
+        timezone_name = getattr(celery_schedule, "_cm_timezone", None)
+        if timezone_name:
+            spec["timezone"] = str(timezone_name)
         return spec
     return None

@@ -40,3 +40,24 @@ htmlcov/
 *.db-wal
 *.db-shm
 .env
+
+# Separate agent checkouts are not source for this checkout.
+.claude/worktrees/
+
+# Internal planning documents; never part of the published repository.
+PACKAGES-GAP[S]-AND-FEATURES.md
+*-ASSESSMENT.md
+plan.md
+PLAN.md
+PLAN*.md
+FEATURE_CANDIDATES.md
+IMPLEMENTATION_STATUS.md
+RELEASE_SCOPE.md
+RELEASE_*_PLAN.md
+ROADMAP-INTERNAL*.md
+NOTES*.md
+docs/superpowers/
+docs/feature-backlog.md
+reports/
+.planning/
+.claude/

@@ -1,7 +1,7 @@
 # Production adoption
 
-The 0.2 release combines the production foundations and external scheduler work
-identified in the real-project review. Optional adapters remain opt-in. Database
+The 0.2 release combines the production foundations and external scheduler
+work needed to run celery-manager beside an existing deployment. Optional adapters remain opt-in. Database
 and adapter CI jobs are release gates; local SQL compilation is not evidence of a
 successful SQL Server deployment.
 
@@ -37,8 +37,16 @@ the dashboard and API. A callable receives `(task_name, principal)` and may make
 per-user decision. Unknown names return 422; policy refusals return 403 and are
 audited. Start, retries, bulk retries, failed-run reruns and schedule run-now share
 the policy. A per-task Pydantic model in `args_schemas` validates bound task
-arguments strictly before publication. Queue overrides require explicit opt-in;
-failed-run reruns preserve the original queue.
+arguments strictly before publication. The same model drives the **Run now**
+dialog: when its fields are strings, numbers, booleans or string enums
+(optionally nullable), the dialog shows a form for them, and
+`GET /api/tasks/registered` returns the model's JSON Schema as `args_schema`.
+Other shapes keep the JSON editor. Queue overrides require explicit opt-in;
+failed-run reruns preserve the original queue. Manager retries and failed-run
+reruns preserve the original tenant, correlation ID, operation key and approved
+metadata under the current metadata policy, while recording the acting operator
+as initiator. Invalid stored context fails before publication; bulk requests
+validate every selected row before dispatch.
 
 Single cancellation of an unknown task ID returns 404. An admin may deliberately
 use `?force=true`. Bulk and broker-held-message controls keep their existing
@@ -249,3 +257,14 @@ Microsoft Teams channels use Workflows webhooks with Adaptive Cards and the
 existing alert incident/dedup/delivery machinery. Webhook URLs remain write-only.
 Existing failure-rate, missed-run and worker-offline alerts remain available;
 new health findings do not yet introduce separate alert rule kinds.
+
+
+## Host-owned execution and native operations
+
+The same 0.3 candidate also supports observation-only deployments without a
+Celery application. See [real-world operations](real-world-operations.md) for
+RunObserver, custom probes/outbox metrics, independent scheduler expectations,
+correlation/duplicate visibility, doctor, annotations and action safeguards.
+[Tenant history mode](tenancy.md) is a stricter read-only HTTP boundary, separate
+from initiator filters and ordinary manager-wide roles. Monitoring storage must
+still be provisioned and migrated deliberately when runtime DDL is disabled.

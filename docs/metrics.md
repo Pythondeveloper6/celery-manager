@@ -113,6 +113,24 @@ celery_manager_schedule_missed_runs_24h > 0
 `celery_manager_collector_up == 0` is worth an alert of its own: it is how
 you tell a missing metric from a healthy zero.
 
+## Grafana dashboard and alert rules
+
+Two ready-made files ship in the repository (and the sdist) under
+`examples/monitoring/`:
+
+- `grafana-dashboard.json`: import it in Grafana (**Dashboards → New →
+  Import**) and pick your Prometheus data source. Panels: broker up, workers
+  online, backlog, failing collectors, failure ratio and p95 runtime per
+  task, finished runs by status, queue depth and wait, missed scheduled runs,
+  broker latency and Redis memory.
+- `prometheus-rules.yml`: ten alerting rules (collector down, broker down, no
+  workers, high failure ratio with a minimum of 10 runs, slow p95, backlog,
+  queue wait, missed schedule firings, Redis evictions, RabbitMQ resource
+  alarms). Add it under `rule_files:`; it passes `promtool check rules`.
+
+The thresholds are starting points. Both files are checked in CI against the
+metric names this exporter really emits, so they do not drift from it.
+
 ## OpenTelemetry
 
 Install the extra, then register the same numbers as observable gauges:
@@ -135,3 +153,16 @@ same cached snapshot every time your exporter collects. Only the API is
 needed to import the module; configure the SDK and exporter yourself. Without
 `opentelemetry-api`, `register` raises an `ImportError` that says which extra
 to install. The OpenTelemetry path does not need `metrics_token`.
+
+
+## Alongside an event exporter
+
+The package's metrics summarize stored observations and manager-specific state.
+For continuously accumulating event counters and a wider Grafana/Prometheus
+alerting stack, deploy an independent Celery event exporter alongside it.
+Keep exporter metric names and collection semantics separate from these
+windowed gauges; do not apply `rate()` to a DB-derived windowed gauge.
+Configure events on workers and authenticate network access to both scrape
+endpoints. Existing Prometheus/Alertmanager deployments can remain the
+notification authority while the dashboard supplies run links and manager
+controls. The manager does not install or operate that external stack.

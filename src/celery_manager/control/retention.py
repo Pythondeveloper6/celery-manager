@@ -342,6 +342,10 @@ def run_prune(
     changes nothing and records nothing.
     """
     now = now or datetime.now(timezone.utc)
+    from celery_manager.control.worker_history import prune_heartbeats
+    config = session.info.get("cm_config")
+    heartbeat_days = config.worker_heartbeat_retention_days if config else 7
+    heartbeats_deleted = prune_heartbeats(session, heartbeat_days, now=now, dry_run=dry_run)
     by_task = prune_runs(session, now=now, batch_size=batch_size, dry_run=dry_run, rules=rules)
     audit_deleted = prune_audit_log(session, now=now, batch_size=batch_size, dry_run=dry_run, rules=rules)
     samples_deleted = prune_samples(
@@ -353,6 +357,7 @@ def run_prune(
         "runs_deleted": sum(by_task.values()),
         "audit_deleted": audit_deleted,
         "samples_deleted": samples_deleted,
+        "heartbeats_deleted": heartbeats_deleted,
         "by_task": by_task,
     }
     if dry_run:

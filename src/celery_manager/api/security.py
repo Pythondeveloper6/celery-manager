@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import re
+from pathlib import Path
 from urllib.parse import urlsplit
 
 # Methods that can change state. GET/HEAD/OPTIONS are never checked: every
@@ -17,6 +21,39 @@ _SECURITY_HEADERS = [
     (b"x-frame-options", b"DENY"),
     (b"content-security-policy", b"frame-ancestors 'none'"),
 ]
+
+
+_INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
+
+
+def inline_script_hashes(index_html: Path) -> tuple[str, ...]:
+    """CSP source expressions for the inline scripts of the bundled page."""
+    try:
+        text = index_html.read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    return tuple("'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
+                 for body in _INLINE_SCRIPT.findall(text))
+
+
+def content_security_policy(frame_ancestors: tuple[str, ...] = (), script_hashes: tuple[str, ...] = ()) -> bytes:
+    """The policy for every response. Scripts only from this origin (plus the
+    page's own hashed inline bootstrap), so injected markup cannot run code;
+    images may be remote because a brand logo URL can be."""
+    directives = [
+        "default-src 'self'",
+        "script-src " + " ".join(("'self'", *script_hashes)),
+        # React style attributes are inline styles.
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https: http:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors " + (" ".join(frame_ancestors) if frame_ancestors else "'none'"),
+    ]
+    return "; ".join(directives).encode()
 
 
 def _split_port(host: str) -> tuple[str, str | None]:
@@ -84,8 +121,9 @@ class SecurityMiddleware:
     can't set that header without a CORS preflight this app never approves.
     """
 
-    def __init__(self, app, trusted_origins=(), frame_ancestors=()):
+    def __init__(self, app, trusted_origins=(), frame_ancestors=(), script_hashes=(), max_body_bytes=None):
         self.app = app
+        self.max_body_bytes = max_body_bytes
         for origin in (*trusted_origins, *frame_ancestors):
             parts = urlsplit(origin)
             if (parts.scheme not in ("https", "http") or not parts.netloc or parts.username
@@ -93,8 +131,14 @@ class SecurityMiddleware:
                     or not origin.isascii() or any(c in origin for c in " ;'\"\r\n")):
                 raise ValueError("Configure explicit http(s) origins without paths")
         self.trusted_origins = {o.rstrip("/") for o in trusted_origins}
-        self.security_headers = ([(b"content-security-policy", ("frame-ancestors " + " ".join(frame_ancestors)).encode())]
-                                 if frame_ancestors else _SECURITY_HEADERS)
+        self.security_headers = [
+            (b"content-security-policy", content_security_policy(tuple(frame_ancestors), tuple(script_hashes))),
+            (b"x-content-type-options", b"nosniff"),
+            (b"referrer-policy", b"same-origin"),
+        ]
+        if not frame_ancestors:
+            # Older browsers ignore CSP frame-ancestors.
+            self.security_headers.append((b"x-frame-options", b"DENY"))
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -105,6 +149,51 @@ class SecurityMiddleware:
             await self._reject(send)
             return
 
+        if self.max_body_bytes is not None and scope["method"] in _UNSAFE_METHODS:
+            limit = self.max_body_bytes
+            for name, value in scope.get("headers", []):
+                if name.lower() == b"content-length":
+                    try:
+                        too_big = int(value) > limit
+                    except ValueError:
+                        too_big = True
+                    if too_big:
+                        await self._reject(send, 413, "request body too large")
+                        return
+            received = 0
+            rejected = False
+            inner_receive, outer_send = receive, send
+
+            async def receive():
+                # Chunked bodies carry no Content-Length; count as they
+                # arrive. Past the limit, answer 413 and tell the app the
+                # client went away, so it stops reading.
+                nonlocal received, rejected
+                if rejected:
+                    return {"type": "http.disconnect"}
+                message = await inner_receive()
+                if message["type"] == "http.request":
+                    received += len(message.get("body", b""))
+                    if received > limit:
+                        rejected = True
+                        await self._reject(outer_send, 413, "request body too large")
+                        return {"type": "http.disconnect"}
+                return message
+
+            async def send(message):
+                if not rejected:
+                    await outer_send(message)
+
+            try:
+                await self._serve(scope, receive, send)
+            except Exception:
+                if not rejected:
+                    raise
+            return
+
+        await self._serve(scope, receive, send)
+
+    async def _serve(self, scope, receive, send):
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
@@ -141,12 +230,12 @@ class SecurityMiddleware:
         return any(origin_host in _host_header_forms(c) for c in candidates if c)
 
     @staticmethod
-    async def _reject(send):
-        body = json.dumps({"detail": "cross-origin request refused"}, separators=(",", ":")).encode("utf-8")
+    async def _reject(send, status=403, detail="cross-origin request refused"):
+        body = json.dumps({"detail": detail}, separators=(",", ":")).encode("utf-8")
         await send(
             {
                 "type": "http.response.start",
-                "status": 403,
+                "status": status,
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode("latin-1")),

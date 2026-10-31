@@ -248,6 +248,27 @@ settings if you want **Send test** to work for email (the test is sent from
 the API process). Without `smtp_host`, email channels fail with a message
 saying so.
 
+### PagerDuty
+
+A PagerDuty channel sends Events API v2 events. Give it the **integration
+key** of a PagerDuty service (Service → Integrations → Events API v2). The URL
+defaults to `https://events.pagerduty.com/v2/enqueue`; set it only for the EU
+endpoint (`https://events.eu.pagerduty.com/v2/enqueue`) or a proxy. The key is
+stored like a webhook secret: never returned by the API, only
+`routing_key_set: true`.
+
+Each incident uses the dedup key `celery-manager:<rule id>:<key>`, so the
+resolve event closes the PagerDuty incident the trigger opened, and a repeated
+trigger for the same open incident does not page twice. `summary`, `source`
+(`environment_name`), `component` (the task, queue or schedule), `group` (the
+rule kind), the rule's details and a link to the dashboard page are included.
+**Send test** triggers an `info`-severity event with the dedup key
+`celery-manager:test:-`; resolve it in PagerDuty afterwards.
+
+```json
+{"name": "On call", "kind": "pagerduty", "config": {"routing_key": "<32-character integration key>"}}
+```
+
 ## Security
 
 - **Only admins** can add, change, test or delete rules and channels. Every
@@ -272,3 +293,64 @@ saying so.
   network policy or an egress proxy (the standard `HTTPS_PROXY` variables
   are honoured).
 - Every change and every test message is in the [audit log](dashboard.md#audit-log).
+
+## Production rule kinds (0.3)
+
+All new kinds use the existing incident, quiet-period and channel-delivery
+machinery. They are available in the alert-rule editor. A missing observation,
+insufficient sample or an excessive scan is **unknown**, not a recovery: existing
+incidents remain open and `last_check_error` explains checks that cannot be judged.
+Candidate queries are bounded to matching task names and relevant reporting or
+baseline windows, with a 20,000-row ceiling. If a required candidate scan exceeds
+its ceiling, the check refuses to judge rather than silently reporting a healthy
+system; narrow the target/window or use external metrics for larger populations.
+
+| Kind | Target and parameters | Firing and recovery |
+|---|---|---|
+| `task_failed` | task glob; `window_minutes=60` | One incident per failed task ID in the window. Clears after leaving the window or when the recorded status changes. |
+| `consecutive_failures` | task glob; `count=3`, `window_minutes=1440` | Most recent completed runs (ordered by finish time then ID) all failed. A later success recovers. Fewer than `count` completed runs is unknown. |
+| `run_stuck` | task glob; `seconds=3600`, `p95_multiplier=3`, `min_runs=10` | A started run exceeds the greater of the configured floor and its task's successful-run p95 over 30 days times the multiplier. With insufficient baseline, uses the explicit floor. Completion recovers; a missing start time is unknown. |
+| `worker_lost` | task glob; `seconds=120` | A started run's observed worker is explicitly offline or its heartbeat is stale. A current online heartbeat/completion recovers. A worker never observed is unknown. |
+| `beat_stale` | target should be `*`; `seconds=120` | Stored beat heartbeat exceeds the threshold. A fresh tick recovers. No heartbeat or malformed stored heartbeat is unknown. |
+| `task_sla` | task glob; `seconds=3600`, `window_minutes=60` | A completed run's recorded runtime exceeds its configured SLA. Clears when that run leaves the lookback window or its runtime is corrected. |
+| `duration_regression` | task glob; `multiplier=2`, `baseline_days=30`, `recent_minutes=60`, `min_runs=10` | Recent successful-run p95 exceeds historical successful-run p95 by the multiplier. Baseline ends where the recent window begins: a slow new run cannot inflate its own baseline. Both windows require minimum samples; insufficient samples or zero baseline is unknown. |
+| `run_late` | task glob; `seconds=300`, `window_minutes=60` | A scheduled occurrence (stamped by the beat mixin) due in the window started more than `seconds` after it was due, or still has not started that long after. One incident per run. Leaving the window recovers. A finished run with no recorded start is unknown. Firings that never arrived at all are `missed_run`'s job. |
+| `daily_digest` | task glob; `hour_utc=8` | One dated incident summarizing the preceding 24-hour UTC reporting window. Details include total runs, status counts and task-by-task status totals. Set `notify_resolved=False` to avoid a resolved notification when the next day's bucket replaces it. |
+
+Daily digest incident keys contain the reporting-window end timestamp. This is a
+persisted watermark: evaluator restarts reuse the incident and do not resend a
+successfully recorded delivery. Every day is a distinct bucket, including empty
+reporting windows once there are retained task observations. It is not an
+exactly-once delivery guarantee: a recipient may accept a message before the
+sender sees a timeout or before the database records success. Retries can then
+produce a duplicate; webhook recipients should deduplicate by rule and incident
+key. Tasks with no `finished_at` do not contribute to completed-run digests.
+
+Stuck/lost findings never rewrite execution status or automatically retry work.
+A missing heartbeat cannot prove the worker stopped executing; an automatic retry
+could duplicate external side effects.
+
+
+### Deep links in notifications
+
+With `dashboard_url` set, every message links to the page that explains it:
+the run itself for `task_failed`, `task_sla`, `run_stuck`, `worker_lost` and
+`run_late`; the task overview for `failure_rate`, `consecutive_failures` and
+`duration_regression`; the schedule's occurrences for `missed_run`; the queues
+or workers page for broker, queue and worker rules. A retry is one click from
+the run page; notifications never carry an action that changes state.
+
+## Host probes and independent schedulers
+
+`custom_probe` targets stored probe-name globs with `stale_seconds=120` by default
+(1–86400). `scheduler_stale` targets registered scheduler-instance globs with
+`seconds=120` (1–86400). Both are available in the alert editor. Degraded evidence
+fires, healthy evidence recovers, and unknown/missing/stale probe evidence never
+resolves an existing incident. Scheduler state can be degraded by heartbeat age
+or an overdue expected command, including its first due occurrence.
+
+The evaluator reads stored observations only; it never invokes a host provider
+or scheduler. Configure and collect them through the
+[host health APIs](real-world-operations.md#custom-health-probes-and-outbox-diagnostics).
+Annotations do not automatically suppress these alerts. Global alert/probe views
+remain unavailable in tenant history mode.

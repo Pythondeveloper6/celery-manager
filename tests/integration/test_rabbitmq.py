@@ -116,6 +116,7 @@ class _Session:
 
     def __init__(self):
         self.rows = []
+        self.info = {}  # SQLAlchemy sessions carry the acting principal here
 
     def add(self, row):
         self.rows.append(row)

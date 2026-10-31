@@ -247,3 +247,13 @@ Python 3.10+ and an existing Celery project. See the
 celery-manager is open source under the
 [MIT licence](https://github.com/Pythondeveloper6/celery-manager/blob/main/LICENSE),
 copyright &copy; 2026 Mahmoud Ahmed.
+
+
+## Observe host-owned work
+
+The 0.3 candidate also observes synchronous/async application jobs without a
+Celery app. [Real-world operations](real-world-operations.md) covers RunObserver,
+health/outbox probes, first-due scheduler expectations, correlation, duplicate
+visibility, preflight, annotations and operator safeguards. For customer-facing
+history, [tenant-scoped read-only mode](tenancy.md) enforces a narrower HTTP
+boundary than ordinary manager roles.

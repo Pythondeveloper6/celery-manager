@@ -13,10 +13,16 @@ export interface CurrentUser {
   username: string;
   role: Role;
   source: AccountSource;
+  tenant_id?: string;
 }
 
 /** How this deployment signs people in: `GET /api/auth/options`. */
 export interface AuthOptions {
+  environment?: string;
+  monitoring_only?: boolean;
+  sensitive_actions?: import("../lib/safeguards").SensitiveAction[];
+  tenant_scoped?: boolean;
+  read_only?: boolean;
   local_login: boolean;
   external: boolean;
   provider_name: string;
@@ -76,6 +82,10 @@ export async function login(username: string, password: string): Promise<Current
   });
   if (!response.ok) {
     if (response.status === 401) throw new Error("Invalid username or password");
+    if (response.status === 429) {
+      const wait = response.headers.get("Retry-After");
+      throw new Error(`Too many sign-in attempts. Try again${wait ? ` in ${wait} seconds` : " later"}.`);
+    }
     // 403: local sign-in is turned off (or the CSRF check refused it); the
     // server's sentence says which and what to do instead.
     throw new Error((response.status === 403 && (await detailOf(response))) || "Login failed");

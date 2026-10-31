@@ -1,4 +1,5 @@
-"""Delivering one alert message to one channel: Slack, a webhook, or email.
+"""Delivering one alert message to one channel: Slack, Teams, PagerDuty, a
+webhook, or email.
 
 Standard library only (`urllib`, `smtplib`): celery-manager runs inside
 other people's processes and should not pull an HTTP client into them for
@@ -209,4 +210,38 @@ def send_teams(channel_config, message, config):
     post_json(channel_config["url"], json.dumps(payload).encode(), {}, config.alert_send_timeout_seconds)
 
 
-SENDERS = {"slack": send_slack, "webhook": send_webhook, "email": send_email, "teams": send_teams}
+def pagerduty_event(channel_config: dict, message: AlertMessage, config: CeleryManagerConfig) -> dict:
+    """The PagerDuty Events API v2 body for `message`.
+
+    The dedup key is the incident's identity (rule id + key), so a resolve
+    closes the PagerDuty incident its trigger opened and a repeated trigger
+    for the same open incident does not page twice.
+    """
+    rule_id = message.rule["id"] if message.rule else "test"
+    dedup_key = f"celery-manager:{rule_id}:{message.key or '-'}"[:255]
+    body: dict = {
+        "routing_key": channel_config["routing_key"],
+        "event_action": "resolve" if message.event == "resolved" else "trigger",
+        "dedup_key": dedup_key,
+    }
+    if message.event != "resolved":
+        body["payload"] = {
+            "summary": message.summary[:1024],
+            "source": config.environment_name or "celery-manager",
+            "severity": "info" if message.event == "test" else "error",
+            "component": message.key,
+            "group": message.rule["kind"] if message.rule else None,
+            "custom_details": {**message.details, "opened_at": message.opened_at},
+        }
+        if message.url:
+            body["links"] = [{"href": message.url, "text": "Open in celery-manager"}]
+    return body
+
+
+def send_pagerduty(channel_config: dict, message: AlertMessage, config: CeleryManagerConfig) -> None:
+    body = json.dumps(pagerduty_event(channel_config, message, config), default=str).encode()
+    post_json(channel_config["url"], body, {}, config.alert_send_timeout_seconds)
+
+
+SENDERS = {"slack": send_slack, "webhook": send_webhook, "email": send_email, "teams": send_teams,
+           "pagerduty": send_pagerduty}

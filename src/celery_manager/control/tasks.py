@@ -105,6 +105,7 @@ def _apply_task_filters(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
 ):
     """Apply the shared task-run filter chain to a query.
 
@@ -116,6 +117,8 @@ def _apply_task_filters(
     the builder makes drift structurally impossible, so keep it that way and
     add new filters only here.
     """
+    if initiator is not None:
+        query = query.filter(TaskRun.initiator == initiator)
     if status is not None:
         query = query.filter_by(status=status)
     if task_name is not None:
@@ -162,6 +165,7 @@ def list_task_runs(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[TaskRun]:
@@ -173,7 +177,7 @@ def list_task_runs(
     """
     query = _apply_task_filters(
         session.query(TaskRun),
-        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to,
+        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to, initiator=initiator,
     )
     return query.order_by(TaskRun.id.desc()).offset(offset).limit(limit).all()
 
@@ -186,6 +190,7 @@ def count_task_runs(
     q: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    initiator: str | None = None,
 ) -> int:
     """How many runs match these filters, ignoring limit/offset.
 
@@ -196,7 +201,7 @@ def count_task_runs(
     """
     query = _apply_task_filters(
         session.query(TaskRun),
-        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to,
+        status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to, initiator=initiator,
     )
     # count() over the filtered entity; SQLAlchemy wraps this in a
     # SELECT count(*) subquery, so no rows are loaded into memory.
@@ -232,6 +237,7 @@ def start_task(
     principal=None,
     _preserve_queue=False,
     _delivery_options=None,
+    _run_context=None,
 ) -> str:
     """Dispatch a task on demand (e.g. from the dashboard's 'run now' action).
 
@@ -243,7 +249,9 @@ def start_task(
     """
     # Only forward the options the caller actually set, so a plain start
     # reaches the broker exactly as it always has.
-    from celery_manager.control.policy import validate_dispatch
+    from celery_manager.control.policy import DispatchDenied, validate_dispatch
+    if celery_app is None:
+        raise DispatchDenied("No Celery executor is configured.", 409)
     config = config or (session.info.get("cm_config") if session is not None else None)
     principal = principal or (session.info.get("cm_principal") if session is not None else None)
     validate_dispatch(config, task_name, args, kwargs, queue=None if _preserve_queue else queue, session=session, principal=principal)
@@ -259,16 +267,28 @@ def start_task(
         options["countdown"] = countdown
     if eta is not None:
         options["eta"] = eta
+    initiator = (getattr(principal, "subject", None) or getattr(principal, "username", None)
+                 or getattr(username, "subject", None) or username)
+    if isinstance(initiator, str) and 0 < len(initiator) <= 255:
+        options["headers"] = {**options.get("headers", {}), "cm_initiator": str(initiator)}
+    normalized_context = None
+    if _run_context is not None:
+        from celery_manager.run_context import normalize_context
+        normalized_context = normalize_context(_run_context, config)
+        options["headers"] = {**options.get("headers", {}), "cm_context": normalized_context}
     result = celery_app.send_task(task_name, args=args, kwargs=kwargs, **options)
     if session is not None:
         # Seed the run row now (the same upsert retry uses) so the dashboard
         # can open the new run's page straight away; the events listener
         # fills in the rest when it hears about the task.
-        lock_task_run(session, result.id, seed={
+        seeded_run = lock_task_run(session, result.id, seed={
             "task_name": task_name, "status": "queued",
             "args": json.dumps(args), "kwargs": json.dumps(kwargs),
-            "queue": queue, "eta": eta,
+            "queue": queue, "eta": eta, "initiator": initiator,
         })
+        if normalized_context is not None:
+            from celery_manager.run_context import merge_storage_context
+            merge_storage_context(seeded_run, normalized_context)
         session.commit()
     if session is not None and username is not None:
         details = {"task_name": task_name, "args": args, "kwargs": kwargs, "delivery_options": json.loads(json.dumps(options, default=str))}
@@ -374,6 +394,14 @@ def cancel_task(
     Pass `session` and `username` to record the action in the audit log; see
     `start_task` above for why they're optional.
     """
+    if session is not None:
+        _require_celery_origin(get_task_run(session, task_id))
+    elif task_id.startswith("external:"):
+        from celery_manager.control.policy import DispatchDenied
+        raise DispatchDenied("External observations cannot be revoked through Celery.", 409)
+    if celery_app is None:
+        from celery_manager.control.policy import DispatchDenied
+        raise DispatchDenied("No Celery executor is configured.", 409)
     celery_app.control.revoke(task_id, terminate=terminate)
     if session is not None and username is not None:
         record_audit(session, username, "cancel", "task", task_id, {"terminate": terminate})
@@ -398,6 +426,7 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     if run is None:
         raise TaskRunNotFound(f"no task run found for {task_id}")
 
+    _require_celery_origin(run)
     final_args = args if args is not None else _decode_stored_call_argument(run.args, "args", task_id, [])
     final_kwargs = kwargs if kwargs is not None else _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
 
@@ -407,7 +436,10 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     principal = session.info.get("cm_principal")
     validate_dispatch(config, run.task_name, final_args, final_kwargs, edited=edited,
                       session=session, principal=principal)
-    new_id = start_task(celery_app, run.task_name, final_args, final_kwargs)
+    from celery_manager.run_context import context_for_run
+    run_context = context_for_run(run, config)
+    new_id = start_task(celery_app, run.task_name, final_args, final_kwargs,
+                        username=username, config=config, principal=principal, _run_context=run_context)
 
     # Upsert, never check-then-insert. `task_runs.task_id` is UNIQUE, and by
     # the time send_task() returns, two other writers may already be racing
@@ -437,7 +469,11 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
         "status": "queued",
         "args": json.dumps(final_args),
         "kwargs": json.dumps(final_kwargs),
+        "initiator": getattr(principal, "subject", None) or getattr(username, "subject", None) or str(username),
     })
+    if run_context is not None:
+        from celery_manager.run_context import merge_storage_context
+        merge_storage_context(new_run, run_context)
     new_run.retried_from_id = task_id
 
     # record_audit commits, which flushes the row above with it — but commit
@@ -454,7 +490,29 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     return new_id
 
 
-def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str) -> list[str]:
+# Most runs one bulk retry may dispatch. Above this the request is refused,
+# not truncated, for the same reason as MAX_BULK_CANCEL.
+MAX_BULK_RETRY = 500
+
+
+class BulkRetryRejected(ValueError):
+    """The batch is too large or repeats an id; nothing was dispatched."""
+
+
+def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str, *, dry_run: bool = False) -> list[str]:
+    """Re-dispatch each stored run. With `dry_run`, validate the whole batch
+    exactly as a real retry would (unknown ids, origin, dispatch policy) and
+    return the ids that would be retried, publishing nothing."""
+    from celery_manager.run_context import context_for_run
+    if len(task_ids) > MAX_BULK_RETRY:
+        raise BulkRetryRejected(f"bulk retry is limited to {MAX_BULK_RETRY} runs at a time")
+    if len(set(task_ids)) != len(task_ids):
+        raise BulkRetryRejected("bulk retry ids must be unique")
+    for task_id in task_ids:
+        candidate = get_task_run(session, task_id)
+        _require_celery_origin(candidate)
+        if candidate is not None:
+            context_for_run(candidate, session.info.get("cm_config"))
     if session.info.get("cm_config") is not None:
         from celery_manager.control.policy import validate_dispatch
         # Validate the whole requested scope before publishing the first task.
@@ -467,6 +525,11 @@ def bulk_retry(celery_app: Celery, session, task_ids: list[str], username: str) 
             kwargs = _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
             validate_dispatch(session.info["cm_config"], run.task_name, args, kwargs,
                               session=session, principal=session.info.get("cm_principal"))
+    if dry_run:
+        for task_id in task_ids:
+            if get_task_run(session, task_id) is None:
+                raise TaskRunNotFound(f"no task run found for {task_id}")
+        return list(task_ids)
     return [retry_task(celery_app, session, task_id, username) for task_id in task_ids]
 
 
@@ -532,6 +595,8 @@ def bulk_cancel(
         ids = list(dict.fromkeys(task_ids))  # de-dupe, keep order
         if len(ids) > MAX_BULK_CANCEL:
             raise BulkCancelTooLarge(len(ids))
+        for run in session.query(TaskRun).filter(TaskRun.task_id.in_(ids)).all() if ids else []:
+            _require_celery_origin(run)
         rows = session.query(TaskRun.task_id, TaskRun.status).filter(TaskRun.task_id.in_(ids)).all() if ids else []
         status_by_id = dict(rows)
         targets = [i for i in ids if status_by_id.get(i) in CANCELLABLE_STATUSES]
@@ -539,7 +604,7 @@ def bulk_cancel(
         skipped = len(ids) - len(targets) - len(unknown)
     else:
         query = _apply_task_filters(session.query(TaskRun), **(filters or {}))
-        query = query.filter(TaskRun.status.in_(CANCELLABLE_STATUSES))
+        query = query.filter(TaskRun.status.in_(CANCELLABLE_STATUSES), TaskRun.source == "celery")
         count = query.count()
         if count > MAX_BULK_CANCEL:
             raise BulkCancelTooLarge(count)
@@ -572,3 +637,9 @@ def bulk_cancel(
         "task_ids": targets,
     })
     return result
+
+
+def _require_celery_origin(run):
+    from celery_manager.control.policy import DispatchDenied
+    if run is not None and run.source != "celery":
+        raise DispatchDenied("External observations are read-only; execution belongs to the host application.", 409)

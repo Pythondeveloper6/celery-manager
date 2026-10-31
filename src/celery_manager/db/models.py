@@ -15,6 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from celery_manager.db.dialect import utcnow
+from celery_manager.db.identity import identity_type
 
 
 class Base(DeclarativeBase):
@@ -31,6 +32,11 @@ class TaskRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     task_name: Mapped[str] = mapped_column(String(255), index=True)
+    source: Mapped[str] = mapped_column(String(32), default="celery", server_default="celery", index=True)
+    tenant_id: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
+    context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operation_key: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
+    correlation_id: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), index=True)  # queued/started/succeeded/failed/retried/skipped/revoked
     queue: Mapped[str | None] = mapped_column(String(255), nullable=True)
     worker: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -377,3 +383,14 @@ class WorkerState(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     active: Mapped[int | None] = mapped_column(Integer, nullable=True)
     processed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+# Register separately defined workflow tables on the same metadata.
+from celery_manager.db.auth_state import BrowserSession, LoginBackoff  # noqa: F401
+from celery_manager.db.failures import FailureResolution, FailureResolutionHistory  # noqa: F401
+from celery_manager.db.health_data import (  # noqa: F401
+    ExpectedSchedulerCommand,
+    HealthObservation,
+    SchedulerInstance,
+)
+from celery_manager.db.operations import OperationAnnotation  # noqa: F401
+from celery_manager.db.worker_history import WorkerHeartbeatSample  # noqa: F401

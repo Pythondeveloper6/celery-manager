@@ -78,6 +78,7 @@ function sameFilters(a: TaskViewFilters, b: TaskViewFilters): boolean {
 function describe(f: TaskViewFilters): string {
   const parts: string[] = [];
   if (f.status !== "all") parts.push(f.status);
+  if (f.mine === "1") parts.push("Started by me");
   if (f.q) parts.push(`“${f.q}”`);
   if (f.from || f.to) parts.push(`${f.from || "…"} – ${f.to || "…"}`);
   if (f.group !== "none") parts.push(`by ${f.group}`);

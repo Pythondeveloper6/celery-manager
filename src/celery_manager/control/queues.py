@@ -327,6 +327,45 @@ def _purge_on_broker(celery_app: Celery, name: str) -> int:
             pass
 
 
+def _depth_on_broker(celery_app: Celery, name: str) -> int | None:
+    conn = _open_connection(celery_app)
+    try:
+        reason = _unsupported_reason(_transport_name(conn))
+        if reason:
+            raise QueueBrokerError(reason)
+        found = _declare_one(conn, name, _is_virtual(conn))
+        if found["exists"] is False and not _is_virtual(conn):
+            raise QueueNotFound(name)
+        return found["depth"]
+    finally:
+        try:
+            conn.release()
+        except Exception:  # noqa: BLE001, S110 — best-effort release
+            pass
+
+
+def preview_purge(celery_app: Celery, session, name: str) -> dict:
+    """What `purge_queue` would do, without doing it: the broker's current
+    depth for `name` and how many recorded runs it would mark revoked.
+
+    Read-only and unaudited. The depth is a snapshot; producers and
+    consumers keep moving, so the real purge can remove a different number.
+    Raises the same `QueueNotFound` / `QueueBrokerError` as a purge.
+    """
+    try:
+        depth = _run_with_deadline(_depth_on_broker, celery_app, name)
+    except (QueueNotFound, QueueBrokerError):
+        raise
+    except Exception as exc:
+        raise QueueBrokerError(f"could not reach the broker: {exc}") from exc
+    would_mark = (
+        session.query(TaskRun)
+        .filter(TaskRun.status == "queued", TaskRun.queue == name, TaskRun.eta.is_(None))
+        .count()
+    )
+    return {"queue": name, "dry_run": True, "messages_waiting": depth, "runs_that_would_be_marked_revoked": would_mark}
+
+
 def purge_queue(celery_app: Celery, session, name: str, username: str) -> dict:
     """Drop every ready message in `name`; mark the runs that went with them.
 

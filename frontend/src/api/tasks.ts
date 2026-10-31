@@ -9,6 +9,11 @@ import { API_BASE as BASE, forbiddenMessage } from "./base";
 export interface TaskSummary {
   task_id: string;
   task_name: string;
+  source: string;
+  tenant_id: string | null;
+  operation_key: string | null;
+  correlation_id: string | null;
+  context_json: string | null;
   status: string;
   started_at: string | null;
   finished_at: string | null;
@@ -64,6 +69,8 @@ export interface TaskPage {
 }
 
 export interface TaskQuery {
+  started_by_me?: boolean;
+  initiator?: string;
   status?: string;
   task_name?: string;
   q?: string;
@@ -146,6 +153,8 @@ export interface RegisteredTask {
   signature: SignatureParam[] | null;
   queue: string | null;
   doc: string | null;
+  // JSON Schema of the task's `args_schemas` model, when one is configured.
+  args_schema?: Record<string, unknown> | null;
 }
 
 export async function listRegisteredTasks(): Promise<RegisteredTask[]> {
@@ -191,7 +200,9 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify({ task_ids: taskIds }),
+    // confirm_count echoes the scope the operator approved; the server refuses
+    // the batch if it differs (and requires it with require_typed_confirmation).
+    body: JSON.stringify({ task_ids: taskIds, confirm_count: taskIds.length }),
   });
   if (response.status === 403) throw new Error(await forbiddenMessage(response));
   if (!response.ok) throw new Error("Bulk retry failed.");
@@ -203,6 +214,8 @@ export async function bulkRetryTasks(taskIds: string[]): Promise<{ new_task_ids:
 // 37 matching" before the operator confirms. Over the server's cap (1,000)
 // the whole request is refused and `detail` says why.
 export interface BulkCancelFilter {
+  started_by_me?: boolean;
+  initiator?: string;
   status?: string;
   task_name?: string;
   q?: string;

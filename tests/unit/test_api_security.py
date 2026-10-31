@@ -145,7 +145,7 @@ def test_cross_origin_get_is_not_blocked(client):
 def test_responses_forbid_framing(client, path):
     response = client.get(path)
     assert response.headers["x-frame-options"] == "DENY"
-    assert response.headers["content-security-policy"] == "frame-ancestors 'none'"
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
 
 
 def test_refused_csrf_response_also_forbids_framing(client):

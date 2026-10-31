@@ -8,7 +8,6 @@ from sqlalchemy.pool import StaticPool
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.session import get_session_factory, init_db
-from celery_manager.decorator import configure as _configure_decorator
 
 _lock = threading.Lock()
 _current: tuple[CeleryManagerConfig, object, object] | None = None
@@ -82,5 +81,12 @@ def setup(config: CeleryManagerConfig):
             _current = (config, engine, session_factory)
             config._cm_runtime_record = _current
             _engines.add(engine)
-        _configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds, config=config)
+        # A monitoring-only runtime must not change an existing Celery app's
+        # decorator globals or claim to be a Celery executor.
+        if config.celery_app is not None:
+            # Imported here: the decorator needs Celery, monitoring-only
+            # processes (RunObserver without a Celery app) must not.
+            from celery_manager.decorator import configure as _configure_decorator
+
+            _configure_decorator(session_factory, eta_tolerance_seconds=config.eta_tolerance_seconds, config=config)
         return session_factory

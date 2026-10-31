@@ -7,6 +7,7 @@ import {
   type DeadLetterPage,
   type RerunResult,
 } from "../api/deadletters";
+import { FailureReview } from "../components/FailureReview";
 import { TaskCallDialog } from "../components/TaskCallDialog";
 import { IconCheck } from "../components/icons";
 import { needsRole, useCan } from "../lib/role";
@@ -37,6 +38,7 @@ function formatTimestamp(value: string | null): string {
 
 export function DeadLetters() {
   const canOperate = useCan("operator");
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const [taskName, setTaskName] = useState("");
   const [exception, setException] = useState("");
   const [since, setSince] = useState("");
@@ -182,6 +184,7 @@ export function DeadLetters() {
         </div>
       </header>
 
+      <FailureReview taskId={reviewing} onChanged={reload} />
       {result && (
         <div className="cm-notice cm-dl-result" role="status">
           <div>
@@ -422,6 +425,7 @@ export function DeadLetters() {
                         </td>
                       )}
                       <td className="cm-cell-primary">
+                        <button type="button" className="cm-btn cm-btn-ghost cm-btn-sm" onClick={() => setReviewing(r.task_id)}>Review failure</button>
                         <Link to={`/tasks/${r.task_id}`} className="cm-task-link" title={r.task_id}>
                           <span className="cm-task-name">{r.task_name}</span>
                           <span className="cm-task-id">{r.task_id.slice(0, 8)}</span>

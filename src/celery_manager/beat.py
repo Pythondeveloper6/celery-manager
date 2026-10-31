@@ -295,6 +295,11 @@ def __getattr__(name):
     elif name == "DjangoDatabaseScheduler":
         from django_celery_beat.schedulers import DatabaseScheduler
         cls = type(name, (StampOccurrencesMixin, DatabaseScheduler), {"__module__": __name__})
+    elif name == "SQLAlchemyDatabaseScheduler":
+        from celery_manager.schedulers.sqlalchemy_beat import (
+            SQLAlchemyDatabaseScheduler,
+        )
+        cls = SQLAlchemyDatabaseScheduler
     else:
         raise AttributeError(name)
     globals()[name] = cls

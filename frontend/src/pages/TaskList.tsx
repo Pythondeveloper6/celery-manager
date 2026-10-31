@@ -1,3 +1,4 @@
+import { useAuthOptions } from "../lib/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { bulkRetryTasks, listTasks, subscribeToUpdates, type BulkCancelResult, type StreamState, type TaskSummary } from "../api/tasks";
@@ -342,14 +343,16 @@ function RuntimeCell({ task, now }: { task: TaskSummary; now: number }) {
 export function TaskList() {
   // Viewers get no selection column, bulk bar or Start button; the server
   // would refuse those actions anyway (403).
-  const canOperate = useCan("operator");
+  const isOperator = useCan("operator");
+  const options = useAuthOptions();
+  const canOperate = isOperator && !options.monitoring_only;
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [total, setTotal] = useState(0);
 
   // The filters live in the URL (see lib/useTaskFilters): `searchInput` is
   // what the user sees, `search` the debounced value that reaches the API.
   const {
-    status, search, dateFrom, dateTo, groupBy, searchInput,
+    status, search, dateFrom, dateTo, groupBy, searchInput, mine, setMine,
     setStatus, setSearchInput, setSearch, setDateFrom, setDateTo, setGroupBy,
     clearFilters, applyView, view, urlOffset, setUrlOffset,
   } = useTaskFilters();
@@ -387,10 +390,10 @@ export function TaskList() {
   // This effect is declared FIRST on purpose: effects within a component run
   // in declaration order, so the ref is current by the time the fetch effect
   // further down reads it in the same commit.
-  const filtersRef = useRef({ status, search, dateFrom, dateTo });
+  const filtersRef = useRef({ status, search, dateFrom, dateTo, mine });
   useEffect(() => {
-    filtersRef.current = { status, search, dateFrom, dateTo };
-  }, [status, search, dateFrom, dateTo]);
+    filtersRef.current = { status, search, dateFrom, dateTo, mine };
+  }, [status, search, dateFrom, dateTo, mine]);
 
   // How many pages the user has pulled in. Kept in a ref for the same reason
   // as the filters — and mutated *synchronously* by `loadMore` / the filter
@@ -467,6 +470,7 @@ export function TaskList() {
       const page = await listTasks({
         status: current.status === "all" ? undefined : current.status,
         q: current.search || undefined,
+        started_by_me: current.mine === "1" || undefined,
         date_from: startOfDayIso(current.dateFrom),
         date_to: endOfDayIso(current.dateTo),
         limit,
@@ -522,7 +526,7 @@ export function TaskList() {
     setBulkError(null);
     setBulkNotice(null);
     refresh();
-  }, [status, search, dateFrom, dateTo, refresh]);
+  }, [status, search, dateFrom, dateTo, mine, refresh]);
 
   // Subscription stays open across mode changes (no EventSource churn); the
   // guard is in the handler. An SSE event is a live-head event, and applying
@@ -595,7 +599,7 @@ export function TaskList() {
   // guarantees "selected never contains an id that isn't currently
   // visible," which the filter-only reset does not.
   useEffect(() => {
-    const visibleIds = new Set(tasks.map((t) => t.task_id));
+    const visibleIds = new Set(tasks.filter((t) => t.source === "celery").map((t) => t.task_id));
     setSelected((prev) => {
       let changed = false;
       const next = new Set<string>();
@@ -751,7 +755,7 @@ export function TaskList() {
 
   const groups = useMemo(() => groupTasks(tasks, groupBy), [tasks, groupBy]);
 
-  const filtersActive = status !== "all" || search !== "" || dateFrom !== "" || dateTo !== "";
+  const filtersActive = mine !== "" || status !== "all" || search !== "" || dateFrom !== "" || dateTo !== "";
   const dateFilterActive = dateFrom !== "" || dateTo !== "";
   const historyMode = mode === "history";
   const loadedCount = tasks.length;
@@ -901,6 +905,10 @@ export function TaskList() {
       </div>
 
       <div className="cm-tasks-toolbar">
+        <label className="cm-run-hint">
+          <input type="checkbox" checked={mine === "1"} onChange={(e) => setMine(e.target.checked ? "1" : "")} />
+          {" "}Started by me
+        </label>
         <div className="cm-tasks-search">
           <label className="cm-visually-hidden" htmlFor="cm-tasks-search">
             Search runs
@@ -991,6 +999,7 @@ export function TaskList() {
           exportParams={{
             status: status === "all" ? undefined : status,
             q: search || undefined,
+            started_by_me: mine === "1" || undefined,
             date_from: startOfDayIso(dateFrom),
             date_to: endOfDayIso(dateTo),
           }}
@@ -1061,7 +1070,8 @@ export function TaskList() {
               filter={{
                 status: status === "all" ? undefined : status,
                 q: search || undefined,
-                date_from: startOfDayIso(dateFrom),
+                started_by_me: mine === "1" || undefined,
+            date_from: startOfDayIso(dateFrom),
                 date_to: endOfDayIso(dateTo),
               }}
               onDone={handleCancelled}
@@ -1202,6 +1212,7 @@ export function TaskList() {
                               <span className="cm-checkbox">
                                 <input
                                   type="checkbox"
+                                  disabled={t.source !== "celery"}
                                   checked={selected.has(t.task_id)}
                                   onChange={() => toggle(t.task_id)}
                                   aria-label={`Select ${t.task_name} (${t.task_id}) for bulk actions`}

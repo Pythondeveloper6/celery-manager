@@ -11,8 +11,19 @@ export type RuleKind =
   | "queue_wait"
   | "queue_growing"
   // RabbitMQ
-  | "rabbitmq_alarm";
-export type ChannelKind = "slack" | "webhook" | "email" | "teams";
+  | "rabbitmq_alarm"
+  | "task_failed"
+  | "consecutive_failures"
+  | "run_stuck"
+  | "worker_lost"
+  | "beat_stale"
+  | "task_sla"
+  | "duration_regression"
+  | "daily_digest"
+  | "run_late"
+  | "custom_probe"
+  | "scheduler_stale";
+export type ChannelKind = "slack" | "webhook" | "email" | "teams" | "pagerduty";
 
 export interface AlertRule {
   id: number;
@@ -42,7 +53,7 @@ export interface AlertChannel {
   id: number;
   name: string;
   kind: ChannelKind;
-  config: { url?: string | null; secret_set?: boolean; to?: string[] };
+  config: { url?: string | null; secret_set?: boolean; routing_key_set?: boolean; to?: string[] };
   created_by: string;
   created_at: string | null;
   last_sent_at: string | null;
@@ -80,7 +91,7 @@ export interface RuleInput {
 export interface ChannelInput {
   name?: string;
   kind?: ChannelKind;
-  config?: { url?: string; secret?: string; to?: string[] };
+  config?: { url?: string; secret?: string; routing_key?: string; to?: string[] };
 }
 
 // Same contract as api/users.ts: every refusal surfaces the server's own

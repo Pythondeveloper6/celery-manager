@@ -16,7 +16,7 @@ import { useLocation, useNavigate } from "react-router-dom";
  *
  *  Defaults are omitted from the URL so a bare `#/` stays a bare `#/`. */
 
-export const STATUS_FILTERS = ["all", "queued", "started", "succeeded", "failed", "retried", "skipped", "revoked"];
+export const STATUS_FILTERS = ["all", "queued", "started", "succeeded", "failed", "retried", "skipped", "revoked", "interrupted"];
 
 export type GroupBy = "none" | "status" | "name" | "date";
 const GROUP_VALUES: GroupBy[] = ["none", "status", "name", "date"];
@@ -32,9 +32,10 @@ export interface TaskViewFilters {
   from: string;
   to: string;
   group: GroupBy;
+  mine: string;
 }
 
-export const EMPTY_VIEW: TaskViewFilters = { status: "all", q: "", from: "", to: "", group: "none" };
+export const EMPTY_VIEW: TaskViewFilters = { status: "all", q: "", from: "", to: "", group: "none", mine: "" };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -46,6 +47,7 @@ function parseView(params: URLSearchParams): TaskViewFilters {
   return {
     status: STATUS_FILTERS.includes(status) ? status : "all",
     q: params.get("q") ?? "",
+    mine: params.get("mine") === "1" ? "1" : "",
     from: DATE_RE.test(from) ? from : "",
     to: DATE_RE.test(to) ? to : "",
     group: GROUP_VALUES.includes(group) ? group : "none",
@@ -66,6 +68,7 @@ export function viewToQuery(view: TaskViewFilters): string {
   const out = new URLSearchParams();
   if (view.status !== "all") out.set("status", view.status);
   if (view.q) out.set("q", view.q);
+  if (view.mine) out.set("mine", "1");
   if (view.from) out.set("from", view.from);
   if (view.to) out.set("to", view.to);
   if (view.group !== "none") out.set("group", view.group);
@@ -182,6 +185,8 @@ export function useTaskFilters() {
 
   return {
     status: view.status,
+    mine: view.mine,
+    setMine: (value: string) => setFilter("mine", value),
     search: view.q,
     dateFrom: view.from,
     dateTo: view.to,

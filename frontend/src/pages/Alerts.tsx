@@ -34,6 +34,17 @@ import { needsRole, useCan } from "../lib/role";
    ========================================================================== */
 
 const KIND_LABEL: Record<RuleKind, string> = {
+  task_failed: "Task failed",
+  consecutive_failures: "Consecutive failures",
+  run_stuck: "Run stuck",
+  worker_lost: "Worker lost",
+  beat_stale: "Beat stale",
+  task_sla: "Task sla",
+  duration_regression: "Duration regression",
+  daily_digest: "Daily digest",
+  run_late: "Scheduled run late",
+  custom_probe: "Custom health probe",
+  scheduler_stale: "Host scheduler stale",
   failure_rate: "Failure rate",
   queue_backlog: "Queue backlog",
   worker_offline: "Worker offline",
@@ -49,6 +60,17 @@ const KIND_LABEL: Record<RuleKind, string> = {
 const BROKER_KINDS: RuleKind[] = ["broker_unreachable", "broker_memory"];
 
 const TARGET_LABEL: Record<RuleKind, string> = {
+  task_failed: "Task name",
+  consecutive_failures: "Task name",
+  run_stuck: "Task name",
+  worker_lost: "Task name",
+  beat_stale: "Beat",
+  task_sla: "Task name",
+  duration_regression: "Task name",
+  daily_digest: "Task name",
+  run_late: "Task name",
+  custom_probe: "Probe name",
+  scheduler_stale: "Scheduler instance",
   failure_rate: "Task name",
   queue_backlog: "Queue name",
   worker_offline: "Worker name",
@@ -61,6 +83,17 @@ const TARGET_LABEL: Record<RuleKind, string> = {
 };
 
 const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
+  task_failed: "* or e.g. reports.build",
+  consecutive_failures: "* or e.g. reports.build",
+  run_stuck: "* or e.g. reports.build",
+  worker_lost: "* or e.g. reports.build",
+  beat_stale: "*",
+  task_sla: "* or e.g. reports.build",
+  duration_regression: "* or e.g. reports.build",
+  daily_digest: "* or e.g. reports.build",
+  run_late: "* or e.g. reports.build",
+  custom_probe: "* or e.g. voice-outbox",
+  scheduler_stale: "* or e.g. scheduler-1",
   failure_rate: "e.g. reports.build",
   queue_backlog: "e.g. celery",
   worker_offline: "e.g. celery@web-*",
@@ -79,6 +112,17 @@ const PARAM_FIELDS: Record<
   RuleKind,
   { key: string; label: string; hint: string; fallback: number; min: number; max: number; percent?: boolean }[]
 > = {
+  custom_probe: [{key:"stale_seconds",label:"Observation freshness (seconds)",hint:"Old observations are unknown.",fallback:120,min:1,max:86400}],
+  scheduler_stale: [{key:"seconds",label:"Heartbeat freshness (seconds)",hint:"Stale owners or overdue expected commands fire.",fallback:120,min:1,max:86400}],
+  task_failed: [{"key": "window_minutes", "label": "Window minutes", "hint": "task failed: window minutes.", "fallback": 60, "min": 1, "max": 10080}],
+  consecutive_failures: [{"key": "count", "label": "Count", "hint": "consecutive failures: count.", "fallback": 3, "min": 1, "max": 1000}, {"key": "window_minutes", "label": "Window minutes", "hint": "consecutive failures: window minutes.", "fallback": 1440, "min": 1, "max": 43200}],
+  run_stuck: [{"key": "seconds", "label": "Seconds", "hint": "run stuck: seconds.", "fallback": 3600, "min": 1, "max": 604800}, {"key": "p95_multiplier", "label": "P95 multiplier", "hint": "run stuck: p95 multiplier.", "fallback": 3, "min": 1, "max": 100}, {"key": "min_runs", "label": "Min runs", "hint": "run stuck: min runs.", "fallback": 10, "min": 2, "max": 10000}],
+  worker_lost: [{"key": "seconds", "label": "Seconds", "hint": "worker lost: seconds.", "fallback": 120, "min": 1, "max": 86400}],
+  beat_stale: [{"key": "seconds", "label": "Seconds", "hint": "beat stale: seconds.", "fallback": 120, "min": 30, "max": 86400}],
+  task_sla: [{"key": "seconds", "label": "Seconds", "hint": "task sla: seconds.", "fallback": 3600, "min": 1, "max": 604800}, {"key": "window_minutes", "label": "Window minutes", "hint": "task sla: window minutes.", "fallback": 60, "min": 1, "max": 10080}],
+  duration_regression: [{"key": "multiplier", "label": "Multiplier", "hint": "duration regression: multiplier.", "fallback": 2, "min": 1.01, "max": 100}, {"key": "baseline_days", "label": "Baseline days", "hint": "duration regression: baseline days.", "fallback": 30, "min": 1, "max": 365}, {"key": "recent_minutes", "label": "Recent minutes", "hint": "duration regression: recent minutes.", "fallback": 60, "min": 1, "max": 43200}, {"key": "min_runs", "label": "Min runs", "hint": "duration regression: min runs.", "fallback": 10, "min": 2, "max": 10000}],
+  run_late: [{"key": "seconds", "label": "Seconds late", "hint": "Fire when a scheduled run starts this long after it was due, or has not started by then.", "fallback": 300, "min": 1, "max": 86400}, {"key": "window_minutes", "label": "Window minutes", "hint": "Look at occurrences due in this window.", "fallback": 60, "min": 1, "max": 10080}],
+  daily_digest: [{"key": "hour_utc", "label": "Hour utc", "hint": "daily digest: hour utc.", "fallback": 8, "min": 0, "max": 23}],
   failure_rate: [
     { key: "rate", label: "Failure rate (%)", hint: "Fire when at least this share of finished runs failed.", fallback: 0.2, min: 1, max: 100, percent: true },
     { key: "min_runs", label: "Minimum runs", hint: "Fewer finished runs than this never fire: 1 of 1 is noise.", fallback: 10, min: 1, max: 1000000 },
@@ -113,7 +157,7 @@ const PARAM_FIELDS: Record<
   rabbitmq_alarm: [],
 };
 
-const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email", teams: "Microsoft Teams" };
+const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email", teams: "Microsoft Teams", pagerduty: "PagerDuty" };
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -140,6 +184,8 @@ function describeCondition(rule: AlertRule): string {
       return `Depth up by ${p.min_increase} or more over ${p.minutes} min, without draining`;
     case "rabbitmq_alarm":
       return "A RabbitMQ node reports a memory or disk alarm";
+    default:
+      return Object.entries(p).map(([key, value]) => `${key.replaceAll("_", " ")}: ${value}`).join(" · ");
   }
 }
 
@@ -377,14 +423,20 @@ function ChannelDialog({
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [removeSecret, setRemoveSecret] = useState(false);
+  const [routingKey, setRoutingKey] = useState("");
   const [to, setTo] = useState((channel?.config.to ?? []).join(", "));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Creating needs a URL; editing may leave it blank to keep the stored one.
-  const needsUrl = kind !== "email" && !editing;
+  // PagerDuty defaults its URL server-side but needs an integration key.
+  const needsUrl = kind !== "email" && kind !== "pagerduty" && !editing;
+  const needsKey = kind === "pagerduty" && !editing;
   const canSubmit =
-    !busy && name.trim() !== "" && (kind === "email" ? to.trim() !== "" : !needsUrl || url.trim() !== "");
+    !busy &&
+    name.trim() !== "" &&
+    (kind === "email" ? to.trim() !== "" : !needsUrl || url.trim() !== "") &&
+    (!needsKey || routingKey.trim() !== "");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -398,6 +450,7 @@ function ChannelDialog({
         if (removeSecret) config.secret = "";
         else if (secret) config.secret = secret;
       }
+      if (kind === "pagerduty" && routingKey.trim()) config.routing_key = routingKey.trim();
     }
     setBusy(true);
     setError(null);
@@ -446,13 +499,26 @@ function ChannelDialog({
           </div>
         ) : (
           <div className="cm-field">
-            <label htmlFor={`${uid}-url`}>{kind === "slack" ? "Slack incoming webhook URL" : "Webhook URL"}</label>
+            <label htmlFor={`${uid}-url`}>
+              {kind === "slack" ? "Slack incoming webhook URL" : kind === "pagerduty" ? "Events API URL (optional)" : "Webhook URL"}
+            </label>
             <input id={`${uid}-url`} className="cm-input" type="url" value={url} disabled={busy} spellCheck={false}
               autoComplete="off" onChange={(e) => setUrl(e.target.value)}
-              placeholder={editing ? `Unchanged: ${channel?.config.url ?? ""}` : "https://"}
+              placeholder={editing ? `Unchanged: ${channel?.config.url ?? ""}` : kind === "pagerduty" ? "https://events.pagerduty.com/v2/enqueue" : "https://"}
               aria-describedby={`${uid}-url-hint`} />
             <p className="cm-field-hint" id={`${uid}-url-hint`}>
               {editing ? "Leave blank to keep the current URL. " : ""}Must start with https:// (or http://).
+            </p>
+          </div>
+        )}
+        {kind === "pagerduty" && (
+          <div className="cm-field">
+            <label htmlFor={`${uid}-routing-key`}>Integration key</label>
+            <input id={`${uid}-routing-key`} className="cm-input" type="password" value={routingKey}
+              autoComplete="new-password" disabled={busy} onChange={(e) => setRoutingKey(e.target.value)}
+              placeholder={channel?.config.routing_key_set ? "Unchanged" : ""} aria-describedby={`${uid}-routing-key-hint`} />
+            <p className="cm-field-hint" id={`${uid}-routing-key-hint`}>
+              The Events API v2 integration key of a PagerDuty service. Resolving an alert resolves its incident.
             </p>
           </div>
         )}

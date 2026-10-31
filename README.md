@@ -106,9 +106,18 @@ without touching your beat schedule or restarting anything.
 </tr>
 </table>
 
+New in the [0.3 release candidate](docs/release-0.3.md): SQL-owned schedules,
+reviewed reconciliation, singleton leases, deeper alerts, failure review,
+revocable browser sessions, heartbeat history and a versioned status widget.
+The same release adds [host-job observation and operational diagnostics](docs/real-world-operations.md):
+`RunObserver` for synchronous/async work without Celery, tenant-scoped read-only
+history, custom probes/outbox health, first-due scheduler expectations, correlated
+attempts, preflight, deployment notes and audited environment safeguards. These
+observe the host's existing execution; they do not replace it.
+
 Production adoption: the [0.2 guide](docs/production.md) covers external schedulers,
 OIDC, dispatch policies, bounded logs/results and storage isolation. The
-[requirements roadmap](docs/roadmap.md) tracks the real-project review and follow-ups.
+[requirements roadmap](docs/roadmap.md) tracks requirements and follow-ups.
 
 ## What you get
 
@@ -152,7 +161,28 @@ OIDC, dispatch policies, bounded logs/results and storage isolation. The
 - **No Node toolchain required** — the React dashboard ships prebuilt inside
   the Python package.
 
+## 30-second quickstart
+
+```bash
+pip install --pre "celery-manager[standalone]"
+celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
+```
+
+No broker, worker or database server needed. To wire it into your own app, see
+[Install](#install) and [Wire it up](#wire-it-up) below, or run an example in
+[`examples/`](examples/) (FastAPI, Flask, Django, Docker Compose).
+
 ## Install
+
+Try it first, with no broker, worker or database server:
+
+```bash
+pip install --pre "celery-manager[standalone]"
+celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
+```
+
+See [Is celery-manager the right tool?](docs/choosing.md) for how it compares
+with Flower, Sentry Crons and Grafana, and a 10-line quickstart per framework.
 
 celery-manager is an alpha, so pass `--pre` to pip:
 
@@ -260,6 +290,8 @@ Full documentation is at **<https://pythondeveloper6.github.io/celery-manager/>*
 - [Insights](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/insights.md) — trends, per-task pages and grouped failures.
 - [Workers and rate limits](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/workers.md) — live worker state and controls.
 - [Queues, purge and bulk cancel](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/queues.md) — broker depth and clean-up.
+- [Deployment](docs/deployment.md) and [Upgrading](docs/upgrading.md) — process layout, checklist and upgrade steps.
+- [Security](docs/security.md) — the threat model and hardening notes.
 - [Configuration](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/configuration.md) — every config field, the schema
   and upgrade story, and production notes.
 - [Working on celery-manager](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/contributing.md) — running the tests,
@@ -270,6 +302,35 @@ are in [`CHANGELOG.md`](https://github.com/Pythondeveloper6/celery-manager/blob/
 
 A complete runnable Django example is in
 [`examples/django_demo/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo/).
+The FastAPI example ([`examples/fastapi_demo/`](examples/fastapi_demo/)) also runs
+with no Redis (`CELERY_MANAGER_EAGER=1`) and is covered by a smoke test.
+A production-shaped Docker Compose deployment (dashboard, worker, beat, events
+listener, PostgreSQL, Redis) is in
+[`examples/docker/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/docker/).
+
+## Security
+
+The dashboard can cancel tasks, purge queues and edit schedules, so treat it as
+an admin surface: serve it over HTTPS, keep `cookie_secure=True`, set a long
+random `secret_key` from your secret store, create accounts explicitly (there
+is no default login) and use the `viewer`/`operator`/`admin` roles. See
+[docs/security.md](docs/security.md) and [`SECURITY.md`](SECURITY.md) for the
+threat model and how to report a vulnerability privately.
+
+## Limits
+
+- Alpha software: APIs may change before 1.0.
+- Celery 5.x only; other task runners are observed, not controlled
+  ([details](docs/other-runners.md)).
+- Retry, revoke, purge and worker controls need a reachable broker and live workers.
+- Per-occurrence skips need beat to run `celery_manager.beat:Scheduler`, and
+  exactly one beat.
+- SQLite is fine for development; use PostgreSQL or MySQL for multi-host deployments.
+
+## Contributing
+
+Issues and pull requests are welcome. Running the tests, linting and building
+the docs are covered in [Working on celery-manager](docs/contributing.md).
 
 ## Roadmap
 
@@ -288,9 +349,9 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is an alpha, **0.1.0a5**. It is feature-complete for the v1 scope,
-but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
-backlog of known gaps and planned follow-ups.
+This is an alpha, **0.3.0a1**. APIs may still change before 1.0; see the
+[CHANGELOG](CHANGELOG.md) for release history and
+[docs/roadmap.md](docs/roadmap.md) for planned follow-ups.
 
 ## License
 
