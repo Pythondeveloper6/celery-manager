@@ -161,8 +161,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[dev,oidc,redbeat,django-beat,sqlalchemy-beat,schedule-descriptions]' 'fakeredis[lua]'
-      - run: pytest -q tests/unit/test_oidc_provider.py tests/unit/test_optional_scheduler_adapters.py tests/unit/test_sqlalchemy_scheduler.py tests/unit/test_cron_grammar.py tests/unit/test_singleton.py --junitxml=/tmp/adapters.xml
+      - run: pip install -e '.[dev,oidc,redbeat,django-beat,sqlalchemy-beat,schedule-descriptions]' 'fakeredis[lua]' dramatiq taskiq arq
+      - run: pytest -q tests/unit/test_oidc_provider.py tests/unit/test_optional_scheduler_adapters.py tests/unit/test_sqlalchemy_scheduler.py tests/unit/test_cron_grammar.py tests/unit/test_singleton.py tests/unit/test_runner_adapters.py --junitxml=/tmp/adapters.xml
       - run: python -m tests.release_gate /tmp/adapters.xml
 
   database-contracts:

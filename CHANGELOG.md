@@ -7,6 +7,12 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- [Other task runners](docs/other-runners.md): `celery_manager.adapters` records
+  runs from plain asyncio/thread loops (`run_every`, `run_every_in_thread`,
+  `observed_job`), Dramatiq and Taskiq (middleware) and arq (job wrapper) via
+  `RunObserver`. Observe-only; the runners are not dependencies.
+- Monitoring-only processes no longer import Celery, FastAPI, Starlette,
+  bcrypt or pydantic: package-root names resolve on first use.
 - `py.typed` marker and the `Typing :: Typed` classifier: type checkers now use
   the package's annotations.
 - [Stability and upgrade policy](docs/stability.md): the API, CLI, metrics,
