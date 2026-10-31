@@ -72,7 +72,12 @@ def _read_password(from_stdin: bool) -> str:
 
 def create_user_command(db_url: str, username: str, role: str, *, password_stdin: bool = False, db_schema=None) -> int:
     """`celery-manager create-user`. Returns the process exit code."""
-    from celery_manager.auth.users import create_user, user_exists, validate_password, validate_username
+    from celery_manager.auth.users import (
+        create_user,
+        user_exists,
+        validate_password,
+        validate_username,
+    )
 
     try:
         validate_username(username)
