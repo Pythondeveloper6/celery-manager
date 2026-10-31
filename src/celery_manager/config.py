@@ -4,11 +4,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from celery import Celery
-
 from celery_manager.db.identity import portable_text_fits
 
 if TYPE_CHECKING:
+    from celery import Celery
     from starlette.requests import Request
 
     from celery_manager.auth.external import ExternalUser
