@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import re
+from pathlib import Path
 from urllib.parse import urlsplit
 
 # Methods that can change state. GET/HEAD/OPTIONS are never checked: every
@@ -17,6 +21,39 @@ _SECURITY_HEADERS = [
     (b"x-frame-options", b"DENY"),
     (b"content-security-policy", b"frame-ancestors 'none'"),
 ]
+
+
+_INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.S)
+
+
+def inline_script_hashes(index_html: Path) -> tuple[str, ...]:
+    """CSP source expressions for the inline scripts of the bundled page."""
+    try:
+        text = index_html.read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    return tuple("'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
+                 for body in _INLINE_SCRIPT.findall(text))
+
+
+def content_security_policy(frame_ancestors: tuple[str, ...] = (), script_hashes: tuple[str, ...] = ()) -> bytes:
+    """The policy for every response. Scripts only from this origin (plus the
+    page's own hashed inline bootstrap), so injected markup cannot run code;
+    images may be remote because a brand logo URL can be."""
+    directives = [
+        "default-src 'self'",
+        "script-src " + " ".join(("'self'", *script_hashes)),
+        # React style attributes are inline styles.
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https: http:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors " + (" ".join(frame_ancestors) if frame_ancestors else "'none'"),
+    ]
+    return "; ".join(directives).encode()
 
 
 def _split_port(host: str) -> tuple[str, str | None]:
@@ -84,7 +121,7 @@ class SecurityMiddleware:
     can't set that header without a CORS preflight this app never approves.
     """
 
-    def __init__(self, app, trusted_origins=(), frame_ancestors=()):
+    def __init__(self, app, trusted_origins=(), frame_ancestors=(), script_hashes=()):
         self.app = app
         for origin in (*trusted_origins, *frame_ancestors):
             parts = urlsplit(origin)
@@ -93,8 +130,14 @@ class SecurityMiddleware:
                     or not origin.isascii() or any(c in origin for c in " ;'\"\r\n")):
                 raise ValueError("Configure explicit http(s) origins without paths")
         self.trusted_origins = {o.rstrip("/") for o in trusted_origins}
-        self.security_headers = ([(b"content-security-policy", ("frame-ancestors " + " ".join(frame_ancestors)).encode())]
-                                 if frame_ancestors else _SECURITY_HEADERS)
+        self.security_headers = [
+            (b"content-security-policy", content_security_policy(tuple(frame_ancestors), tuple(script_hashes))),
+            (b"x-content-type-options", b"nosniff"),
+            (b"referrer-policy", b"same-origin"),
+        ]
+        if not frame_ancestors:
+            # Older browsers ignore CSP frame-ancestors.
+            self.security_headers.append((b"x-frame-options", b"DENY"))
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":

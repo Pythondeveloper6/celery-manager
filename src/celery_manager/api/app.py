@@ -239,7 +239,9 @@ def create_app(config: CeleryManagerConfig):
         raise ValueError("live_stream must be 'sse' or 'poll'")
     from celery_manager.auth.roles import validate_role
     validate_role(config.log_view_role)
-    app.add_middleware(SecurityMiddleware, trusted_origins=config.trusted_origins, frame_ancestors=config.frame_ancestors)
+    from celery_manager.api.security import inline_script_hashes
+    app.add_middleware(SecurityMiddleware, trusted_origins=config.trusted_origins, frame_ancestors=config.frame_ancestors,
+                       script_hashes=inline_script_hashes(Path(__file__).parent.parent / "dashboard" / "static" / "index.html"))
     if config.trusted_origins:
         from starlette.middleware.cors import CORSMiddleware
         app.add_middleware(CORSMiddleware, allow_origins=list(config.trusted_origins),

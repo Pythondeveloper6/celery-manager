@@ -67,6 +67,11 @@ All notable changes to celery-manager are recorded here. The format follows
   attestations. Pushing to `main` no longer publishes.
 
 ### Security
+- Every response now carries a Content-Security-Policy that only allows
+  scripts from the dashboard's own origin plus its hashed inline theme
+  bootstrap (`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`),
+  and `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`.
+  Injected markup can no longer run script even if a rendering bug let it in.
 - `/openapi.json` now requires a signed-in user, and the Swagger UI and ReDoc
   pages (which loaded third-party scripts into the dashboard's origin) are no
   longer served. Previously anyone who could reach the app could read the full
