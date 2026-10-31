@@ -157,7 +157,7 @@ const PARAM_FIELDS: Record<
   rabbitmq_alarm: [],
 };
 
-const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email", teams: "Microsoft Teams" };
+const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email", teams: "Microsoft Teams", pagerduty: "PagerDuty" };
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -423,14 +423,20 @@ function ChannelDialog({
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [removeSecret, setRemoveSecret] = useState(false);
+  const [routingKey, setRoutingKey] = useState("");
   const [to, setTo] = useState((channel?.config.to ?? []).join(", "));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Creating needs a URL; editing may leave it blank to keep the stored one.
-  const needsUrl = kind !== "email" && !editing;
+  // PagerDuty defaults its URL server-side but needs an integration key.
+  const needsUrl = kind !== "email" && kind !== "pagerduty" && !editing;
+  const needsKey = kind === "pagerduty" && !editing;
   const canSubmit =
-    !busy && name.trim() !== "" && (kind === "email" ? to.trim() !== "" : !needsUrl || url.trim() !== "");
+    !busy &&
+    name.trim() !== "" &&
+    (kind === "email" ? to.trim() !== "" : !needsUrl || url.trim() !== "") &&
+    (!needsKey || routingKey.trim() !== "");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -444,6 +450,7 @@ function ChannelDialog({
         if (removeSecret) config.secret = "";
         else if (secret) config.secret = secret;
       }
+      if (kind === "pagerduty" && routingKey.trim()) config.routing_key = routingKey.trim();
     }
     setBusy(true);
     setError(null);
@@ -492,13 +499,26 @@ function ChannelDialog({
           </div>
         ) : (
           <div className="cm-field">
-            <label htmlFor={`${uid}-url`}>{kind === "slack" ? "Slack incoming webhook URL" : "Webhook URL"}</label>
+            <label htmlFor={`${uid}-url`}>
+              {kind === "slack" ? "Slack incoming webhook URL" : kind === "pagerduty" ? "Events API URL (optional)" : "Webhook URL"}
+            </label>
             <input id={`${uid}-url`} className="cm-input" type="url" value={url} disabled={busy} spellCheck={false}
               autoComplete="off" onChange={(e) => setUrl(e.target.value)}
-              placeholder={editing ? `Unchanged: ${channel?.config.url ?? ""}` : "https://"}
+              placeholder={editing ? `Unchanged: ${channel?.config.url ?? ""}` : kind === "pagerduty" ? "https://events.pagerduty.com/v2/enqueue" : "https://"}
               aria-describedby={`${uid}-url-hint`} />
             <p className="cm-field-hint" id={`${uid}-url-hint`}>
               {editing ? "Leave blank to keep the current URL. " : ""}Must start with https:// (or http://).
+            </p>
+          </div>
+        )}
+        {kind === "pagerduty" && (
+          <div className="cm-field">
+            <label htmlFor={`${uid}-routing-key`}>Integration key</label>
+            <input id={`${uid}-routing-key`} className="cm-input" type="password" value={routingKey}
+              autoComplete="new-password" disabled={busy} onChange={(e) => setRoutingKey(e.target.value)}
+              placeholder={channel?.config.routing_key_set ? "Unchanged" : ""} aria-describedby={`${uid}-routing-key-hint`} />
+            <p className="cm-field-hint" id={`${uid}-routing-key-hint`}>
+              The Events API v2 integration key of a PagerDuty service. Resolving an alert resolves its incident.
             </p>
           </div>
         )}

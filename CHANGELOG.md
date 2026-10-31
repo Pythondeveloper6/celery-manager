@@ -7,6 +7,8 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- PagerDuty alert channel (Events API v2): incidents trigger and resolve with
+  a stable dedup key; the integration key is never returned by the API.
 - `doctor` reviews Celery settings behind lost or duplicated tasks (acks
   late, prefetch, visibility timeout, result expiry, time limits, events,
   single beat) with a fix for each; `--fix-suggestions` prints a Markdown

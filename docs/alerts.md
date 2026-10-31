@@ -248,6 +248,27 @@ settings if you want **Send test** to work for email (the test is sent from
 the API process). Without `smtp_host`, email channels fail with a message
 saying so.
 
+### PagerDuty
+
+A PagerDuty channel sends Events API v2 events. Give it the **integration
+key** of a PagerDuty service (Service → Integrations → Events API v2). The URL
+defaults to `https://events.pagerduty.com/v2/enqueue`; set it only for the EU
+endpoint (`https://events.eu.pagerduty.com/v2/enqueue`) or a proxy. The key is
+stored like a webhook secret: never returned by the API, only
+`routing_key_set: true`.
+
+Each incident uses the dedup key `celery-manager:<rule id>:<key>`, so the
+resolve event closes the PagerDuty incident the trigger opened, and a repeated
+trigger for the same open incident does not page twice. `summary`, `source`
+(`environment_name`), `component` (the task, queue or schedule), `group` (the
+rule kind), the rule's details and a link to the dashboard page are included.
+**Send test** triggers an `info`-severity event with the dedup key
+`celery-manager:test:-`; resolve it in PagerDuty afterwards.
+
+```json
+{"name": "On call", "kind": "pagerduty", "config": {"routing_key": "<32-character integration key>"}}
+```
+
 ## Security
 
 - **Only admins** can add, change, test or delete rules and channels. Every

@@ -38,7 +38,11 @@ RULE_KINDS = (
 # Kinds about the one broker rather than a named thing: their target is
 # always "*" whatever was sent, so a rule can't claim to watch "redis-2".
 BROKER_KINDS = ("broker_unreachable", "broker_memory", "beat_stale")
-CHANNEL_KINDS = ("slack", "webhook", "email", "teams")
+CHANNEL_KINDS = ("slack", "webhook", "email", "teams", "pagerduty")
+PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
+# A PagerDuty Events API v2 integration ("routing") key: 32 characters in
+# practice; accept a little either side, never anything but [A-Za-z0-9].
+_ROUTING_KEY = re.compile(r"^[A-Za-z0-9]{20,64}$")
 
 MAX_NAME_LENGTH = 100
 MAX_TARGET_LENGTH = 255
@@ -251,12 +255,21 @@ def _validate_channel_config(kind: str, config, existing: dict | None) -> dict:
     if not isinstance(config, dict):
         raise ValueError("config must be an object")  # noqa: TRY004
     existing = existing or {}
-    allowed = {"slack": {"url"}, "teams": {"url"}, "webhook": {"url", "secret"}, "email": {"to"}}[kind]
+    allowed = {"slack": {"url"}, "teams": {"url"}, "webhook": {"url", "secret"}, "email": {"to"},
+               "pagerduty": {"url", "routing_key"}}[kind]
     unknown = sorted(set(config) - allowed)
     if unknown:
         raise ValueError(f"unknown setting for a {kind} channel: {', '.join(unknown)}")
     if kind == "email":
         return {"to": _validate_recipients(config.get("to", existing.get("to")))}
+    if kind == "pagerduty":
+        url = config.get("url") or existing.get("url") or PAGERDUTY_EVENTS_URL
+        key = config.get("routing_key")
+        if key is None or key == "":
+            key = existing.get("routing_key")
+        if not isinstance(key, str) or not _ROUTING_KEY.match(key):
+            raise ValueError("a PagerDuty channel needs its Events API v2 integration key (letters and digits)")
+        return {"url": validate_http_url(url, "PagerDuty events URL"), "routing_key": key}
     label = "Slack webhook URL" if kind == "slack" else "webhook URL"
     url = config.get("url")
     clean = {"url": validate_http_url(url if url is not None else existing.get("url"), label)}
@@ -292,6 +305,8 @@ def channel_entry(channel: AlertChannel, rule_count: int | None = None) -> dict:
         config = {"url": mask_url(stored.get("url"))}
         if channel.kind == "webhook":
             config["secret_set"] = bool(stored.get("secret"))
+        if channel.kind == "pagerduty":
+            config["routing_key_set"] = bool(stored.get("routing_key"))
     entry = {
         "id": channel.id,
         "name": channel.name,
