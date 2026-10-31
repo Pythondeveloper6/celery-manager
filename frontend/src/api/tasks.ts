@@ -153,6 +153,8 @@ export interface RegisteredTask {
   signature: SignatureParam[] | null;
   queue: string | null;
   doc: string | null;
+  // JSON Schema of the task's `args_schemas` model, when one is configured.
+  args_schema?: Record<string, unknown> | null;
 }
 
 export async function listRegisteredTasks(): Promise<RegisteredTask[]> {

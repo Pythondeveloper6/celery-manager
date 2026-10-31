@@ -7,6 +7,9 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- The **Run now** dialog renders a form from the task's `args_schemas`
+  model (scalars and enums), and `GET /api/tasks/registered` returns the
+  model's JSON Schema as `args_schema`. The server still validates on start.
 - [Troubleshooting and incident runbook](docs/troubleshooting.md).
 - `scripts/benchmark.py` measures listener throughput and dashboard API
   latency against your own database; results and the live validation matrix

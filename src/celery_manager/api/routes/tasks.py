@@ -106,7 +106,21 @@ def registered(request: Request, principal: Principal):
     config = request.app.state.cm_config
     if config.celery_app is None:
         return {"items": []}
-    return {"items": [t for t in list_registered_tasks(config.celery_app) if task_allowed(config, t["name"], principal)]}
+    items = [t for t in list_registered_tasks(config.celery_app) if task_allowed(config, t["name"], principal)]
+    for item in items:
+        item["args_schema"] = _args_json_schema(config.args_schemas.get(item["name"]))
+    return {"items": items}
+
+
+def _args_json_schema(model) -> dict | None:
+    """The JSON Schema of a task's `args_schemas` model, for the Run now form.
+    Validation still happens on the server when the task is started."""
+    if model is None:
+        return None
+    try:
+        return model.model_json_schema()
+    except Exception:  # noqa: BLE001 - a model that cannot describe itself just gets the JSON editor
+        return None
 
 
 @router.get("/{task_id}")

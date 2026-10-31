@@ -37,7 +37,11 @@ the dashboard and API. A callable receives `(task_name, principal)` and may make
 per-user decision. Unknown names return 422; policy refusals return 403 and are
 audited. Start, retries, bulk retries, failed-run reruns and schedule run-now share
 the policy. A per-task Pydantic model in `args_schemas` validates bound task
-arguments strictly before publication. Queue overrides require explicit opt-in;
+arguments strictly before publication. The same model drives the **Run now**
+dialog: when its fields are strings, numbers, booleans or string enums
+(optionally nullable), the dialog shows a form for them, and
+`GET /api/tasks/registered` returns the model's JSON Schema as `args_schema`.
+Other shapes keep the JSON editor. Queue overrides require explicit opt-in;
 failed-run reruns preserve the original queue. Manager retries and failed-run
 reruns preserve the original tenant, correlation ID, operation key and approved
 metadata under the current metadata policy, while recording the acting operator

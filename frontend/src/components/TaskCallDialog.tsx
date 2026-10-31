@@ -10,6 +10,7 @@ import {
 } from "../api/tasks";
 import { IconSearch, IconX } from "./icons";
 import { API_BASE } from "../api/base";
+import { readKwarg, schemaFields, setKwarg } from "../lib/schemaForm";
 
 // One editor for both "start a task" and "retry with changes": both end in
 // "pick/confirm a task name, edit args + kwargs, dispatch". The dialog does
@@ -225,6 +226,7 @@ export function TaskCallDialog({
   const selected = registered?.find((t) => t.name === taskName) ?? null;
   const argsResult = useMemo(() => parseArgs(argsText), [argsText]);
   const kwargsResult = useMemo(() => parseKwargs(kwargsText), [kwargsText]);
+  const formFields = useMemo(() => schemaFields(selected?.args_schema ?? null), [selected]);
 
   let scheduleError: string | null = null;
   if (!isRetry && when === "countdown") {
@@ -401,6 +403,49 @@ export function TaskCallDialog({
                   </p>
                 )}
               </div>
+
+              {formFields && (
+                <fieldset className="cm-field cm-schema-form">
+                  <legend>Arguments</legend>
+                  {formFields.map((field) => {
+                    const id = `${uid}-kw-${field.name}`;
+                    const current = readKwarg(kwargsText, field.name);
+                    const hint = field.description ? <p className="cm-field-hint">{field.description}</p> : null;
+                    if (field.kind === "boolean") {
+                      return (
+                        <div key={field.name} className="cm-schema-row">
+                          <label htmlFor={id}>
+                            <input id={id} type="checkbox" checked={current === true}
+                              onChange={(e) => setKwargsText(setKwarg(kwargsText, field.name, e.target.checked, "boolean"))} />{" "}
+                            {field.label}
+                          </label>
+                          {hint}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={field.name} className="cm-schema-row">
+                        <label htmlFor={id}>{field.label}{field.required ? " *" : ""}</label>
+                        {field.kind === "enum" ? (
+                          <select id={id} className="cm-input" value={typeof current === "string" ? current : ""}
+                            onChange={(e) => setKwargsText(setKwarg(kwargsText, field.name, e.target.value, "enum"))}>
+                            <option value="">(default)</option>
+                            {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        ) : (
+                          <input id={id} className="cm-input"
+                            inputMode={field.kind === "string" ? undefined : "decimal"}
+                            required={field.required}
+                            value={current === undefined || current === null ? "" : String(current)}
+                            onChange={(e) => setKwargsText(setKwarg(kwargsText, field.name, e.target.value, field.kind))} />
+                        )}
+                        {hint}
+                      </div>
+                    );
+                  })}
+                  <p className="cm-field-hint">These fields edit the kwargs below; the server checks them before starting the task.</p>
+                </fieldset>
+              )}
 
               <div className="cm-field">
                 <label htmlFor={`${uid}-kwargs`}>Kwargs (JSON object)</label>
