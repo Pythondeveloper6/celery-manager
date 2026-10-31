@@ -377,6 +377,19 @@ exception messages. CLI prints JSON and exits 1 if a check fails, 0 otherwise;
 `info`/`unknown` do not by themselves make `ok` false. A pass is not a live
 permission, event-collection or end-to-end application certification.
 
+With a Celery app, `doctor` also reviews the settings behind most lost or
+duplicated tasks, as `celery_*` checks: `task_acks_late` and
+`task_reject_on_worker_lost`, `worker_prefetch_multiplier`, the Redis/SQS
+`visibility_timeout` against `task_time_limit` and long ETAs, `result_expires`,
+time limits, task events, `task_track_started`,
+`broker_connection_retry_on_startup`, and a single-beat reminder. These are
+recommendations (`info`), never failures: each open one carries a `fix`.
+`--fix-suggestions` prints the whole report as a paste-ready Markdown checklist:
+
+```shell
+celery-manager doctor --config myproject.monitoring:config --fix-suggestions > checklist.md
+```
+
 Admins can use `GET /api/operations/preflight` or **Operations → Read-only
 preflight**. This version uses default local/configuration checks; outbound
 broker/worker flags are CLI/Python options. It is denied in tenant mode.

@@ -7,6 +7,10 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- `doctor` reviews Celery settings behind lost or duplicated tasks (acks
+  late, prefetch, visibility timeout, result expiry, time limits, events,
+  single beat) with a fix for each; `--fix-suggestions` prints a Markdown
+  production checklist.
 - `run_late` alert rule: a scheduled occurrence that started more than N
   seconds after it was due, or has not started yet (cron-monitor "late"
   semantics alongside `missed_run`, `run_stuck` and `duration_regression`).

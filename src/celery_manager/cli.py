@@ -287,6 +287,8 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--check-broker", action="store_true")
     doctor_parser.add_argument("--check-workers", action="store_true")
     doctor_parser.add_argument("--timeout", type=float, default=5)
+    doctor_parser.add_argument("--fix-suggestions", action="store_true",
+                               help="print a Markdown production checklist with a fix for each open item")
     copy_parser = subparsers.add_parser(
         "copy-schedules",
         help="copy schedule definitions between scheduler backends (dry run unless --apply)",
@@ -368,7 +370,11 @@ def main(argv: list[str] | None = None) -> None:
             result = doctor(config, check_broker=args.check_broker, check_workers=args.check_workers, timeout=args.timeout)
         except ValueError as exc:
             parser.error(str(exc))
-        print(render_report(result))
+        if args.fix_suggestions:
+            from celery_manager.celery_checklist import render_checklist
+            print(render_checklist(result), end="")
+        else:
+            print(render_report(result))
         sys.exit(0 if result["ok"] else 1)
 
     if args.command == "import-pauses":
