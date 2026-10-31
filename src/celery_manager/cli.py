@@ -304,7 +304,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _schedule_backend(kind: str, app, beat_db_url: str | None, beat_schema: str | None):
-    from celery_manager.schedulers import RedBeatBackend, SQLAlchemyBeatBackend, StaticBeatBackend
+    from celery_manager.schedulers import (
+        RedBeatBackend,
+        SQLAlchemyBeatBackend,
+        StaticBeatBackend,
+    )
 
     if kind == "code":
         return StaticBeatBackend(app)
