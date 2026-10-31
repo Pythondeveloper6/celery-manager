@@ -93,6 +93,8 @@ implementation status, not a completed live-rollout claim.
   schedules for one task, one-off skips and rollback before retiring Flower or a
   host's existing scheduler layer.
 
-CI runs only after pushes to `main` (including merges). Publishing is downstream
-of successful CI on that exact main commit and publishes when that version is absent from PyPI, including retries after CI-fix commits.
-Nothing is published by a local merge.
+CI runs on pushes to `main`, on pull requests and on manual dispatch. Publishing
+runs only for a pushed `v*` tag that matches the package version: the tagged
+commit re-runs the unit tier, builds, publishes to TestPyPI, installs from there,
+then publishes to PyPI with PEP 740 attestations. Pushing to `main` never
+publishes.

@@ -1,15 +1,14 @@
 name: Publish
 
-# Only a successful CI run for a push to main can start publishing.
-# The checkout is the exact commit CI tested, never a newer moving main.
+# Publishing starts only from a pushed version tag (v0.3.0a2, v1.0.0, ...).
+# Pushing to main never publishes. The tag must match pyproject's version and
+# the tagged commit must pass the unit tier again before anything is built.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  push:
+    tags: ["v*"]
 
 concurrency:
-  group: publish-main
+  group: publish-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -17,11 +16,6 @@ permissions:
 
 jobs:
   build:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -29,17 +23,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 2
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Tag must match the package version
+        run: |
+          version=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject version $version"
+            exit 1
+          fi
+      - name: Unit tier on the tagged commit
+        run: |
+          python -m pip install -e '.[dev]'
+          ruff check .
+          pytest -q -m unit -n auto
       - name: Build
         run: |
           python -m pip install build twine
           python -m build
           twine check --strict dist/*
-      - name: Check whether the tested version needs publishing
+      - name: Check whether the tagged version needs publishing
         id: version
         run: python .github/scripts/publish_status.py
       - uses: actions/upload-artifact@v7
@@ -65,6 +70,7 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
+          attestations: true
 
   verify-testpypi:
     needs: [build, testpypi]
@@ -107,3 +113,5 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+          # PEP 740 provenance, signed with this workflow's OIDC identity.
+          attestations: true
