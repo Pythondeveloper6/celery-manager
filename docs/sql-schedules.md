@@ -118,6 +118,38 @@ a connection failure or concurrent writer can leave partial progress. Review a
 fresh diff after failure. Pause other administrative writers for a consistent
 repair; the snapshot check is not a distributed lock.
 
+## Moving from RedBeat or code to SQL
+
+`celery-manager copy-schedules` copies every definition from one backend into
+another in one reviewed step. It prints the plan as JSON and writes nothing
+unless you pass `--apply`:
+
+```shell
+# Review: what would be created in the SQL scheduler from RedBeat?
+celery-manager copy-schedules --config myproject.cm:config --from redbeat --to sql
+# Apply the same plan.
+celery-manager copy-schedules --config myproject.cm:config --from redbeat --to sql --apply
+```
+
+`--from` is `code` (the app's `beat_schedule`), `redbeat` or `sql`; `--to` is
+`sql` or `redbeat`. The SQL side uses the app's `beat_dburi`/`beat_schema`
+unless `--beat-db-url`/`--beat-schema` are given. Entries present only in the
+target are reported as `extra` and left alone; entries whose definition differs
+are only overwritten with `--allow-updates`. Run-state (last run time, total run
+count) is not copied, so each schedule starts fresh in the target.
+
+A safe cut-over: stop beat, run the dry run and review it, apply, switch beat to
+`celery_manager.beat:SQLAlchemyDatabaseScheduler`, start
+beat, and keep the old RedBeat keys until the new scheduler has fired each
+schedule once. The same function is available from Python as
+`celery_manager.schedulers.reconcile.copy_schedules(source, target, app=app,
+apply=False)`.
+
+Monitoring-side pauses and per-occurrence overrides live in celery-manager's
+own tables, not in the scheduler backend, so they survive the move unchanged.
+Pauses kept in a legacy table of your own can be imported with
+[`celery-manager import-pauses`](release-0.3.md#legacy-pause-csv-import).
+
 ## HTTP workflow
 
 Authenticated viewers can download `GET /api/schedule-reconciliation/export`.

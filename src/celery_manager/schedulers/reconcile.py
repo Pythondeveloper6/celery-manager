@@ -149,3 +149,24 @@ def apply_reconcile(backend, plan, *, app=None):
                            kwargs=entry.kwargs, options=entry.options, enabled=entry.enabled)
         applied.append(entry.name)
     return {"applied": applied, "deleted": [], "ownership": ownership}
+
+
+def copy_schedules(source, target, *, app=None, apply=False, allow_updates=False):
+    """Copy every definition from one scheduler backend into another.
+
+    The migration path between backends, e.g. RedBeat or code's
+    `beat_schedule` into the SQL scheduler. Always builds a reviewed-style plan
+    first (`plan_reconcile` with the target's natural ownership); with
+    `apply=False` (the default) nothing is written and the plan is returned
+    for review. Entries only in the target are reported as `extra` and never
+    deleted; entries that differ are only overwritten with `allow_updates`.
+    Run-state (last run, counters) is not copied, so the target starts each
+    schedule fresh.
+    """
+    desired = load_export(export_backend(source), app)
+    ownership = "sql" if target.name == "sqlalchemy-beat" else "code"
+    plan = plan_reconcile(target, desired, ownership=ownership, allow_updates=allow_updates)
+    if not apply:
+        return {"plan": plan, "applied": [], "dry_run": True}
+    result = apply_reconcile(target, plan, app=app)
+    return {"plan": plan, "applied": result["applied"], "dry_run": False}

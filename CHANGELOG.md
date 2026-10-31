@@ -7,6 +7,9 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- `celery-manager copy-schedules --from redbeat|code|sql --to sql|redbeat`
+  and `schedulers.reconcile.copy_schedules`: a dry-run-first migration of
+  schedule definitions between scheduler backends.
 - [Other task runners](docs/other-runners.md): `celery_manager.adapters` records
   runs from plain asyncio/thread loops (`run_every`, `run_every_in_thread`,
   `observed_job`), Dramatiq and Taskiq (middleware) and arq (job wrapper) via
