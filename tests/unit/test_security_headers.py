@@ -28,7 +28,7 @@ def test_dashboard_page_allows_only_its_own_and_hashed_inline_scripts():
     response = _client().get("/")
     assert response.status_code == 200
     policy = _policy(response)
-    inline = re.findall(r"<script>(.*?)</script>", INDEX.read_text(), re.S)
+    inline = re.findall(r"<script>(.*?)</script>", INDEX.read_text(), re.DOTALL)
     hashes = {"'sha256-" + base64.b64encode(hashlib.sha256(s.encode()).digest()).decode() + "'" for s in inline}
     assert inline and hashes <= set(policy["script-src"].split())
     assert "'unsafe-inline'" not in policy["script-src"] and "'unsafe-eval'" not in policy["script-src"]

@@ -23,7 +23,7 @@ _SECURITY_HEADERS = [
 ]
 
 
-_INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.S)
+_INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.DOTALL)
 
 
 def inline_script_hashes(index_html: Path) -> tuple[str, ...]:
