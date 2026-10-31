@@ -106,6 +106,11 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
             return len([name for name in app.tasks if not name.startswith("celery.")])
         ok, value = _bounded(config, "registration", registration, timeout)
         add("task_registration", "pass" if ok and value else "fail", f"Registered user task count: {value}" if ok else "Task import failed: " + value)
+        from celery_manager.celery_checklist import review
+        try:
+            checks.extend(finding.as_check() for finding in review(app))
+        except Exception as exc:  # noqa: BLE001 - a host's custom conf object must not break preflight
+            add("celery_configuration", "unknown", "Celery configuration review failed: " + type(exc).__name__)
         scheduler = str(app.conf.get("beat_scheduler") or "")
         add("scheduler_stamping", "pass" if scheduler.startswith("celery_manager.beat") else "info",
             "Configured stamping scheduler" if scheduler.startswith("celery_manager.beat") else "Verify the actual beat launch command uses the stamping scheduler")

@@ -117,7 +117,7 @@ observe the host's existing execution; they do not replace it.
 
 Production adoption: the [0.2 guide](docs/production.md) covers external schedulers,
 OIDC, dispatch policies, bounded logs/results and storage isolation. The
-[requirements roadmap](docs/roadmap.md) tracks the real-project review and follow-ups.
+[requirements roadmap](docs/roadmap.md) tracks requirements and follow-ups.
 
 ## What you get
 
@@ -162,6 +162,16 @@ OIDC, dispatch policies, bounded logs/results and storage isolation. The
   the Python package.
 
 ## Install
+
+Try it first, with no broker, worker or database server:
+
+```bash
+pip install --pre "celery-manager[standalone]"
+celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
+```
+
+See [Is celery-manager the right tool?](docs/choosing.md) for how it compares
+with Flower, Sentry Crons and Grafana, and a 10-line quickstart per framework.
 
 celery-manager is an alpha, so pass `--pre` to pip:
 
@@ -279,6 +289,9 @@ are in [`CHANGELOG.md`](https://github.com/Pythondeveloper6/celery-manager/blob/
 
 A complete runnable Django example is in
 [`examples/django_demo/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo/).
+A production-shaped Docker Compose deployment (dashboard, worker, beat, events
+listener, PostgreSQL, Redis) is in
+[`examples/docker/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/docker/).
 
 ## Roadmap
 
@@ -297,9 +310,9 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is an alpha, **0.1.0a5**. It is feature-complete for the v1 scope,
-but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
-backlog of known gaps and planned follow-ups.
+This is an alpha, **0.3.0a1**. APIs may still change before 1.0; see the
+[CHANGELOG](CHANGELOG.md) for release history and
+[docs/roadmap.md](docs/roadmap.md) for planned follow-ups.
 
 ## License
 

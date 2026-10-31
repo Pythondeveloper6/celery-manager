@@ -21,6 +21,7 @@ PARAMS = {
     "task_sla": {"seconds": (float, 3600, 1, 604800), "window_minutes": (int, 60, 1, 10080)},
     "duration_regression": {"multiplier": (float, 2, 1.01, 100), "baseline_days": (int, 30, 1, 365), "recent_minutes": (int, 60, 1, 43200), "min_runs": (int, 10, 2, 10000)},
     "daily_digest": {"hour_utc": (int, 8, 0, 23)},
+    "run_late": {"seconds": (float, 300, 1, 86400), "window_minutes": (int, 60, 1, 10080)},
     **HOST_HEALTH_PARAMS,
 }
 
@@ -35,6 +36,7 @@ def _rows(rule, params, probe):
     query = probe.session.query(TaskRun).options(load_only(
         TaskRun.id, TaskRun.task_id, TaskRun.task_name, TaskRun.status, TaskRun.started_at,
         TaskRun.finished_at, TaskRun.runtime_seconds, TaskRun.worker,
+        TaskRun.occurrence_at, TaskRun.schedule_name,
     ))
     # Apply time/target scope in SQL before the safety cap. Retaining unrelated
     # historic runs must not disable every alert in a production deployment.
@@ -55,6 +57,8 @@ def _rows(rule, params, probe):
     elif rule.kind == "duration_regression":
         start = probe.now - timedelta(minutes=params["recent_minutes"], days=params["baseline_days"])
         query = query.filter(TaskRun.status == "succeeded", TaskRun.finished_at >= start)
+    elif rule.kind == "run_late":
+        query = query.filter(TaskRun.occurrence_at >= probe.now - timedelta(minutes=params["window_minutes"]))
     elif rule.kind == "daily_digest":
         end = probe.now.replace(hour=params["hour_utc"], minute=0, second=0, microsecond=0)
         if end > probe.now:
@@ -177,5 +181,23 @@ def check(rule, params, probe):
                  for name in sorted({r.task_name for r in completed})}
         result.firing["digest:" + end.isoformat()] = {"from": begin.isoformat(), "until": end.isoformat(),
                                                       "counts": dict(counts), "tasks": tasks, "total": sum(counts.values())}
+        return result
+    if rule.kind == "run_late":
+        # Cron-monitor "late": a scheduled occurrence that started more than
+        # `seconds` after it was due, or has not started that long after.
+        # A run that never arrived at all is the missed_run rule's job.
+        for run in rows:
+            due = aware(run.occurrence_at)
+            if due is None or due > probe.now:
+                continue
+            started = aware(run.started_at)
+            if started is None and run.status in ("succeeded", "failed", "skipped", "revoked"):
+                result.unknown.add(run.task_id)
+                continue
+            delay = ((started or probe.now) - due).total_seconds()
+            if delay > params["seconds"]:
+                result.firing[run.task_id] = {"task_name": run.task_name, "task_id": run.task_id,
+                                              "schedule": run.schedule_name, "due_at": due.isoformat(),
+                                              "started": started is not None, "late_seconds": round(delay, 3)}
         return result
     raise unavailable("Unsupported production rule")

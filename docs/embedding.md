@@ -4,7 +4,9 @@ New integrations can use `/api/v1` (for example `/celery/api/v1/tasks` when
 mounted under `/celery`). The existing `/api` paths remain compatible aliases.
 Both paths execute the same endpoint, authentication, dispatch policy, roles,
 CSRF checks and scheduler refresh dependencies. Versioned paths are included in
-`/openapi.json`; their operation IDs are distinct from the legacy aliases.
+`/openapi.json`, which is served to signed-in users only; their operation IDs
+are distinct from the legacy aliases. The Swagger UI and ReDoc pages are not
+served.
 The dashboard continues to use the existing paths.
 
 Within v1, integrations should tolerate additional response fields and new
@@ -12,8 +14,20 @@ status values. Breaking changes to documented request/response meanings require
 a new API namespace and a migration notice in the changelog; introducing v1
 does not remove the legacy namespace. This is an alpha release: perform an
 integration trial against your application's authentication and mounting setup.
-A generated language-specific SDK is not shipped. Generate one from your
-running deployment's OpenAPI document if your project needs it.
+A generated language-specific SDK is not shipped. Export the document without
+a deployment and generate a client from it:
+
+```shell
+celery-manager openapi -o celery-manager-openapi.json
+# for example, a typed Python client:
+pipx run openapi-python-client generate --path celery-manager-openapi.json
+# or any language openapi-generator supports:
+npx @openapitools/openapi-generator-cli generate -i celery-manager-openapi.json -g typescript-fetch -o client/
+```
+
+Generated clients must send the session cookie (or the host's bearer token when
+an OIDC provider is configured) and, for state-changing calls with cookies, the
+same-origin headers the dashboard sends.
 
 ## Small status widget
 

@@ -1,10 +1,8 @@
 # 0.3.0a1: real-codebase operations
 
-This release continues the work assessed by the 29 October comparison report.
-Its useful finding is that SQL schedule authority, exclusion locks, individual
-failure handling and operational history matter more than headline coverage
-percentages. Those percentages estimated one application's code replacement;
-they are not an interoperability or production-readiness test.
+This release focuses on SQL schedule authority, exclusion locks, individual
+failure handling and operational history: the pieces that matter most when an
+existing Celery deployment replaces hand-built operations code.
 
 The interrupted implementation contained a release plan and partial grammar,
 description and timezone changes. Review found that windowed hourly expressions
@@ -145,8 +143,8 @@ own initialization/upgrade procedure.
 
 ## Ten native operability additions in this same release
 
-The follow-up real-application review expanded this candidate without introducing
-another release or changing a host application's runner:
+This candidate also adds the following without changing a host application's
+runner:
 
 1. `RunObserver` records synchronous/async host jobs without a Celery app.
 2. Trusted tenant resolution restricts HTTP to read-only SQL-scoped history,

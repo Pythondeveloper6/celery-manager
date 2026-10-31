@@ -12,6 +12,7 @@ from celery_manager.control.latency import wait_seconds
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
     BulkCancelTooLarge,
+    BulkRetryRejected,
     TaskRunNotFound,
     bulk_cancel,
     bulk_retry,
@@ -105,7 +106,21 @@ def registered(request: Request, principal: Principal):
     config = request.app.state.cm_config
     if config.celery_app is None:
         return {"items": []}
-    return {"items": [t for t in list_registered_tasks(config.celery_app) if task_allowed(config, t["name"], principal)]}
+    items = [t for t in list_registered_tasks(config.celery_app) if task_allowed(config, t["name"], principal)]
+    for item in items:
+        item["args_schema"] = _args_json_schema(config.args_schemas.get(item["name"]))
+    return {"items": items}
+
+
+def _args_json_schema(model) -> dict | None:
+    """The JSON Schema of a task's `args_schemas` model, for the Run now form.
+    Validation still happens on the server when the task is started."""
+    if model is None:
+        return None
+    try:
+        return model.model_json_schema()
+    except Exception:  # noqa: BLE001 - a model that cannot describe itself just gets the JSON editor
+        return None
 
 
 @router.get("/{task_id}")
@@ -259,6 +274,10 @@ def retry(
 
 class BulkRetryRequest(BaseModel):
     task_ids: list[str]
+    dry_run: bool = False
+    # The number of runs the operator confirmed. When sent it must equal
+    # len(task_ids); `require_typed_confirmation` makes it mandatory.
+    confirm_count: int | None = None
 
 
 @router.post("/retry-bulk")
@@ -269,15 +288,24 @@ def retry_bulk(payload: BulkRetryRequest, request: Request, principal: Principal
     not partial-failure aware), so an unknown id in the batch is reported the
     same way a single unknown id is, rather than as a 500.
     """
-    celery_app = request.app.state.cm_config.celery_app
+    config = request.app.state.cm_config
+    if not payload.dry_run:
+        if payload.confirm_count is not None and payload.confirm_count != len(payload.task_ids):
+            raise HTTPException(status_code=400, detail="confirm_count does not match the number of runs")
+        if payload.confirm_count is None and config.require_typed_confirmation:
+            raise HTTPException(status_code=400, detail="confirm the number of runs to retry")
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         try:
             session.info["cm_principal"] = principal
-            new_ids = bulk_retry(celery_app, session, payload.task_ids, username=username)
+            ids = bulk_retry(config.celery_app, session, payload.task_ids, username=username, dry_run=payload.dry_run)
         except TaskRunNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-    return {"new_task_ids": new_ids}
+        except BulkRetryRejected as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    if payload.dry_run:
+        return {"dry_run": True, "would_retry": ids, "count": len(ids)}
+    return {"new_task_ids": ids}
 
 
 class BulkCancelFilter(BaseModel):

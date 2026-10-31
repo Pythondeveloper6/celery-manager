@@ -6,6 +6,7 @@ installed), signing users in the way Django does and handing the resulting
 `sessionid` cookie to the dashboard.
 """
 
+import importlib.util
 from types import SimpleNamespace
 
 import pytest
@@ -76,9 +77,14 @@ def django_site(tmp_path_factory):
 
     if settings.configured:
         pytest.skip("Django is already configured by another test module")
+    installed = ["django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions"]
+    # One process can configure Django once. When the optional beat adapter is
+    # installed, include it so its contract tests can share these settings.
+    if importlib.util.find_spec("django_celery_beat") is not None:
+        installed.append("django_celery_beat")
     settings.configure(
         SECRET_KEY="django-test-secret",
-        INSTALLED_APPS=["django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions"],
+        INSTALLED_APPS=installed,
         DATABASES={
             "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": str(tmp_path_factory.mktemp("dj") / "db.sqlite3")}
         },

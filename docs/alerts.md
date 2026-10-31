@@ -248,6 +248,27 @@ settings if you want **Send test** to work for email (the test is sent from
 the API process). Without `smtp_host`, email channels fail with a message
 saying so.
 
+### PagerDuty
+
+A PagerDuty channel sends Events API v2 events. Give it the **integration
+key** of a PagerDuty service (Service → Integrations → Events API v2). The URL
+defaults to `https://events.pagerduty.com/v2/enqueue`; set it only for the EU
+endpoint (`https://events.eu.pagerduty.com/v2/enqueue`) or a proxy. The key is
+stored like a webhook secret: never returned by the API, only
+`routing_key_set: true`.
+
+Each incident uses the dedup key `celery-manager:<rule id>:<key>`, so the
+resolve event closes the PagerDuty incident the trigger opened, and a repeated
+trigger for the same open incident does not page twice. `summary`, `source`
+(`environment_name`), `component` (the task, queue or schedule), `group` (the
+rule kind), the rule's details and a link to the dashboard page are included.
+**Send test** triggers an `info`-severity event with the dedup key
+`celery-manager:test:-`; resolve it in PagerDuty afterwards.
+
+```json
+{"name": "On call", "kind": "pagerduty", "config": {"routing_key": "<32-character integration key>"}}
+```
+
 ## Security
 
 - **Only admins** can add, change, test or delete rules and channels. Every
@@ -293,6 +314,7 @@ system; narrow the target/window or use external metrics for larger populations.
 | `beat_stale` | target should be `*`; `seconds=120` | Stored beat heartbeat exceeds the threshold. A fresh tick recovers. No heartbeat or malformed stored heartbeat is unknown. |
 | `task_sla` | task glob; `seconds=3600`, `window_minutes=60` | A completed run's recorded runtime exceeds its configured SLA. Clears when that run leaves the lookback window or its runtime is corrected. |
 | `duration_regression` | task glob; `multiplier=2`, `baseline_days=30`, `recent_minutes=60`, `min_runs=10` | Recent successful-run p95 exceeds historical successful-run p95 by the multiplier. Baseline ends where the recent window begins: a slow new run cannot inflate its own baseline. Both windows require minimum samples; insufficient samples or zero baseline is unknown. |
+| `run_late` | task glob; `seconds=300`, `window_minutes=60` | A scheduled occurrence (stamped by the beat mixin) due in the window started more than `seconds` after it was due, or still has not started that long after. One incident per run. Leaving the window recovers. A finished run with no recorded start is unknown. Firings that never arrived at all are `missed_run`'s job. |
 | `daily_digest` | task glob; `hour_utc=8` | One dated incident summarizing the preceding 24-hour UTC reporting window. Details include total runs, status counts and task-by-task status totals. Set `notify_resolved=False` to avoid a resolved notification when the next day's bucket replaces it. |
 
 Daily digest incident keys contain the reporting-window end timestamp. This is a
@@ -308,6 +330,15 @@ Stuck/lost findings never rewrite execution status or automatically retry work.
 A missing heartbeat cannot prove the worker stopped executing; an automatic retry
 could duplicate external side effects.
 
+
+### Deep links in notifications
+
+With `dashboard_url` set, every message links to the page that explains it:
+the run itself for `task_failed`, `task_sla`, `run_stuck`, `worker_lost` and
+`run_late`; the task overview for `failure_rate`, `consecutive_failures` and
+`duration_regression`; the schedule's occurrences for `missed_run`; the queues
+or workers page for broker, queue and worker rules. A retry is one click from
+the run page; notifications never carry an action that changes state.
 
 ## Host probes and independent schedulers
 

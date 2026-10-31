@@ -72,8 +72,18 @@ def _read_password(from_stdin: bool) -> str:
 
 def create_user_command(db_url: str, username: str, role: str, *, password_stdin: bool = False, db_schema=None) -> int:
     """`celery-manager create-user`. Returns the process exit code."""
-    from celery_manager.auth.users import create_user, user_exists
+    from celery_manager.auth.users import (
+        create_user,
+        user_exists,
+        validate_password,
+        validate_username,
+    )
 
+    try:
+        validate_username(username)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
     try:
         with session_factory() as session:
@@ -81,7 +91,10 @@ def create_user_command(db_url: str, username: str, role: str, *, password_stdin
                 print(f"error: a dashboard user named {username!r} already exists", file=sys.stderr)
                 return 1
             try:
-                create_user(session, username, _read_password(password_stdin), role=role)
+                password = _read_password(password_stdin)
+                # The dashboard's user admin enforces the same minimum.
+                validate_password(password, enforce_minimum=True)
+                create_user(session, username, password, role=role)
             except ValueError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1
@@ -208,7 +221,9 @@ def _add_config_args(parser: argparse.ArgumentParser, *, required: bool) -> None
     )
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """The `celery-manager` argument parser, separate from `main` so tests and
+    documentation tooling can inspect the command set without running it."""
     parser = argparse.ArgumentParser(prog="celery-manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -285,8 +300,108 @@ def main() -> None:
     doctor_parser.add_argument("--check-broker", action="store_true")
     doctor_parser.add_argument("--check-workers", action="store_true")
     doctor_parser.add_argument("--timeout", type=float, default=5)
+    doctor_parser.add_argument("--fix-suggestions", action="store_true",
+                               help="print a Markdown production checklist with a fix for each open item")
+    copy_parser = subparsers.add_parser(
+        "copy-schedules",
+        help="copy schedule definitions between scheduler backends (dry run unless --apply)",
+    )
+    _add_config_args(copy_parser, required=False)
+    copy_parser.add_argument("--from", dest="source", required=True, choices=("code", "redbeat", "sql"),
+                             help="code = the app's beat_schedule")
+    copy_parser.add_argument("--to", dest="target", required=True, choices=("redbeat", "sql"))
+    copy_parser.add_argument("--beat-db-url", help="SQL scheduler database (default: the app's beat_dburi)")
+    copy_parser.add_argument("--beat-schema", help="SQL scheduler schema (default: the app's beat_schema)")
+    copy_parser.add_argument("--allow-updates", action="store_true",
+                             help="also overwrite target entries whose definition differs")
+    copy_parser.add_argument("--apply", action="store_true", help="write the plan; default prints it only")
 
-    args = parser.parse_args()
+    openapi_parser = subparsers.add_parser(
+        "openapi", help="write the REST API's OpenAPI document (for generating clients)")
+    openapi_parser.add_argument("--output", "-o", help="file to write (default: stdout)")
+
+    demo_parser = subparsers.add_parser("demo", help="serve a dashboard seeded with sample history (needs uvicorn)")
+    demo_parser.add_argument("--dir", help="empty directory for the demo database (default: a new temp dir)")
+    demo_parser.add_argument("--host", default="127.0.0.1")
+    demo_parser.add_argument("--port", type=int, default=8765)
+    demo_parser.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
+    return parser
+
+
+def _schedule_backend(kind: str, app, beat_db_url: str | None, beat_schema: str | None):
+    from celery_manager.schedulers import (
+        RedBeatBackend,
+        SQLAlchemyBeatBackend,
+        StaticBeatBackend,
+    )
+
+    if kind == "code":
+        return StaticBeatBackend(app)
+    if kind == "redbeat":
+        return RedBeatBackend(app)
+    return SQLAlchemyBeatBackend(app, beat_db_url, schema=beat_schema)
+
+
+def copy_schedules_command(app, source: str, target: str, *, apply: bool = False, allow_updates: bool = False,
+                           beat_db_url: str | None = None, beat_schema: str | None = None) -> int:
+    """`celery-manager copy-schedules`. Prints the plan (and what was applied)
+    as JSON. Returns the process exit code."""
+    import json
+
+    from celery_manager.schedulers.reconcile import ReconcileConflict, copy_schedules
+
+    if source == target:
+        print("error: --from and --to must differ", file=sys.stderr)
+        return 2
+    backends = []
+    try:
+        src = _schedule_backend(source, app, beat_db_url, beat_schema)
+        backends.append(src)
+        dst = _schedule_backend(target, app, beat_db_url, beat_schema)
+        backends.append(dst)
+        result = copy_schedules(src, dst, app=app, apply=apply, allow_updates=allow_updates)
+    except (ValueError, PermissionError, ReconcileConflict) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        for backend in backends:
+            close = getattr(backend, "close", None)
+            if close is not None:
+                close()
+    print(json.dumps(result, indent=2, default=str))
+    pending = [c["name"] for c in result["plan"]["changes"] if c["apply"]]
+    if apply:
+        print(f"Applied {len(result['applied'])} change(s).", file=sys.stderr)
+    else:
+        print(f"Dry run: {len(pending)} change(s) would be applied; re-run with --apply.", file=sys.stderr)
+    return 0
+
+
+def openapi_command(output: str | None) -> int:
+    """`celery-manager openapi`: the document a deployment serves at
+    `/openapi.json`, built offline against a throwaway in-memory app."""
+    import json
+    import secrets
+
+    from celery import Celery
+
+    from celery_manager.api.app import create_app
+
+    config = CeleryManagerConfig(celery_app=Celery("celery-manager-openapi", broker="memory://"),
+                                 db_url="sqlite:///:memory:", secret_key=secrets.token_hex(32))
+    app, _ = create_app(config)
+    text = json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n"
+    if output:
+        with open(output, "w", encoding="utf-8") as handle:
+            handle.write(text)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if args.command == "doctor":
         from celery_manager.doctor import doctor, render_report
         config = _load_config(args.config, args.celery_app, args.db_url)
@@ -294,7 +409,11 @@ def main() -> None:
             result = doctor(config, check_broker=args.check_broker, check_workers=args.check_workers, timeout=args.timeout)
         except ValueError as exc:
             parser.error(str(exc))
-        print(render_report(result))
+        if args.fix_suggestions:
+            from celery_manager.celery_checklist import render_checklist
+            print(render_checklist(result), end="")
+        else:
+            print(render_report(result))
         sys.exit(0 if result["ok"] else 1)
 
     if args.command == "import-pauses":
@@ -315,6 +434,29 @@ def main() -> None:
             parser.error(str(exc))
         return
 
+
+    if args.command == "openapi":
+        sys.exit(openapi_command(args.output))
+
+    if args.command == "demo":
+        from pathlib import Path
+
+        from celery_manager.demo import run as run_demo
+        sys.exit(run_demo(Path(args.dir) if args.dir else None, host=args.host, port=args.port,
+                          open_browser=not args.no_browser))
+
+    if args.command == "copy-schedules":
+        if args.config:
+            app = _load_config(args.config, args.celery_app, args.db_url).celery_app
+        elif args.celery_app:
+            app = load_celery_app(args.celery_app)
+        else:
+            parser.error("give --config or --celery-app")
+        if app is None:
+            parser.error("copy-schedules needs a Celery app")
+        sys.exit(copy_schedules_command(app, args.source, args.target, apply=args.apply,
+                                        allow_updates=args.allow_updates, beat_db_url=args.beat_db_url,
+                                        beat_schema=args.beat_schema))
 
     if args.command == "prune":
         sys.exit(prune_command(args.db_url, dry_run=args.dry_run, batch_size=args.batch_size, db_schema=args.db_schema))

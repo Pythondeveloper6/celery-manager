@@ -86,8 +86,12 @@ def _locked_backoff(session, key):
     else:
         # SQL Server locks the absent-key range before inserting. Other
         # dialects use a savepoint to tolerate a concurrent first sighting.
+        # populate_existing: admit_login's unlocked pre-read may already hold
+        # this row in the identity map. Without a refresh the locked read
+        # would return those stale attributes and concurrent reservations
+        # would overwrite each other's increments.
         query = select(LoginBackoff).where(LoginBackoff.key == key).with_for_update().with_hint(
-            LoginBackoff, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            LoginBackoff, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql").execution_options(populate_existing=True)
         row = session.scalar(query)
         if row is not None:
             return row

@@ -30,9 +30,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: System :: Monitoring",
     "Topic :: System :: Distributed Computing",
-    # No "Typing :: Typed" — the code is annotated throughout, but the package
-    # ships no py.typed marker, so type checkers won't use those annotations
-    # from an installed copy. Add both together or neither.
+    # Ships src/celery_manager/py.typed (PEP 561); keep the two together.
+    "Typing :: Typed",
 ]
 dependencies = [
     "celery>=5.3,<6.0",
@@ -77,7 +76,7 @@ flask = ["a2wsgi>=1.10", "flask>=3.0"]
 standalone = ["uvicorn>=0.29"]
 # Only for celery_manager.metrics.otel; the /metrics endpoint needs nothing extra.
 otel = ["opentelemetry-api>=1.20"]
-dev = ["celery[redis]>=5.3,<6.0", "Django>=4.2,<7", "pytest>=8.0", "httpx>=0.27", "ruff>=0.17,<0.18", "uvicorn>=0.29", "flask>=3.0", "a2wsgi>=1.10"]
+dev = ["celery[redis]>=5.3,<6.0", "Django>=4.2,<7", "pytest>=8.0", "pytest-xdist>=3.5", "pytest-cov>=5.0", "httpx>=0.27", "ruff>=0.17,<0.18", "uvicorn>=0.29", "flask>=3.0", "a2wsgi>=1.10"]
 docs = ["mkdocs-material>=9.5"]
 
 [project.scripts]
@@ -92,8 +91,8 @@ packages = ["src/celery_manager"]
 # denylist would have needed updating the next time a tool drops a directory
 # here. `frontend/` is included on purpose: it is the source the shipped
 # `dashboard/static` bundle is built from, and an sdist that ships a
-# prebuilt binary should ship what produced it. `plan.md` is not: it is a
-# 190 KB internal working document.
+# prebuilt binary should ship what produced it. Internal working documents
+# are not included.
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",
@@ -113,3 +112,7 @@ exclude = ["/docs/superpowers"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "unit: no external services (applied to everything outside tests/integration)",
+    "integration: may need live databases or brokers selected by CM_* variables",
+]

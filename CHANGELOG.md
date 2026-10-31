@@ -6,11 +6,111 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- The **Run now** dialog renders a form from the task's `args_schemas`
+  model (scalars and enums), and `GET /api/tasks/registered` returns the
+  model's JSON Schema as `args_schema`. The server still validates on start.
+- [Troubleshooting and incident runbook](docs/troubleshooting.md).
+- `scripts/benchmark.py` measures listener throughput and dashboard API
+  latency against your own database; results and the live validation matrix
+  are in [Performance and validation](docs/validation.md).
+- SECURITY.md documents the threat model: assets, roles and trust
+  boundaries, controls, and operator responsibilities.
+- CI checks the licenses and advisories of the dashboard's production
+  JavaScript dependencies.
+- [Flower-compatible read endpoints](docs/flower-compat.md):
+  `/api/flower/tasks`, `/api/flower/task/info/{id}` and
+  `/api/flower/workers` answer in Flower's shapes, so scripts and dashboards
+  built on Flower keep working behind celery-manager's authentication.
+- `examples/docker/`: a Docker Compose deployment (dashboard, worker, one
+  beat, events listener with alerts, PostgreSQL, Redis, one-shot migration),
+  built and smoke-tested in CI.
+- `celery-manager openapi [-o FILE]` writes the REST API's OpenAPI document
+  offline, for generating clients.
+- PagerDuty alert channel (Events API v2): incidents trigger and resolve with
+  a stable dedup key; the integration key is never returned by the API.
+- `doctor` reviews Celery settings behind lost or duplicated tasks (acks
+  late, prefetch, visibility timeout, result expiry, time limits, events,
+  single beat) with a fix for each; `--fix-suggestions` prints a Markdown
+  production checklist.
+- `run_late` alert rule: a scheduled occurrence that started more than N
+  seconds after it was due, or has not started yet (cron-monitor "late"
+  semantics alongside `missed_run`, `run_stuck` and `duration_regression`).
+- Alert notifications link to the run for per-run rules and to the task
+  overview for per-task rules, instead of the alerts page.
+- Safe bulk actions: `POST /api/queues/{name}/purge` accepts `dry_run`
+  (current depth and runs that would be marked, nothing purged) and a
+  `confirm` queue name checked server-side; `POST /api/tasks/retry-bulk`
+  accepts `dry_run` and `confirm_count`. `require_typed_confirmation=True`
+  makes the confirmations mandatory. The dashboard sends both.
+- `examples/monitoring/`: an importable Grafana dashboard and ten Prometheus
+  alerting rules for `/metrics`, tested against the exported metric names.
+- `celery-manager demo`: a dashboard seeded with a week of sample history on
+  SQLite, with a random-password admin account; no broker or worker needed.
+- [Is celery-manager the right tool?](docs/choosing.md): a decision guide
+  against Flower, Sentry Crons, Grafana and orchestrators, plus short
+  FastAPI, Flask, Django and observe-only quickstarts.
+- `celery-manager copy-schedules --from redbeat|code|sql --to sql|redbeat`
+  and `schedulers.reconcile.copy_schedules`: a dry-run-first migration of
+  schedule definitions between scheduler backends.
+- [Other task runners](docs/other-runners.md): `celery_manager.adapters` records
+  runs from plain asyncio/thread loops (`run_every`, `run_every_in_thread`,
+  `observed_job`), Dramatiq and Taskiq (middleware) and arq (job wrapper) via
+  `RunObserver`. Observe-only; the runners are not dependencies.
+- Monitoring-only processes no longer import Celery, FastAPI, Starlette,
+  bcrypt or pydantic: package-root names resolve on first use.
+- `py.typed` marker and the `Typing :: Typed` classifier: type checkers now use
+  the package's annotations.
+- [Stability and upgrade policy](docs/stability.md): the API, CLI, metrics,
+  header and schema surfaces now covered by a deprecation promise, enforced by
+  `tests/unit/test_stability_contract.py`.
+- Test tiers: `pytest -m unit` (no services) and `pytest -m integration`;
+  `pytest-xdist` and `pytest-cov` in the `dev` extra.
+- CI: runs on pull requests and manual dispatch, a coverage floor on the unit
+  tier, and a live Redis 7 + RabbitMQ 3 broker job behind the release gate.
+- `celery_manager.cli.build_parser()`; `main()` accepts an optional `argv`.
+
+### Changed
+- `POST /api/tasks/retry-bulk` refuses more than 500 ids or repeated ids
+  with 400 instead of dispatching them.
+- Publishing runs only for pushed `v*` tags that match the package version,
+  re-runs the unit tier on the tagged commit and uploads PEP 740
+  attestations. Pushing to `main` no longer publishes.
+
+### Security
+- Request bodies are capped (`max_request_body_bytes`, 4 MiB by default):
+  an unauthenticated client could previously post an arbitrarily large JSON
+  body to the login route and have it read into memory.
+- GitHub Actions are pinned to commit SHAs (Dependabot keeps them current),
+  checkouts no longer persist the token, and every elevated permission is
+  documented; `zizmor` and `actionlint` report no findings.
+- `celery-manager create-user` now applies the dashboard's rules: passwords
+  of at least 8 characters and the same username format. It used to accept a
+  one-character password and any username.
+- Every response now carries a Content-Security-Policy that only allows
+  scripts from the dashboard's own origin plus its hashed inline theme
+  bootstrap (`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`),
+  and `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`.
+  Injected markup can no longer run script even if a rendering bug let it in.
+- `/openapi.json` now requires a signed-in user, and the Swagger UI and ReDoc
+  pages (which loaded third-party scripts into the dashboard's origin) are no
+  longer served. Previously anyone who could reach the app could read the full
+  route list.
+
+### Fixed
+- Importing a table module (for example through `CeleryManagerConfig`'s
+  probe validation) before `celery_manager.db.models` no longer fails with a
+  circular import.
+- SQL Server: concurrent login attempts could lose backoff increments because
+  the locked read returned a row cached by the earlier unlocked read. Found by
+  the live SQL Server 2022 storage gate.
+- RabbitMQ integration tests used a session stand-in without `info`.
+
 ## [0.3.0a1] — 2026-10-29
 
-One report-driven release candidate. Monitoring migrations now reach `0020`.
+One operations-focused release candidate. Monitoring migrations now reach `0020`.
 See the [release guide](docs/release-0.3.md) for deployment, compatibility and
-explicit remaining work. Live database/Redis and application rollout gates
+explicit remaining work. Live database/Redis and deployment gates
 must pass before treating this candidate as production-validated.
 
 ### Added
@@ -136,7 +236,7 @@ starting application processes, or leave automatic migrations enabled. See
 - Durable last-seen worker state, advisory stuck/lost-run health, optional beat
   heartbeat health, and Microsoft Teams Workflows alert channels.
 - Optional-adapter CI and live PostgreSQL/MySQL/SQL Server storage contracts.
-  These integrations require their CI and real-application gates; local SQL
+  These integrations require their CI and deployment gates; local SQL
   compilation alone does not establish live backend compatibility.
 
 ### Changed

@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -21,8 +23,10 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -31,8 +35,26 @@ jobs:
         run: pip install -e '.[dev]' flask a2wsgi
       - name: Lint
         run: ruff check .
-      - name: Test
-        run: pytest -q
+      - name: Unit tier
+        run: pytest -q -m unit -n auto
+      - name: Integration tier (service-free parts)
+        run: pytest -q -m integration
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e '.[dev]'
+      - run: pytest -q -m unit -n auto --cov=celery_manager --cov-report=term-missing:skip-covered --cov-fail-under=88
 
   races-postgres:
     name: Race tests (PostgreSQL)
@@ -54,8 +76,10 @@ jobs:
     env:
       CM_TEST_DB_URL: postgresql+psycopg://postgres:postgres@localhost:5432/celery_manager_test
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -71,13 +95,22 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: Production dependency licenses and advisories
+        # The bundle ships inside the wheel, so its runtime dependencies'
+        # licenses ship too.
+        run: |
+          npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages --summary \
+            --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;OFL-1.1"
+          npm audit --omit=dev --audit-level=high
       - run: node --test tests/*.test.mjs
       - run: npm run lint
       - run: npm run build
@@ -94,8 +127,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -108,8 +143,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -139,12 +176,14 @@ jobs:
     env:
       CM_TEST_REDIS_URL: redis://localhost:6379/15
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[dev,oidc,redbeat,django-beat,sqlalchemy-beat,schedule-descriptions]' 'fakeredis[lua]'
-      - run: pytest -q tests/unit/test_oidc_provider.py tests/unit/test_optional_scheduler_adapters.py tests/unit/test_sqlalchemy_scheduler.py tests/unit/test_cron_grammar.py tests/unit/test_singleton.py --junitxml=/tmp/adapters.xml
+      - run: pip install -e '.[dev,oidc,redbeat,django-beat,sqlalchemy-beat,schedule-descriptions]' 'fakeredis[lua]' dramatiq taskiq arq
+      - run: pytest -q tests/unit/test_oidc_provider.py tests/unit/test_optional_scheduler_adapters.py tests/unit/test_sqlalchemy_scheduler.py tests/unit/test_cron_grammar.py tests/unit/test_singleton.py tests/unit/test_runner_adapters.py tests/unit/test_copy_schedules.py --junitxml=/tmp/adapters.xml
       - run: python -m tests.release_gate /tmp/adapters.xml
 
   database-contracts:
@@ -195,8 +234,10 @@ jobs:
       CM_STORAGE_DB_URL: ${{ matrix.url }}
       CM_STORAGE_SCHEMA: ${{ matrix.schema }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install ODBC 18
@@ -212,3 +253,69 @@ jobs:
       - run: pytest -q tests/unit/test_races.py
         env:
           CM_TEST_DB_URL: ${{ matrix.url }}
+
+  brokers:
+    name: Live brokers (Redis 7, RabbitMQ 3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 12
+    env:
+      CM_TEST_REDIS_URL: redis://localhost:6379/15
+      CM_TEST_AMQP_URL: amqp://guest:guest@localhost:5672//
+      CM_TEST_RABBIT_MGMT_URL: http://localhost:15672
+      CM_TEST_RABBIT_MGMT_USER: guest
+      CM_TEST_RABBIT_MGMT_PASSWORD: guest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e '.[dev]'
+      - run: pytest -q tests/integration/test_rabbitmq.py tests/integration/test_held_tasks_brokers.py tests/integration/test_queue_messages_brokers.py tests/unit/test_broker_health.py tests/unit/test_queue_wait_and_depth.py --junitxml=/tmp/brokers.xml
+      - run: python -m tests.release_gate /tmp/brokers.xml
+
+  docker-example:
+    name: Docker Compose example
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: docker compose -f examples/docker/compose.yaml config -q
+      - run: docker compose -f examples/docker/compose.yaml up --build -d
+      - name: Dashboard answers and beat reports healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/health/live >/dev/null 2>&1 || curl -fsS -o /dev/null http://127.0.0.1:8000/; then break; fi
+            sleep 2
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:8000/
+          docker compose -f examples/docker/compose.yaml ps
+      - if: always()
+        run: docker compose -f examples/docker/compose.yaml logs --tail 50
+      - if: always()
+        run: docker compose -f examples/docker/compose.yaml down -v

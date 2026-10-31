@@ -210,7 +210,12 @@ def create_app(config: CeleryManagerConfig):
     if config.celery_app is not None:
         config._schedule_service.refresh(force=True)
 
-    app = FastAPI(title="celery-manager")
+    from celery_manager import __version__
+
+    # No public schema or interactive docs: the route list is served only to
+    # signed-in users (below), and Swagger/ReDoc would load third-party
+    # scripts into the dashboard's origin.
+    app = FastAPI(title="celery-manager", version=__version__, openapi_url=None, docs_url=None, redoc_url=None)
     from celery_manager.control.policy import DispatchDenied
 
     @app.exception_handler(DispatchDenied)
@@ -234,7 +239,10 @@ def create_app(config: CeleryManagerConfig):
         raise ValueError("live_stream must be 'sse' or 'poll'")
     from celery_manager.auth.roles import validate_role
     validate_role(config.log_view_role)
-    app.add_middleware(SecurityMiddleware, trusted_origins=config.trusted_origins, frame_ancestors=config.frame_ancestors)
+    from celery_manager.api.security import inline_script_hashes
+    app.add_middleware(SecurityMiddleware, trusted_origins=config.trusted_origins, frame_ancestors=config.frame_ancestors,
+                       script_hashes=inline_script_hashes(Path(__file__).parent.parent / "dashboard" / "static" / "index.html"),
+                       max_body_bytes=config.max_request_body_bytes)
     if config.trusted_origins:
         from starlette.middleware.cors import CORSMiddleware
         app.add_middleware(CORSMiddleware, allow_origins=list(config.trusted_origins),
@@ -276,6 +284,8 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(rabbitmq_routes.router)
     app.include_router(workflow_routes.router)
     app.include_router(alert_routes.router)
+    from celery_manager.api.routes.flower import router as flower_router
+    app.include_router(flower_router)
 
     if config.live_stream == "sse":
         @app.get("/api/stream")
@@ -284,6 +294,10 @@ def create_app(config: CeleryManagerConfig):
 
     from celery_manager.api.versioning import install_v1
     install_v1(app, list(iter_api_routes(app.routes)))
+
+    @app.get("/openapi.json", include_in_schema=False)
+    def openapi_document(username: str = Depends(get_current_user)):
+        return JSONResponse(app.openapi())
 
     # Fail closed: a new state-changing route that forgot `require_role`
     # would otherwise be open to every signed-in viewer. Refuse to build the

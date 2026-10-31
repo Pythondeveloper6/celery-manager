@@ -203,3 +203,21 @@
   align-items: center;
   gap: var(--cm-space-3);
 }
+
+/* Run now form generated from the task's args_schemas model. */
+.cm-schema-form {
+  border: 1px solid var(--cm-color-border);
+  border-radius: var(--cm-radius-md);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.cm-schema-form legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+.cm-schema-row {
+  display: grid;
+  gap: 4px;
+}
