@@ -92,8 +92,8 @@ packages = ["src/celery_manager"]
 # denylist would have needed updating the next time a tool drops a directory
 # here. `frontend/` is included on purpose: it is the source the shipped
 # `dashboard/static` bundle is built from, and an sdist that ships a
-# prebuilt binary should ship what produced it. `plan.md` is not: it is a
-# 190 KB internal working document.
+# prebuilt binary should ship what produced it. Internal working documents
+# are not included.
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",

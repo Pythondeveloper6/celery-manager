@@ -297,9 +297,9 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is an alpha, **0.1.0a5**. It is feature-complete for the v1 scope,
-but APIs may change before 0.1.0. See [`plan.md`](https://github.com/Pythondeveloper6/celery-manager/blob/main/plan.md) for the implementation history and the
-backlog of known gaps and planned follow-ups.
+This is an alpha, **0.3.0a1**. APIs may still change before 1.0; see the
+[CHANGELOG](CHANGELOG.md) for release history and
+[docs/roadmap.md](docs/roadmap.md) for planned follow-ups.
 
 ## License
 
