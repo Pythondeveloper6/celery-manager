@@ -7,6 +7,11 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- `run_late` alert rule: a scheduled occurrence that started more than N
+  seconds after it was due, or has not started yet (cron-monitor "late"
+  semantics alongside `missed_run`, `run_stuck` and `duration_regression`).
+- Alert notifications link to the run for per-run rules and to the task
+  overview for per-task rules, instead of the alerts page.
 - Safe bulk actions: `POST /api/queues/{name}/purge` accepts `dry_run`
   (current depth and runs that would be marked, nothing purged) and a
   `confirm` queue name checked server-side; `POST /api/tasks/retry-bulk`

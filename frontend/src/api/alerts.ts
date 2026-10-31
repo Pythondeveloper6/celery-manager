@@ -20,6 +20,7 @@ export type RuleKind =
   | "task_sla"
   | "duration_regression"
   | "daily_digest"
+  | "run_late"
   | "custom_probe"
   | "scheduler_stale";
 export type ChannelKind = "slack" | "webhook" | "email" | "teams";
