@@ -108,6 +108,8 @@ nav:
       - Is it the right tool?: choosing.md
       - Quickstart: quickstart.md
       - Integrating with your app: integrations.md
+      - Deployment: deployment.md
+      - Upgrading: upgrading.md
       - Production adoption: production.md
       - 0.3 release guide: release-0.3.md
       - Real-world operations: real-world-operations.md
