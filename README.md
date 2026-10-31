@@ -289,6 +289,9 @@ are in [`CHANGELOG.md`](https://github.com/Pythondeveloper6/celery-manager/blob/
 
 A complete runnable Django example is in
 [`examples/django_demo/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/django_demo/).
+A production-shaped Docker Compose deployment (dashboard, worker, beat, events
+listener, PostgreSQL, Redis) is in
+[`examples/docker/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/docker/).
 
 ## Roadmap
 

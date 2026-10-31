@@ -52,3 +52,20 @@ def test_unknown_root_attribute_still_raises():
 
     with pytest.raises(AttributeError):
         celery_manager.not_a_real_name  # noqa: B018
+
+
+def test_any_entry_point_imports_without_a_cycle(tmp_path):
+    # Each in a fresh interpreter: the first module imported decides the
+    # import order, and a cycle only shows up for some orders.
+    entries = [
+        "from celery_manager import CeleryManagerConfig; CeleryManagerConfig(celery_app=None, db_url='sqlite://')",
+        "import celery_manager.db.health_data",
+        "import celery_manager.db.auth_state",
+        "import celery_manager.db.failures",
+        "import celery_manager.db.operations",
+        "import celery_manager.db.worker_history",
+        "import celery_manager.health_probes",
+        "import celery_manager.config",
+    ]
+    for code in entries:
+        _run(code, tmp_path)

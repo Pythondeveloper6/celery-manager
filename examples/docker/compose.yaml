@@ -1,0 +1,77 @@
+# celery-manager + Celery worker + beat + events listener + PostgreSQL + Redis.
+#
+#   docker compose -f examples/docker/compose.yaml up --build
+#   docker compose -f examples/docker/compose.yaml run --rm migrate \
+#       sh -c 'celery-manager create-user admin --role admin --db-url "$CM_DB_URL"'   # prompts for a password
+#   open http://localhost:8000/
+#
+# Change CM_SECRET_KEY and the database password before using this anywhere
+# but your own machine, and serve the dashboard over HTTPS (then drop
+# CM_COOKIE_SECURE).
+x-app: &app
+  build:
+    context: ../..
+    dockerfile: examples/docker/Dockerfile
+  environment: &env
+    BROKER_URL: redis://redis:6379/0
+    RESULT_BACKEND: redis://redis:6379/1
+    CM_DB_URL: postgresql+psycopg://celery_manager:change-me-db@postgres:5432/celery_manager
+    CM_SECRET_KEY: change-me-to-a-long-random-value
+    CM_COOKIE_SECURE: "false"
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    migrate: {condition: service_completed_successfully}
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: celery_manager
+      POSTGRES_PASSWORD: change-me-db
+      POSTGRES_DB: celery_manager
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U celery_manager"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  # Schema changes run once, explicitly, before anything else starts.
+  migrate:
+    <<: *app
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+    command: ["sh", "-c", "celery-manager migrate --db-url \"$$CM_DB_URL\""]
+
+  web:
+    <<: *app
+    environment:
+      <<: *env
+      CM_ROLE: web
+    command: ["uvicorn", "project:dashboard", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8000:8000"]
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "project", "worker", "--loglevel=INFO", "--concurrency=2"]
+
+  # Exactly one beat: two would send every periodic task twice.
+  beat:
+    <<: *app
+    command: ["celery", "-A", "project", "beat", "-S", "celery_manager.beat:Scheduler", "--loglevel=INFO"]
+
+  events:
+    <<: *app
+    command: ["celery-manager", "events", "--config", "project:config", "--with-alerts"]
+
+volumes:
+  pgdata:

@@ -271,3 +271,24 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: pytest -q tests/integration/test_rabbitmq.py tests/integration/test_held_tasks_brokers.py tests/integration/test_queue_messages_brokers.py tests/unit/test_broker_health.py tests/unit/test_queue_wait_and_depth.py --junitxml=/tmp/brokers.xml
       - run: python -m tests.release_gate /tmp/brokers.xml
+
+  docker-example:
+    name: Docker Compose example
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose -f examples/docker/compose.yaml config -q
+      - run: docker compose -f examples/docker/compose.yaml up --build -d
+      - name: Dashboard answers and beat reports healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/health/live >/dev/null 2>&1 || curl -fsS -o /dev/null http://127.0.0.1:8000/; then break; fi
+            sleep 2
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:8000/
+          docker compose -f examples/docker/compose.yaml ps
+      - if: always()
+        run: docker compose -f examples/docker/compose.yaml logs --tail 50
+      - if: always()
+        run: docker compose -f examples/docker/compose.yaml down -v

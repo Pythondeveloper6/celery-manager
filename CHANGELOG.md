@@ -7,6 +7,9 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/docker/`: a Docker Compose deployment (dashboard, worker, one
+  beat, events listener with alerts, PostgreSQL, Redis, one-shot migration),
+  built and smoke-tested in CI.
 - `celery-manager openapi [-o FILE]` writes the REST API's OpenAPI document
   offline, for generating clients.
 - PagerDuty alert channel (Events API v2): incidents trigger and resolve with
@@ -66,6 +69,9 @@ All notable changes to celery-manager are recorded here. The format follows
   route list.
 
 ### Fixed
+- Importing a table module (for example through `CeleryManagerConfig`'s
+  probe validation) before `celery_manager.db.models` no longer fails with a
+  circular import.
 - SQL Server: concurrent login attempts could lose backoff increments because
   the locked read returned a row cached by the earlier unlocked read. Found by
   the live SQL Server 2022 storage gate.
