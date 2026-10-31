@@ -72,8 +72,13 @@ def _read_password(from_stdin: bool) -> str:
 
 def create_user_command(db_url: str, username: str, role: str, *, password_stdin: bool = False, db_schema=None) -> int:
     """`celery-manager create-user`. Returns the process exit code."""
-    from celery_manager.auth.users import create_user, user_exists
+    from celery_manager.auth.users import create_user, user_exists, validate_password, validate_username
 
+    try:
+        validate_username(username)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
     try:
         with session_factory() as session:
@@ -81,7 +86,10 @@ def create_user_command(db_url: str, username: str, role: str, *, password_stdin
                 print(f"error: a dashboard user named {username!r} already exists", file=sys.stderr)
                 return 1
             try:
-                create_user(session, username, _read_password(password_stdin), role=role)
+                password = _read_password(password_stdin)
+                # The dashboard's user admin enforces the same minimum.
+                validate_password(password, enforce_minimum=True)
+                create_user(session, username, password, role=role)
             except ValueError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1

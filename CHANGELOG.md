@@ -67,6 +67,9 @@ All notable changes to celery-manager are recorded here. The format follows
   attestations. Pushing to `main` no longer publishes.
 
 ### Security
+- `celery-manager create-user` now applies the dashboard's rules: passwords
+  of at least 8 characters and the same username format. It used to accept a
+  one-character password and any username.
 - Every response now carries a Content-Security-Policy that only allows
   scripts from the dashboard's own origin plus its hashed inline theme
   bootstrap (`object-src 'none'`, `base-uri 'self'`, `form-action 'self'`),

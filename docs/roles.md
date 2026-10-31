@@ -204,7 +204,8 @@ celery-manager list-users --db-url sqlite:///celery_manager.db
 
 `create-user` asks for the password twice. To script it, pipe it in with
 `--password-stdin`. There's no `--password` flag, because a password on the
-command line ends up in shell history and in `ps`.
+command line ends up in shell history and in `ps`. Like the dashboard's user
+admin, it requires at least 8 characters and a valid username.
 
 From Python:
 

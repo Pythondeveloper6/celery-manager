@@ -613,7 +613,7 @@ def test_cli_create_user_defaults_to_viewer(tmp_path, monkeypatch, capsys):
         _run_cli(
             monkeypatch,
             ["create-user", "ann", "--db-url", url, "--password-stdin"],
-            "secret\n",
+            "secret-pass\n",
         )
         == 0
     )
@@ -632,7 +632,7 @@ def test_cli_create_user_with_role_and_set_role(tmp_path, monkeypatch, capsys):
         "admin",
         "--password-stdin",
     ]
-    assert _run_cli(monkeypatch, argv, "secret\n") == 0
+    assert _run_cli(monkeypatch, argv, "secret-pass\n") == 0
     assert _roles(url) == {"bob": "admin"}
 
     # The password really is the one from stdin.
@@ -642,7 +642,7 @@ def test_cli_create_user_with_role_and_set_role(tmp_path, monkeypatch, capsys):
     from celery_manager.auth.users import verify_password
 
     with sessionmaker(engine)() as session:
-        assert verify_password(session, "bob", "secret") is not None
+        assert verify_password(session, "bob", "secret-pass") is not None
     engine.dispose()
 
     assert _run_cli(monkeypatch, ["set-role", "bob", "operator", "--db-url", url]) == 0
@@ -672,7 +672,7 @@ def test_cli_refuses_bad_input(tmp_path, monkeypatch, capsys):
         _run_cli(
             monkeypatch,
             ["create-user", "c", "--db-url", url, "--password-stdin"],
-            "pw\n",
+            "pw-long-enough\n",
         )
         == 0
     )
@@ -680,7 +680,7 @@ def test_cli_refuses_bad_input(tmp_path, monkeypatch, capsys):
         _run_cli(
             monkeypatch,
             ["create-user", "c", "--db-url", url, "--password-stdin"],
-            "pw\n",
+            "pw-long-enough\n",
         )
         == 1
     )
@@ -702,3 +702,12 @@ def test_get_user_role(make_app):
         assert get_user_role(session, "operator") == "operator"
         assert get_user_role(session, "nobody") is None
         assert session.query(User).count() == 3
+
+
+def test_cli_create_user_refuses_short_passwords_and_bad_names(tmp_path, monkeypatch, capsys):
+    url = f"sqlite:///{tmp_path / 'cm.db'}"
+    assert _run_cli(monkeypatch, ["create-user", "short", "--db-url", url, "--password-stdin"], "1234567\n") == 1
+    assert "at least 8 characters" in capsys.readouterr().err
+    assert _run_cli(monkeypatch, ["create-user", "bad name\u0007", "--db-url", url, "--password-stdin"],
+                    "long-enough\n") == 1
+    assert _roles(url) == {}
