@@ -7,6 +7,14 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- [Troubleshooting and incident runbook](docs/troubleshooting.md).
+- `scripts/benchmark.py` measures listener throughput and dashboard API
+  latency against your own database; results and the live validation matrix
+  are in [Performance and validation](docs/validation.md).
+- SECURITY.md documents the threat model: assets, roles and trust
+  boundaries, controls, and operator responsibilities.
+- CI checks the licenses and advisories of the dashboard's production
+  JavaScript dependencies.
 - [Flower-compatible read endpoints](docs/flower-compat.md):
   `/api/flower/tasks`, `/api/flower/task/info/{id}` and
   `/api/flower/workers` answer in Flower's shapes, so scripts and dashboards

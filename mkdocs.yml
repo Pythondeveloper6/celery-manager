@@ -113,6 +113,8 @@ nav:
       - Real-world operations: real-world-operations.md
       - Other task runners: other-runners.md
       - Moving from Flower: flower-compat.md
+      - Troubleshooting and runbook: troubleshooting.md
+      - Performance and validation: validation.md
       - Tenant-scoped history: tenancy.md
       - API and embedding: embedding.md
       - Browser sessions: auth-sessions.md

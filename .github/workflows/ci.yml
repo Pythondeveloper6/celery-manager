@@ -104,6 +104,13 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: Production dependency licenses and advisories
+        # The bundle ships inside the wheel, so its runtime dependencies'
+        # licenses ship too.
+        run: |
+          npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages --summary \
+            --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;OFL-1.1"
+          npm audit --omit=dev --audit-level=high
       - run: node --test tests/*.test.mjs
       - run: npm run lint
       - run: npm run build
