@@ -1,0 +1,66 @@
+# Prometheus alerting rules for celery-manager's /metrics endpoint.
+# Load with `rule_files: [prometheus-rules.yml]`. Thresholds are starting
+# points: tune `for:` and the numbers to your workload.
+groups:
+  - name: celery-manager
+    rules:
+      - alert: CeleryManagerCollectorDown
+        expr: celery_manager_collector_up == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "celery-manager collector {{ $labels.collector }} is failing"
+          description: "Metrics from this collector are missing, not zero. Check the celery-manager logs."
+      - alert: CeleryBrokerDown
+        expr: celery_manager_broker_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Celery broker ({{ $labels.transport }}) is unreachable"
+      - alert: CeleryNoWorkersOnline
+        expr: celery_manager_workers_online == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "No Celery worker answered a ping for 5 minutes"
+      - alert: CeleryTaskFailureRatioHigh
+        expr: celery_manager_task_failure_ratio_window > 0.25 and on(task) sum by (task) (celery_manager_task_runs_finished_window) >= 10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.task }} failed {{ $value | humanizePercentage }} of runs in the last 15 minutes"
+      - alert: CeleryTaskSlow
+        expr: histogram_quantile(0.95, sum by (task, le) (celery_manager_task_runtime_window_seconds_bucket)) > 600
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "p95 runtime of {{ $labels.task }} is above 10 minutes"
+      - alert: CeleryQueueBacklog
+        expr: celery_manager_queue_depth > 1000
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Queue {{ $labels.queue }} has {{ $value }} waiting messages"
+      - alert: CeleryQueueWaitHigh
+        expr: celery_manager_queue_wait_seconds{quantile="0.95"} > 300
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Runs on {{ $labels.queue }} wait more than 5 minutes before starting (p95)"
+      - alert: CelerySchedulerMissedRuns
+        expr: celery_manager_schedule_missed_runs_24h > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Schedule {{ $labels.schedule }} missed {{ $value }} firing(s) in 24h"
+      - alert: RedisEvictingKeys
+        expr: delta(celery_manager_broker_evicted_keys[10m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "The Redis broker evicted keys in the last 10 minutes; queued tasks may have been lost"
+      - alert: RabbitMQResourceAlarm
+        expr: celery_manager_rabbitmq_mem_alarm == 1 or celery_manager_rabbitmq_disk_alarm == 1
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "RabbitMQ node {{ $labels.node }} has a resource alarm; publishers are blocked"

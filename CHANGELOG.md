@@ -7,6 +7,8 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- `examples/monitoring/`: an importable Grafana dashboard and ten Prometheus
+  alerting rules for `/metrics`, tested against the exported metric names.
 - `celery-manager demo`: a dashboard seeded with a week of sample history on
   SQLite, with a random-password admin account; no broker or worker needed.
 - [Is celery-manager the right tool?](docs/choosing.md): a decision guide
