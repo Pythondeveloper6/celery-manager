@@ -237,3 +237,53 @@ def test_llms_full_txt_is_current():
     script = Path(__file__).resolve().parents[2] / "scripts" / "build_llms_txt.py"
     result = subprocess.run([sys.executable, str(script), "--check"], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout
+
+
+def test_llm_call_set_ignores_unknown_fields_and_never_raises(env):
+    _, Session = env
+    with llm_call("claude-test") as call:
+        call.set(duration_ms=5, tokens=3, bogus=1, input_tokens=10, output_tokens=2)
+    with pytest.raises(ValueError, match="original"), llm_call("claude-test") as call:
+        call.set(model="claude-test-big", duration_ms=1, nope=2)
+        raise ValueError("original")
+    with Session() as session:
+        ok, err = session.query(LlmCall).order_by(LlmCall.id).all()
+        assert (ok.input_tokens, ok.status) == (10, "ok") and ok.duration_ms != 5
+        assert (err.status, err.model) == ("error", "claude-test-big")
+
+
+def test_llm_call_exit_swallows_internal_failures(env, monkeypatch):
+    monkeypatch.setattr(llm_module, "record_llm_usage", lambda *a, **k: (_ for _ in ()).throw(TypeError("x")))
+    with llm_call("claude-test"):
+        pass
+    with pytest.raises(KeyError), llm_call("claude-test"):
+        raise KeyError("kept")
+
+
+def test_absurd_values_are_clamped(env):
+    _, Session = env
+    assert llm_module._int(float("inf")) == 0
+    assert llm_module._int(10**30) == 10**12
+    record_llm_usage("claude-test", 5_000_000_000, 1, cost_usd=1e308, duration_ms=1e308)
+    with Session() as session:
+        row = session.query(LlmCall).one()
+        assert row.input_tokens == 5_000_000_000
+        assert row.cost_usd == pytest.approx((5_000_000_000 * 3 + 15) / 1e6)
+        assert row.duration_ms is None
+        assert usage_summary(session, "24h", now=datetime.now(timezone.utc))["totals"]["input_tokens"] == 5_000_000_000
+
+
+def test_summary_survives_non_finite_aggregates():
+    from celery_manager.control.llm import _finite, _row
+    assert _finite(float("inf")) is None and _finite(float("nan"), 0.0) == 0.0
+    assert _row(1, 1, 1, 1, 1, float("inf"), float("nan"))["cost_usd"] is None
+
+
+def test_summed_columns_are_cast_to_bigint_in_sql():
+    from sqlalchemy import select
+    from sqlalchemy.dialects import mssql, postgresql
+
+    from celery_manager.control.llm import _COLUMNS
+    for dialect in (postgresql.dialect(), mssql.dialect()):
+        sql = str(select(*_COLUMNS).compile(dialect=dialect))
+        assert "BIGINT" in sql.upper() and "sum(CAST" in sql.replace("SUM", "sum")

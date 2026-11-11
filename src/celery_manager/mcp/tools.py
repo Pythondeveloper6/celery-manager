@@ -41,11 +41,11 @@ class Tool:
 
     @property
     def writes(self) -> bool:
-        return self.method != "GET" or (self.direct is not None and self.role != "viewer")
+        return self.method != "GET"
 
 
 _LIMIT = _i("Page size.", minimum=1, maximum=100, default=25)
-_OFFSET = _i("Rows to skip.", minimum=0, default=0)
+_OFFSET = _i("Rows to skip.", minimum=0, maximum=1_000_000, default=0)
 
 TOOLS: tuple[Tool, ...] = (
     # --- read ---------------------------------------------------------------
@@ -95,7 +95,7 @@ TOOLS: tuple[Tool, ...] = (
     Tool("whoami", "The identity and role this MCP server acts as.", _obj({}), "viewer", "GET", "/api/whoami"),
     Tool("run_doctor", "Deployment preflight: Celery settings behind lost or duplicated tasks, with a fix for each.",
          _obj({"check_broker": {"type": "boolean", "default": False}, "check_workers": {"type": "boolean", "default": False}}),
-         "viewer", direct="doctor"),
+         "admin", direct="doctor"),
     # --- operator writes ------------------------------------------------------
     Tool("retry_run", "Re-dispatch one finished run with its stored args (or overrides). Creates a new run.",
          _obj({"task_id": _s("Task id."), "args": {"type": "array"}, "kwargs": {"type": "object"}, "reason": _s("Why (audit trail).")},
@@ -110,7 +110,7 @@ TOOLS: tuple[Tool, ...] = (
          "operator", "POST", "/api/tasks/{task_id}/cancel", path_args=("task_id",), query_args=("terminate",)),
     Tool("start_task", "Dispatch a registered task now. Check list_registered_tasks for names and arguments.",
          _obj({"task_name": _s("Registered task name."), "args": {"type": "array"}, "kwargs": {"type": "object"}, "queue": _s("Queue."),
-               "countdown": {"type": "number", "minimum": 0}, "reason": _s("Why (audit trail).")}, ("task_name",)),
+               "countdown": {"type": "number", "minimum": 0, "maximum": 31_536_000}, "reason": _s("Why (audit trail).")}, ("task_name",)),
          "operator", "POST", "/api/tasks/start", body_args=("task_name", "args", "kwargs", "queue", "countdown")),
     Tool("pause_schedule", "Pause every firing of a schedule, optionally until an ISO time.",
          _obj({"name": _s("Schedule name."), "until": _s("ISO 8601 auto-resume time."), "reason": _s("Why (audit trail).")}, ("name",)),
@@ -125,7 +125,7 @@ TOOLS: tuple[Tool, ...] = (
          "operator", "POST", "/api/dead-letters/{task_id}/acknowledge", path_args=("task_id",)),
     # --- admin -------------------------------------------------------------------
     Tool("preview_queue_purge", "Report how many messages a purge would remove. Changes nothing.",
-         _obj({"name": _s("Queue name.")}, ("name",)), "admin", "POST", "/api/queues/{name}/purge", path_args=("name",),
+         _obj({"name": _s("Queue name."), "reason": _s("Why (audit trail).")}, ("name",)), "admin", "POST", "/api/queues/{name}/purge", path_args=("name",),
          fixed_body={"dry_run": True}),
     Tool("purge_queue", "DESTRUCTIVE: remove every ready message from a queue. confirm must equal the queue name.",
          _obj({"name": _s("Queue name."), "confirm": _s("Repeat the queue name."), "reason": _s("Why (audit trail).")}, ("name", "confirm")),

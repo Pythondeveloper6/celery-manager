@@ -39,9 +39,9 @@ to `--role`. Tools above that role are **not listed and cannot be called**.
 
 | Role | Adds |
 |---|---|
-| `viewer` (default) | Read-only: runs, failure groups, workers, queues, schedules, alerts, LLM usage, `run_doctor` |
+| `viewer` (default) | Read-only: runs, failure groups, workers, queues, schedules, alerts, LLM usage |
 | `operator` | `retry_run`, `retry_runs`, `cancel_run`, `start_task`, `pause_schedule`, `resume_schedule`, `set_rate_limit`, `acknowledge_dead_letter` |
-| `admin` | `preview_queue_purge`, `purge_queue` |
+| `admin` | `preview_queue_purge`, `purge_queue`, `run_doctor` (broker and worker probes) |
 
 Start with `viewer`. Every tool calls the same REST route the dashboard uses, so
 validation, role checks, [operator safeguards](configuration.md) and the
@@ -55,7 +55,17 @@ show the actor as `mcp:<agent-name>`.
 - `purge_queue` needs `confirm` equal to the queue name.
 - Write tools accept a `reason`. It is sent as the `X-CM-Action-Reason` header,
   so `operator_safeguards` deployments accept it, and it lands in the audit
-  details.
+  details. With `operator_safeguards` the environment confirmation is sent
+  automatically (an agent has no other way to give it), so only the reason is
+  a real gate. Write tools that can change state are marked `destructiveHint`
+  (except `preview_queue_purge`).
+- A real `retry_runs` (`dry_run=false`) is refused unless `confirm_count`
+  equals the number of ids.
+- Identifiers used in a URL path (task id, schedule or queue name) may not be
+  empty or contain `/`, `\`, `?`, `#` or control characters.
+- The stdio loop answers malformed input with JSON-RPC errors instead of
+  stopping: invalid JSON, NaN/Infinity, empty batches, non-object `params`,
+  and lines over 1 MiB.
 - Arguments are checked against each tool's schema before any call; unknown or
   mistyped arguments come back as an error naming the field.
 - Results over 40,000 characters are cut with a note to narrow the filters.
@@ -80,7 +90,8 @@ what an `operator` agent does through the audit log.
 | `list_queues`, `queue_history`, `broker_health` | viewer | Depth, history, broker state |
 | `list_schedules`, `schedule_health`, `beat_health` | viewer | Periodic schedules and whether they fire |
 | `list_alert_incidents`, `list_alert_rules` | viewer | Alerting state |
-| `list_registered_tasks`, `whoami`, `run_doctor` | viewer | Task names and signatures, identity, preflight |
+| `list_registered_tasks`, `whoami` | viewer | Task names and signatures, identity |
+| `run_doctor` | admin | Preflight of the configuration you started the server with |
 
 ## Machine-readable docs
 

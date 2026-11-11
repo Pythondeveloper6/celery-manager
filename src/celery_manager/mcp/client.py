@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from urllib.parse import urlencode
+from urllib.parse import quote, unquote, urlencode
+
+
+def _header_value(value) -> bytes:
+    """Header values travel as latin-1-safe ASCII: anything outside printable
+    ASCII is percent-encoded (existing %XX escapes are kept)."""
+    return quote(str(value), safe="%" + "".join(chr(c) for c in range(0x20, 0x7F) if chr(c) != "%")).encode("ascii")
 
 
 class InProcessClient:
@@ -22,10 +28,10 @@ class InProcessClient:
         raw_headers = [(b"host", b"mcp.local"), (b"accept", b"application/json")]
         if body is not None:
             raw_headers += [(b"content-type", b"application/json"), (b"content-length", str(len(payload)).encode())]
-        raw_headers += [(k.lower().encode(), v.encode("latin-1", "ignore")) for k, v in headers.items()]
+        raw_headers += [(k.lower().encode(), _header_value(v)) for k, v in headers.items()]
         scope = {
             "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method.upper(),
-            "scheme": "https", "path": path, "raw_path": path.encode(), "query_string": query.encode(),
+            "scheme": "https", "path": unquote(path), "raw_path": path.encode(), "query_string": query.encode(),
             "headers": raw_headers, "client": ("127.0.0.1", 0), "server": ("mcp.local", 443), "root_path": "",
         }
         sent = False

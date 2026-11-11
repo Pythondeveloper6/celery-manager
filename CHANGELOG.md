@@ -16,9 +16,11 @@ this release.
 - **Model Context Protocol server**: `celery-manager mcp` serves 33 tools over
   stdio to AI agents, with no extra dependency. Read-only by default
   (`--role viewer`); `operator` adds retry, cancel, start, pause and rate
-  limits, `admin` adds queue purge. Tools call the dashboard's own routes
+  limits, `admin` adds queue purge and `run_doctor`. Tools call the dashboard's own routes
   in-process as `mcp:<agent-name>`, so roles, safeguards and the audit log
-  apply, bulk tools default to a dry run, and unlisted tools cannot be called.
+  apply, bulk tools default to a dry run (a real bulk retry needs a matching
+  `confirm_count`), and unlisted tools cannot be called. The stdio loop survives
+  malformed, non-finite, deeply nested and oversized input.
   See [Building with AI agents](docs/agents.md).
 - **LLM-usage tracking**: `record_llm_usage(response=...)` and
   `llm_call(...)` record model, tokens, cached tokens, tool calls, cost and

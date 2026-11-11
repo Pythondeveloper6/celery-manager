@@ -71,12 +71,19 @@ def _get(obj, name, default=None):
     return getattr(obj, name, default)
 
 
+_MAX_COUNT = 10**12
+_MAX_COST = 1_000_000.0
+_MAX_DURATION_MS = 86_400_000.0
+_SETTABLE = frozenset({"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
+                       "tool_calls", "cost_usd", "provider", "model"})
+
+
 def _int(value) -> int:
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
-    return max(number, 0)
+    return min(max(number, 0), _MAX_COUNT)
 
 
 def usage_from_response(response) -> dict:
@@ -160,7 +167,7 @@ def _record(model, input_tokens, output_tokens, provider, cache_read, cache_writ
     }
     config = decorator._settings()
     if cost_usd is not None and (isinstance(cost_usd, bool) or not isinstance(cost_usd, (int, float))
-                                 or not math.isfinite(cost_usd) or cost_usd < 0):
+                                 or not math.isfinite(cost_usd) or cost_usd < 0 or cost_usd > _MAX_COST):
         cost_usd = None
     if cost_usd is None:
         cost_usd = compute_cost(getattr(config, "llm_prices", None), model, counts["input_tokens"],
@@ -172,7 +179,7 @@ def _record(model, input_tokens, output_tokens, provider, cache_read, cache_writ
     row = LlmCall(
         task_id=task_id, task_name=task_name, provider=str(provider)[:_MAX_PROVIDER] if provider else None,
         model=str(model)[:_MAX_MODEL], cost_usd=cost_usd,
-        duration_ms=float(duration_ms) if isinstance(duration_ms, (int, float)) and math.isfinite(duration_ms) and duration_ms >= 0 else None,
+        duration_ms=float(duration_ms) if isinstance(duration_ms, (int, float)) and math.isfinite(duration_ms) and 0 <= duration_ms <= _MAX_DURATION_MS else None,
         status="error" if status == "error" else "ok", created_at=datetime.now(timezone.utc), **counts,
     )
     with sessions() as session:
@@ -197,8 +204,13 @@ class _Call:
         self.fields: dict = {}
 
     def set(self, **fields) -> None:
-        """Extra values to record (input_tokens=..., cost_usd=..., and so on)."""
-        self.fields.update(fields)
+        """Extra values to record: input_tokens, output_tokens, cache_read_tokens,
+        cache_write_tokens, tool_calls, cost_usd, provider, model. Others are ignored."""
+        for key, value in fields.items():
+            if key in _SETTABLE:
+                self.fields[key] = value
+            else:
+                logger.warning("celery-manager: llm_call.set() ignored unknown field %r", key)
 
 
 class llm_call:
@@ -214,8 +226,14 @@ class llm_call:
         return self._call
 
     def __exit__(self, exc_type, exc, tb) -> bool:
-        call = self._call
-        record_llm_usage(call.model, provider=call.provider, response=call.response,
-                         duration_ms=(time.perf_counter() - self._start) * 1000,
-                         status="error" if exc_type else "ok", **call.fields)
+        try:
+            call = self._call
+            fields = {k: v for k, v in call.fields.items() if k in _SETTABLE}
+            model = fields.pop("model", None) or call.model
+            provider = fields.pop("provider", None) or call.provider
+            record_llm_usage(model, provider=provider, response=call.response,
+                             duration_ms=(time.perf_counter() - self._start) * 1000,
+                             status="error" if exc_type else "ok", **fields)
+        except Exception:
+            logger.warning("celery-manager: could not record LLM usage", exc_info=True)
         return False

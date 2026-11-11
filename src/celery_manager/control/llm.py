@@ -1,9 +1,10 @@
 """LLM usage queries over `llm_calls`: totals, per model, per task, over time."""
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func
+from sqlalchemy import BigInteger, cast, delete, func
 
 from celery_manager.control.analytics import RANGES, UnknownRange
 from celery_manager.db.llm import LlmCall
@@ -24,18 +25,38 @@ def _aware(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
+def _finite(value, default=None, digits: int = 6):
+    """A JSON-safe float: non-finite or non-numeric values map to ``default``."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return round(number, digits) if math.isfinite(number) else default
+
+
+def _count(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def _row(calls, input_tokens, output_tokens, cache_read, tool_calls, cost, avg_ms) -> dict:
     return {
-        "calls": calls, "input_tokens": int(input_tokens), "output_tokens": int(output_tokens),
-        "cache_read_tokens": int(cache_read), "tool_calls": int(tool_calls),
-        "cost_usd": None if cost is None else round(cost, 6),
-        "avg_duration_ms": None if avg_ms is None else round(avg_ms, 1),
+        "calls": calls, "input_tokens": _count(input_tokens), "output_tokens": _count(output_tokens),
+        "cache_read_tokens": _count(cache_read), "tool_calls": _count(tool_calls),
+        "cost_usd": _finite(cost), "avg_duration_ms": _finite(avg_ms, digits=1),
     }
 
 
+def _sum(column):
+    # Cast so SQL Server does not return (and overflow) a 32-bit int sum.
+    return func.sum(cast(column, BigInteger))
+
+
 _COLUMNS = (
-    func.count(), func.coalesce(func.sum(LlmCall.input_tokens), 0), func.coalesce(func.sum(LlmCall.output_tokens), 0),
-    func.coalesce(func.sum(LlmCall.cache_read_tokens), 0), func.coalesce(func.sum(LlmCall.tool_calls), 0),
+    func.count(), func.coalesce(_sum(LlmCall.input_tokens), 0), func.coalesce(_sum(LlmCall.output_tokens), 0),
+    func.coalesce(_sum(LlmCall.cache_read_tokens), 0), func.coalesce(_sum(LlmCall.tool_calls), 0),
     func.sum(LlmCall.cost_usd), func.avg(LlmCall.duration_ms),
 )
 
@@ -77,7 +98,7 @@ def usage_summary(session, time_range: str = "24h", task_name: str | None = None
     for index in range(count + 1, last + 1):
         slot = buckets.get(index, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0})
         series.append({"at": datetime.fromtimestamp(index * bucket.total_seconds(), timezone.utc).isoformat(),
-                       **slot, "cost_usd": round(slot["cost_usd"], 6)})
+                       **slot, "cost_usd": _finite(slot["cost_usd"], 0.0)})
     priced = scoped(session.query(func.count()).filter(LlmCall.cost_usd.isnot(None))).scalar() or 0
     return {
         "range": time_range, "since": since.isoformat(), "until": until.isoformat(),
@@ -101,7 +122,7 @@ def run_usage(session, task_id: str) -> dict:
         "task_id": task_id, "calls": items,
         "totals": {"calls": len(items), "input_tokens": sum(c.input_tokens for c in calls),
                    "output_tokens": sum(c.output_tokens for c in calls),
-                   "cost_usd": round(sum(priced), 6) if priced else None},
+                   "cost_usd": _finite(sum(priced)) if priced else None},
     }
 
 
