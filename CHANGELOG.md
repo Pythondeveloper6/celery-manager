@@ -107,6 +107,17 @@ this release.
   attestations. Pushing to `main` no longer publishes.
 
 ### Security
+- MCP server (reviewed before release): `retry_runs` needs `confirm_count`
+  for a real run, `run_doctor` is admin-only and runs on the real
+  configuration, tool path arguments are validated and cannot reach another
+  route, the environment-confirmation header is encoded, stdio input is bounded
+  (deep nesting, huge lines, NaN/Infinity), host principal providers cannot
+  override the agent's identity, and every write tool is marked destructive for
+  clients that gate on that hint.
+- LLM-usage recording never raises into a task (`llm_call` included), clamps
+  absurd token counts, costs and durations, and aggregates in 64-bit so a
+  month of heavy use cannot break the usage page on SQL Server or overflow
+  32-bit columns.
 - Request bodies are capped (`max_request_body_bytes`, 4 MiB by default):
   an unauthenticated client could previously post an arbitrarily large JSON
   body to the login route and have it read into memory.
@@ -127,6 +138,10 @@ this release.
   route list.
 
 ### Fixed
+- `celery-manager demo` registered its sample tasks from lambdas, which
+  Celery cannot build a signature for (`SyntaxError` in
+  `celery/utils/functional.py` when a task was finalized). They are now a named
+  function. This also removes the order-dependent unit-test failures seen in CI.
 - Importing a table module (for example through `CeleryManagerConfig`'s
   probe validation) before `celery_manager.db.models` no longer fails with a
   circular import.
