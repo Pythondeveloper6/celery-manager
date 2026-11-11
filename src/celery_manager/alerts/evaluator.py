@@ -408,6 +408,11 @@ _CHECKS.update({kind: check_depth for kind in DEPTH_PARAMS})
 
 def _summary(rule: AlertRule, key: str, details: dict, event: str) -> str:
     kind = rule.kind
+    if kind == "llm_cost":
+        if event == "resolved":
+            return f"{key}: LLM spend is back under ${details.get('threshold', 0):g}"
+        return (f"{key}: ${details['cost_usd']:g} of LLM spend in the last {details['window_minutes']} min "
+                f"({details['calls']} calls, budget ${details['threshold']:g})")
     if kind in DEPTH_PARAMS:
         if kind == "daily_digest":
             return f"Daily task digest: {details.get('total', 0)} completed runs ({details.get('until')})"
@@ -475,7 +480,7 @@ def dashboard_link(config: CeleryManagerConfig, kind: str | None, key: str | Non
     if kind in ("task_failed", "task_sla", "run_stuck", "worker_lost", "run_late") and key:
         return base + "tasks/" + quote(key, safe="")
     # Rules whose incident key is a task name.
-    if kind in ("consecutive_failures", "duration_regression") and key:
+    if kind in ("consecutive_failures", "duration_regression", "llm_cost") and key:
         return base + "task-types/" + quote(key, safe="")
     if kind in ("queue_backlog", "broker_unreachable", "broker_memory", "queue_wait", "queue_growing",
                 "rabbitmq_alarm"):

@@ -271,6 +271,14 @@ class CeleryManagerConfig:
     login_backoff_reset_seconds: int = 3600
 
     worker_heartbeat_retention_days: int = 7
+    # LLM usage rows (record_llm_usage) are kept this many days; 0 keeps them.
+    llm_call_retention_days: int = 90
+    # Optional prices in USD per million tokens, used when a call does not
+    # report its own cost: {"model-id": {"input": 3.0, "output": 15.0,
+    # "cache_read": 0.3, "cache_write": 3.75}}. Only "input" and "output" are
+    # required. Longest matching model-id prefix wins. Nothing is built in,
+    # because prices change.
+    llm_prices: dict = field(default_factory=dict)
     environment_name: str = ""
     operator_safeguards: bool = False
     # Destructive bulk endpoints (queue purge, bulk retry) refuse requests that
@@ -312,6 +320,10 @@ class CeleryManagerConfig:
         if (isinstance(self.worker_heartbeat_retention_days, bool) or not isinstance(self.worker_heartbeat_retention_days, int)
                 or not 0 <= self.worker_heartbeat_retention_days <= 3650):
             raise ValueError("worker_heartbeat_retention_days must be 0..3650 (0 disables history)")
+        if isinstance(self.llm_call_retention_days, bool) or not isinstance(self.llm_call_retention_days, int) or not 0 <= self.llm_call_retention_days <= 3650:
+            raise ValueError("llm_call_retention_days must be 0..3650 (0 keeps all)")
+        from celery_manager.llm import validate_prices
+        validate_prices(self.llm_prices)
         for name in ("login_backoff_threshold", "login_backoff_max_seconds", "login_backoff_reset_seconds"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:

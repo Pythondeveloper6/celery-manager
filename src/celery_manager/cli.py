@@ -300,6 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--check-broker", action="store_true")
     doctor_parser.add_argument("--check-workers", action="store_true")
     doctor_parser.add_argument("--timeout", type=float, default=5)
+    doctor_parser.add_argument("--json", action="store_true", help="print the report as JSON (for scripts and agents)")
     doctor_parser.add_argument("--fix-suggestions", action="store_true",
                                help="print a Markdown production checklist with a fix for each open item")
     copy_parser = subparsers.add_parser(
@@ -319,6 +320,15 @@ def build_parser() -> argparse.ArgumentParser:
     openapi_parser = subparsers.add_parser(
         "openapi", help="write the REST API's OpenAPI document (for generating clients)")
     openapi_parser.add_argument("--output", "-o", help="file to write (default: stdout)")
+
+    mcp_parser = subparsers.add_parser(
+        "mcp", help="serve celery-manager to AI agents over the Model Context Protocol (stdio)")
+    _add_config_args(mcp_parser, required=False)
+    mcp_parser.add_argument("--role", choices=ROLES, default="viewer",
+                            help="what the agent may do: viewer (read only, default), operator (+retry, cancel, "
+                                 "start, pause, rate limits) or admin (+queue purge)")
+    mcp_parser.add_argument("--agent-name", default="agent",
+                            help="shown as 'mcp:<name>' in the audit log")
 
     demo_parser = subparsers.add_parser("demo", help="serve a dashboard seeded with sample history (needs uvicorn)")
     demo_parser.add_argument("--dir", help="empty directory for the demo database (default: a new temp dir)")
@@ -409,12 +419,21 @@ def main(argv: list[str] | None = None) -> None:
             result = doctor(config, check_broker=args.check_broker, check_workers=args.check_workers, timeout=args.timeout)
         except ValueError as exc:
             parser.error(str(exc))
-        if args.fix_suggestions:
+        if args.json:
+            import json
+            print(json.dumps(result, indent=2, default=str))
+        elif args.fix_suggestions:
             from celery_manager.celery_checklist import render_checklist
             print(render_checklist(result), end="")
         else:
             print(render_report(result))
         sys.exit(0 if result["ok"] else 1)
+
+    if args.command == "mcp":
+        from celery_manager.mcp.server import McpServer, serve
+        config = _load_config(args.config, args.celery_app, args.db_url)
+        serve(McpServer(config, role=args.role, agent_name=args.agent_name))
+        return
 
     if args.command == "import-pauses":
         import json

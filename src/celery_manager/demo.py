@@ -55,8 +55,12 @@ def demo_celery_app():
 
     app = Celery("celery_manager_demo", broker="memory://", backend="cache+memory://")
     app.conf.update(timezone="UTC", task_always_eager=False)
+    def _noop(*args, **kwargs):
+        return None
+
+    # A named function, not a lambda: Celery builds a signature head from the callable's name.
     for name in _TASKS:
-        app.task(name=name)(lambda *args, **kwargs: None)
+        app.task(name=name)(_noop)
     app.conf.beat_schedule = {
         "daily-report": {"task": "reports.build_daily", "schedule": crontab(minute="0", hour="6")},
         "catalog-sync": {"task": "imports.sync_catalog", "schedule": crontab(minute="*/30")},

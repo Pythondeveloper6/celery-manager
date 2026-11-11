@@ -3,6 +3,7 @@ import "../styles/insights.css";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { getOverview, RANGE_KEYS, type Overview, type RangeKey, type TaskRollup } from "../api/analytics";
+import { LlmUsageSection } from "../components/LlmUsage";
 import { FailureGroups } from "../components/FailureGroups";
 import { Kpi, RangeTabs } from "../components/InsightsParts";
 import { RunsChart, RuntimeChart } from "../components/TrendCharts";
@@ -131,6 +132,8 @@ export function Insights() {
           </div>
         </>
       )}
+
+      {tab === "trends" && <LlmUsageSection range={range} />}
     </div>
   );
 }

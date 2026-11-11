@@ -38,6 +38,8 @@ dashboard (**Tasks** -> **Start task**) or with
 `curl -X POST localhost:8000/welcome/me@example.com` or
 `curl -X POST localhost:8000/import/60`.
 
+Port 8000 busy? Pass another `--port` and use it in the URLs above.
+
 No Redis? `CELERY_MANAGER_EAGER=1 flask --app app run` runs tasks inline with an
 in-memory broker. `CELERY_MANAGER_COOKIE_SECURE` defaults to `0` here (plain
 HTTP); set it to `1` behind TLS.

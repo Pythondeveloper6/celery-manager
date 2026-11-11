@@ -1,0 +1,44 @@
+# celery-manager
+
+> Durable task history, failure inbox, retry, schedules, workers, queues, alerts and LLM-usage tracking for Celery, with a dashboard, a REST API and an MCP server for AI agents. Mounts in FastAPI, Flask or Django, or runs standalone. Beta (0.3.x); Python package `celery-manager`, installed with `pip install --pre celery-manager`.
+
+Key facts for coding agents:
+- Call `celery_manager.setup(config)` once in every process that runs tasks, including the Celery worker. Apply `@track()` directly below `@app.task`.
+- Run `celery-manager events` as its own long-lived process next to the worker and beat; it feeds the task list.
+- Record LLM calls inside tasks with `celery_manager.record_llm_usage(response=...)`.
+- Run `celery-manager doctor --fix-suggestions` after changing Celery settings.
+- The full documentation in one file is llms-full.txt. The REST API's OpenAPI document comes from `celery-manager openapi`.
+
+## Start here
+- [Quickstart](https://pythondeveloper6.github.io/celery-manager/quickstart/): install, configure, run
+- [Is it the right tool?](https://pythondeveloper6.github.io/celery-manager/choosing/): comparison with Flower, Sentry Crons, Grafana
+- [Integrating with your app](https://pythondeveloper6.github.io/celery-manager/integrations/): FastAPI, Flask, Django mounting and sign-in
+- [Deployment](https://pythondeveloper6.github.io/celery-manager/deployment/): processes, database, upgrading
+
+## For agents
+- [Building with AI agents](https://pythondeveloper6.github.io/celery-manager/agents/): the MCP server (`celery-manager mcp`), roles, tools, guard rails
+- [LLM usage](https://pythondeveloper6.github.io/celery-manager/llm-usage/): recording model, tokens and cost per task; the `llm_cost` alert
+- [REST API](https://pythondeveloper6.github.io/celery-manager/rest-api/): every endpoint, request and response shape
+- [API and embedding](https://pythondeveloper6.github.io/celery-manager/embedding/): versioned API, typed clients
+
+## Using it
+- [The decorator](https://pythondeveloper6.github.io/celery-manager/decorator/): `@track` and what it records
+- [Live progress](https://pythondeveloper6.github.io/celery-manager/progress/): `report_progress`
+- [Workers and rate limits](https://pythondeveloper6.github.io/celery-manager/workers/)
+- [Queues, purge and bulk cancel](https://pythondeveloper6.github.io/celery-manager/queues/)
+- [Editing schedules](https://pythondeveloper6.github.io/celery-manager/schedules/)
+- [Alerts](https://pythondeveloper6.github.io/celery-manager/alerts/): rules, channels, incidents
+- [Dead letters](https://pythondeveloper6.github.io/celery-manager/dead-letters/)
+- [Insights](https://pythondeveloper6.github.io/celery-manager/insights/)
+
+## Reference
+- [Configuration](https://pythondeveloper6.github.io/celery-manager/configuration/): every `CeleryManagerConfig` field
+- [Roles](https://pythondeveloper6.github.io/celery-manager/roles/): viewer, operator, admin
+- [Security](https://pythondeveloper6.github.io/celery-manager/security/): threat model and operator responsibilities
+- [Stability policy](https://pythondeveloper6.github.io/celery-manager/stability/): what will not break
+- [Troubleshooting and runbook](https://pythondeveloper6.github.io/celery-manager/troubleshooting/)
+
+## Optional
+- [Changelog](https://pythondeveloper6.github.io/celery-manager/changelog/)
+- [Metrics](https://pythondeveloper6.github.io/celery-manager/metrics/): Prometheus endpoint, Grafana dashboard
+- [Other task runners](https://pythondeveloper6.github.io/celery-manager/other-runners/): arq, Dramatiq, Taskiq, plain loops

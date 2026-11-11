@@ -1,7 +1,7 @@
 # Production requirements and roadmap
 
 Adoption requirements for existing Celery deployments are the baseline. The production
-foundations shipped in **0.2.0a1**; **0.3.0a1** adds the operational features below
+foundations shipped in **0.2.0a1**; **0.3.0b1** adds the operational features below
 in one release. See [0.3 release scope](release-0.3.md) and
 [production adoption](production.md) for contracts and limitations.
 
@@ -51,7 +51,7 @@ CI job is not evidence that its live gate has run successfully for this release.
 
 ## Native operability
 
-These ten capabilities are implemented in the same 0.3.0a1 candidate. Detailed
+These ten capabilities are implemented in the same 0.3.0b1 candidate. Detailed
 Python/API signatures, deployment requirements and limitations are in
 [real-world operations](real-world-operations.md). “Candidate” remains a local
 implementation status, not a completed live-rollout claim.

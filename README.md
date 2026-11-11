@@ -15,7 +15,7 @@ Django, Flask, or FastAPI project that already uses Celery.
 [![CI](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml)
 ![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Status: alpha](https://img.shields.io/badge/status-alpha-orange)
+![Status: beta](https://img.shields.io/badge/status-beta-yellow)
 
 **[Documentation](https://pythondeveloper6.github.io/celery-manager/)** · [Quickstart](https://pythondeveloper6.github.io/celery-manager/quickstart/) · [PyPI](https://pypi.org/project/celery-manager/)
 
@@ -142,6 +142,11 @@ OIDC, dispatch policies, bounded logs/results and storage isolation. The
   time; it resumes from the current time, with no catch-up.
 - **Insights** — runs, success rate and p50/p95 runtime over 1h–30d, a page
   per task, and failures grouped by exception signature with retry-all.
+- **Built for agents** — a [Model Context Protocol server](docs/agents.md)
+  (`celery-manager mcp`, read-only by default, roles and audit apply),
+  [`llms.txt`](docs/llms.txt) for coding agents, and
+  [LLM-usage tracking](docs/llm-usage.md) (model, tokens, cost per task, with a
+  spend alert) for the agent workloads your tasks run.
 - **Workers and queues** — live worker state, pool grow/shrink, queue
   consume/cancel, shutdown, runtime rate limits, broker queue depth and purge.
 - **Shareable views** — filters live in the URL, saved views, and CSV/JSON
@@ -170,7 +175,8 @@ celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
 
 No broker, worker or database server needed. To wire it into your own app, see
 [Install](#install) and [Wire it up](#wire-it-up) below, or run an example in
-[`examples/`](examples/) (FastAPI, Flask, Django, Docker Compose).
+[`examples/`](examples/) (FastAPI, Flask, Django, Docker Compose, and
+[`examples/full_stack/`](examples/full_stack/), every process on one machine with one command).
 
 ## Install
 
@@ -184,7 +190,7 @@ celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
 See [Is celery-manager the right tool?](docs/choosing.md) for how it compares
 with Flower, Sentry Crons and Grafana, and a 10-line quickstart per framework.
 
-celery-manager is an alpha, so pass `--pre` to pip:
+celery-manager is in beta (a pre-release on PyPI), so pass `--pre` to pip:
 
 ```bash
 pip install --pre celery-manager
@@ -288,6 +294,8 @@ Full documentation is at **<https://pythondeveloper6.github.io/celery-manager/>*
 - [REST API](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/rest-api.md) — every endpoint and payload.
 - [Dashboard](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/dashboard.md) — the screens and what they do.
 - [Insights](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/insights.md) — trends, per-task pages and grouped failures.
+- [Building with AI agents](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/agents.md) — the MCP server, roles and `llms.txt`.
+- [LLM usage](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/llm-usage.md) — recording model, tokens and cost from tasks.
 - [Workers and rate limits](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/workers.md) — live worker state and controls.
 - [Queues, purge and bulk cancel](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/queues.md) — broker depth and clean-up.
 - [Deployment](docs/deployment.md) and [Upgrading](docs/upgrading.md) — process layout, checklist and upgrade steps.
@@ -319,7 +327,7 @@ threat model and how to report a vulnerability privately.
 
 ## Limits
 
-- Alpha software: APIs may change before 1.0.
+- Beta software: the surfaces in the [stability policy](docs/stability.md) are covered by a deprecation promise; everything else may change before 1.0.
 - Celery 5.x only; other task runners are observed, not controlled
   ([details](docs/other-runners.md)).
 - Retry, revoke, purge and worker controls need a reachable broker and live workers.
@@ -349,7 +357,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is an alpha, **0.3.0a1**. APIs may still change before 1.0; see the
+This is a beta, **0.3.0b1**. APIs outside the stability policy may still change before 1.0; see the
 [CHANGELOG](CHANGELOG.md) for release history and
 [docs/roadmap.md](docs/roadmap.md) for planned follow-ups.
 

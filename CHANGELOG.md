@@ -6,7 +6,36 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0b1] — 2026-11-11
+
+First beta. The `Development Status` classifier moves from Alpha to Beta;
+the 0.3.0a1 candidate was never published, so its notes below are part of
+this release.
+
 ### Added
+- **Model Context Protocol server**: `celery-manager mcp` serves 33 tools over
+  stdio to AI agents, with no extra dependency. Read-only by default
+  (`--role viewer`); `operator` adds retry, cancel, start, pause and rate
+  limits, `admin` adds queue purge and `run_doctor`. Tools call the dashboard's own routes
+  in-process as `mcp:<agent-name>`, so roles, safeguards and the audit log
+  apply, bulk tools default to a dry run (a real bulk retry needs a matching
+  `confirm_count`), and unlisted tools cannot be called. The stdio loop survives
+  malformed, non-finite, deeply nested and oversized input.
+  See [Building with AI agents](docs/agents.md).
+- **LLM-usage tracking**: `record_llm_usage(response=...)` and
+  `llm_call(...)` record model, tokens, cached tokens, tool calls, cost and
+  latency per call from inside a task (prompts and completions are never
+  stored). Migration `0021` adds `llm_calls`; `llm_prices` and
+  `llm_call_retention_days` are new settings. Shown on Insights and the run
+  page, served by `GET /api/llm/usage` and `GET /api/llm/runs/{task_id}`, and
+  alertable with the new `llm_cost` rule. See [LLM usage](docs/llm-usage.md).
+- **Agent-readable docs**: `docs/llms.txt`, a generated `docs/llms-full.txt`
+  (`scripts/build_llms_txt.py`, checked by a test), and
+  `celery-manager doctor --json`.
+- The schedule editor has a **Preset** menu (every minute, every 5/15
+  minutes, hourly, daily, weekdays, weekly, monthly) that fills the crontab
+  fields. The fields stay editable and show "Custom" when they match no
+  preset; the next-five-runs preview is unchanged.
 - The **Run now** dialog renders a form from the task's `args_schemas`
   model (scalars and enums), and `GET /api/tasks/registered` returns the
   model's JSON Schema as `args_schema`. The server still validates on start.
@@ -78,6 +107,17 @@ All notable changes to celery-manager are recorded here. The format follows
   attestations. Pushing to `main` no longer publishes.
 
 ### Security
+- MCP server (reviewed before release): `retry_runs` needs `confirm_count`
+  for a real run, `run_doctor` is admin-only and runs on the real
+  configuration, tool path arguments are validated and cannot reach another
+  route, the environment-confirmation header is encoded, stdio input is bounded
+  (deep nesting, huge lines, NaN/Infinity), host principal providers cannot
+  override the agent's identity, and every write tool is marked destructive for
+  clients that gate on that hint.
+- LLM-usage recording never raises into a task (`llm_call` included), clamps
+  absurd token counts, costs and durations, and aggregates in 64-bit so a
+  month of heavy use cannot break the usage page on SQL Server or overflow
+  32-bit columns.
 - Request bodies are capped (`max_request_body_bytes`, 4 MiB by default):
   an unauthenticated client could previously post an arbitrarily large JSON
   body to the login route and have it read into memory.
@@ -98,6 +138,10 @@ All notable changes to celery-manager are recorded here. The format follows
   route list.
 
 ### Fixed
+- `celery-manager demo` registered its sample tasks from lambdas, which
+  Celery cannot build a signature for (`SyntaxError` in
+  `celery/utils/functional.py` when a task was finalized). They are now a named
+  function. This also removes the order-dependent unit-test failures seen in CI.
 - Importing a table module (for example through `CeleryManagerConfig`'s
   probe validation) before `celery_manager.db.models` no longer fails with a
   circular import.

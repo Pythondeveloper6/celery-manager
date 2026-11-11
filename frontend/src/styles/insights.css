@@ -14,7 +14,22 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
+.cm-kpi-row-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+/* .cm-stack (tokens.css, loaded later) sets align-items: flex-start, which
+   would shrink every card to its content: the extra class wins on specificity. */
+.cm-stack.cm-llm-section {
+  align-items: stretch;
+  width: 100%;
+  margin-top: var(--cm-space-4);
+}
+
 @media (max-width: 1000px) {
+  .cm-kpi-row-5 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .cm-kpi-row,
   .cm-kpi-row-6 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -25,6 +40,7 @@
 }
 
 @media (max-width: 640px) {
+  .cm-kpi-row-5,
   .cm-kpi-row,
   .cm-kpi-row-6 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -385,4 +401,9 @@
 
 .cm-section-head .cm-card-title {
   text-align: left;
+}
+
+/* Six numeric columns do not fit half the page: stack the two usage tables. */
+.cm-llm-section .cm-top-grid {
+  grid-template-columns: minmax(0, 1fr);
 }

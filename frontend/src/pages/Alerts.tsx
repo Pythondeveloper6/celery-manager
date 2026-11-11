@@ -54,6 +54,7 @@ const KIND_LABEL: Record<RuleKind, string> = {
   queue_wait: "Queue wait time",
   queue_growing: "Queue growing",
   rabbitmq_alarm: "RabbitMQ alarm",
+  llm_cost: "LLM spend",
 };
 
 // About the one broker, not a named thing: no target field, the server pins it to "*".
@@ -80,6 +81,7 @@ const TARGET_LABEL: Record<RuleKind, string> = {
   queue_wait: "Queue name",
   queue_growing: "Queue name",
   rabbitmq_alarm: "RabbitMQ node",
+  llm_cost: "Task name",
 };
 
 const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
@@ -103,6 +105,7 @@ const TARGET_PLACEHOLDER: Record<RuleKind, string> = {
   queue_wait: "e.g. emails",
   queue_growing: "e.g. celery",
   rabbitmq_alarm: "* or e.g. rabbit@node-1",
+  llm_cost: "e.g. reports.*",
 };
 
 // Per kind, the threshold fields in the order shown. Mirrors RULE_PARAMS in
@@ -155,6 +158,10 @@ const PARAM_FIELDS: Record<
   ],
   // RabbitMQ: nothing to tune; fires while a node reports a memory or disk alarm.
   rabbitmq_alarm: [],
+  llm_cost: [
+    { key: "usd", label: "Spend (USD)", hint: "Fire when a task's LLM spend within the window reaches this amount.", fallback: 10, min: 0.01, max: 1000000 },
+    { key: "window_minutes", label: "Window (minutes)", hint: "LLM calls made within this many minutes count.", fallback: 60, min: 1, max: 10080 },
+  ],
 };
 
 const CHANNEL_LABEL: Record<ChannelKind, string> = { slack: "Slack", webhook: "Webhook", email: "Email", teams: "Microsoft Teams", pagerduty: "PagerDuty" };
@@ -182,6 +189,8 @@ function describeCondition(rule: AlertRule): string {
       return `p${p.quantile} queue wait of ${p.seconds}s or more over ${p.window_minutes} min (at least ${p.min_runs} runs)`;
     case "queue_growing":
       return `Depth up by ${p.min_increase} or more over ${p.minutes} min, without draining`;
+    case "llm_cost":
+      return `LLM spend of $${p.usd} or more within ${p.window_minutes} min`;
     case "rabbitmq_alarm":
       return "A RabbitMQ node reports a memory or disk alarm";
     default:

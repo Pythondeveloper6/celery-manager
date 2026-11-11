@@ -12,7 +12,7 @@ The dashboard continues to use the existing paths.
 Within v1, integrations should tolerate additional response fields and new
 status values. Breaking changes to documented request/response meanings require
 a new API namespace and a migration notice in the changelog; introducing v1
-does not remove the legacy namespace. This is an alpha release: perform an
+does not remove the legacy namespace. This is a beta release: perform an
 integration trial against your application's authentication and mounting setup.
 A generated language-specific SDK is not shipped. Export the document without
 a deployment and generate a client from it:

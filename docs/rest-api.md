@@ -596,6 +596,15 @@ See [Insights](insights.md) for definitions.
 | `GET` | `/api/analytics/failures` | required | Query `range`, optional `task_name`. Returns `groups[]` sorted by `count`: `signature`, `exception_type`, `message` (masked), `frame`, `example`, `count`, `task_names`, `first_seen`, `last_seen`, `example_task_ids`, `task_ids` (at most 100, newest first; feed to `retry-bulk`) and `task_ids_truncated`. |
 | `GET` | `/api/analytics/tasks/{task_name}` | required | Query `range` (default `30d`). Returns `totals`, `runtime` (`p50`, `p95`, `max`), `wait` (`{"runs", "p50", "p95", "max"}` queue wait of the runs that started in the range, or `null`), `last_success_at`, `last_failure_at`, `recent_runs` (10, list shape) and `top_errors` (5 failure groups). `404` if the task has no runs. |
 
+## LLM usage
+
+Calls recorded by [`record_llm_usage`](llm-usage.md). Both require a session.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| `GET` | `/api/llm/usage` | required | Query `range` (`1h`, `24h`, `7d`, `30d`; default `24h`), optional `task_name`. Returns `totals` (`calls`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `tool_calls`, `cost_usd` (`null` when no call has a price), `avg_duration_ms`, `errors`, `unpriced_calls`), `by_model[]`, `by_task[]` (top 20 each), `series[]` (`at`, `calls`, `input_tokens`, `output_tokens`, `cost_usd`) and `truncated`. |
+| `GET` | `/api/llm/runs/{task_id}` | required | `calls[]` (`model`, `provider`, token counts, `tool_calls`, `cost_usd`, `duration_ms`, `status`, `created_at`) and `totals`. An unknown run returns an empty list. |
+
 ## Workers
 
 Live worker state and remote control over Celery's broadcast API. Nothing

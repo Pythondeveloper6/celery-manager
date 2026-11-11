@@ -19,6 +19,9 @@ Every process must build the same `CeleryManagerConfig` (same `db_url`, same
 
 A complete Compose file with all of these, PostgreSQL and Redis is in
 [`examples/docker/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/docker).
+To run every process on one machine with a single command (no Docker
+Compose, just a Redis), see
+[`examples/full_stack/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/full_stack).
 
 ## Checklist
 

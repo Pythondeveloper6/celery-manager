@@ -44,6 +44,8 @@ curl -X POST localhost:8000/welcome/me@example.com
 curl -X POST localhost:8000/import/60          # watch the progress bar
 ```
 
+Port 8000 busy? Pass another `--port` and use it in the URLs above.
+
 Notes:
 
 - `CELERY_MANAGER_COOKIE_SECURE` defaults to `0` in this demo because it is

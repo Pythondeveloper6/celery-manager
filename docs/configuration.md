@@ -367,6 +367,8 @@ through its existing persistent rules; it is not replaced by a new config flag.
 | `login_backoff_threshold` | `5` | Positive integer: initially admitted local login attempts before exponential backoff begins. Shared account and direct-peer budgets apply. |
 | `login_backoff_max_seconds` | `300` | Positive integer: maximum local login backoff delay. |
 | `login_backoff_reset_seconds` | `3600` | Positive integer: inactivity period after which a login budget resets. |
+| `llm_call_retention_days` | `90` | Integer 0–3650: keep [LLM usage](llm-usage.md) rows this many days; `0` keeps them. |
+| `llm_prices` | `{}` | Mapping of model-id prefix to `{"input": ..., "output": ..., "cache_read": ..., "cache_write": ...}` in USD per million tokens. Used to compute `cost_usd` when a call does not report one. `input` and `output` are required. |
 | `worker_heartbeat_retention_days` | `7` | Integer 0–3650: retain minute-bucket worker observations for this many days. `0` disables collection and automatic history pruning, preserving existing samples and current WorkerState updates. |
 
 The heartbeat history option supplements task-run retention rules; it does not
