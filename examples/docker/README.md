@@ -15,6 +15,9 @@ docker compose -f examples/docker/compose.yaml run --rm migrate \
 open http://localhost:8000/
 ```
 
+Port 8000 busy? Set `DASHBOARD_PORT=8731` before `docker compose` and open
+that port instead.
+
 `project.py` is the whole application: the Celery app (with the settings
 `celery-manager doctor` recommends), two tracked periodic tasks, and the
 `CeleryManagerConfig` every process shares. The image installs the

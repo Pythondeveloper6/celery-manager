@@ -11,6 +11,7 @@ import {
 } from "../api/schedules";
 import { formatPausedBy } from "../lib/pausedBy";
 import { IconX } from "./icons";
+import { CRON_PRESETS, CUSTOM_PRESET, presetFields, presetIdFor } from "../lib/cronPresets";
 
 // "Edit schedule": change a schedule's crontab or interval, with the next
 // five runs previewed live (the server computes them, with Celery's own
@@ -259,6 +260,27 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
           </div>
 
           {kind === "crontab" ? (
+            <>
+            <div className="cm-field">
+              <label htmlFor={`${uid}-preset`}>Preset</label>
+              <select
+                id={`${uid}-preset`}
+                className="cm-select"
+                value={presetIdFor(cron)}
+                onChange={(e) => {
+                  const next = presetFields(e.target.value);
+                  if (next) setCron(next);
+                }}
+              >
+                <option value={CUSTOM_PRESET}>Custom (edit the fields below)</option>
+                {CRON_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="cm-field-hint">Pick a common schedule, or edit the fields below.</p>
+            </div>
             <fieldset className="cm-schedule-cron">
               <legend className="cm-visually-hidden">Crontab fields</legend>
               {CRON_FIELDS.map((f) => (
@@ -277,6 +299,7 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
                 </div>
               ))}
             </fieldset>
+            </>
           ) : (
             <div className="cm-sheet-row">
               <div className="cm-field">

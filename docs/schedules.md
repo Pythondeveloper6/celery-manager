@@ -86,7 +86,9 @@ list runs that never happen. While it's off:
 
 Open a schedule and click **Edit schedule** (operators and admins only).
 
-- **On a crontab**: minute, hour, day of month, month, day of week, in
+- **On a crontab**: pick a **Preset** (every 5 minutes, hourly, weekdays at
+  09:00, and so on) or edit the fields yourself: minute, hour, day of month,
+  month, day of week, in
   Celery's syntax (`*`, `0`, `*/15`, `1-5`, `mon-fri`). Fields are checked
   by Celery's own `crontab(...)` parser. A crontab that can never fire
   (31 February) is refused. Times are in the Celery app's `timezone`, like

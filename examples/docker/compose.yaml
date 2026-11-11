@@ -58,7 +58,7 @@ services:
       <<: *env
       CM_ROLE: web
     command: ["uvicorn", "project:dashboard", "--host", "0.0.0.0", "--port", "8000"]
-    ports: ["127.0.0.1:8000:8000"]
+    ports: ["127.0.0.1:${DASHBOARD_PORT:-8000}:8000"]
 
   worker:
     <<: *app
