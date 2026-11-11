@@ -115,4 +115,5 @@ testpaths = ["tests"]
 markers = [
     "unit: no external services (applied to everything outside tests/integration)",
     "integration: may need live databases or brokers selected by CM_* variables",
+    "e2e: real worker, beat, events listener and dashboard processes (needs Docker or CM_E2E_REDIS_URL)",
 ]

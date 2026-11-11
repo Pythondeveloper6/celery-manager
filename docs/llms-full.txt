@@ -1266,6 +1266,9 @@ Every process must build the same `CeleryManagerConfig` (same `db_url`, same
 
 A complete Compose file with all of these, PostgreSQL and Redis is in
 [`examples/docker/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/docker).
+To run every process on one machine with a single command (no Docker
+Compose, just a Redis), see
+[`examples/full_stack/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/full_stack).
 
 ## Checklist
 
@@ -8132,6 +8135,26 @@ loaded" when the default OpenSSL is newer than 3.x; point it at 3.x with
 There is no `[tool.ruff]` section in `pyproject.toml`, so ruff runs with
 whatever defaults (or user-level config) are in play; pin one there if you
 want reproducible lint results across machines.
+
+## End-to-end test
+
+`tests/e2e/` launches the shipped example ([`examples/full_stack/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/full_stack))
+as real processes: migrate, a worker, beat with the database scheduler, the
+events listener and the dashboard, against a real Redis and a SQLite file. It
+then drives the REST API, the MCP server and the CLI over real connections:
+the SPA is served, tasks succeed and fail, retries link back, progress and LLM
+usage appear, beat fires and pauses a schedule, workers and queues are listed,
+alert rules can be created and deleted, and `doctor`, `openapi`, `prune` and
+`migrate --check` work.
+
+```bash
+pytest tests/e2e -m e2e -v     # about 20 seconds
+```
+
+It needs Docker (it starts a throwaway `redis:7-alpine` container) or an
+existing Redis in `CM_E2E_REDIS_URL`. `CM_E2E_DB_URL` selects another database
+than the default SQLite file. It is not part of `pytest -m unit`. CI runs it in
+the `e2e` job and fails if any test was skipped.
 
 ## Documentation
 

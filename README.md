@@ -175,7 +175,8 @@ celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
 
 No broker, worker or database server needed. To wire it into your own app, see
 [Install](#install) and [Wire it up](#wire-it-up) below, or run an example in
-[`examples/`](examples/) (FastAPI, Flask, Django, Docker Compose).
+[`examples/`](examples/) (FastAPI, Flask, Django, Docker Compose, and
+[`examples/full_stack/`](examples/full_stack/), every process on one machine with one command).
 
 ## Install
 
