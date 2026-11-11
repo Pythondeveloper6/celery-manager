@@ -73,7 +73,7 @@ def __dir__():
     return sorted(set(globals()) | set(_LAZY))
 
 
-__version__ = "0.3.0a1"
+__version__ = "0.3.0b1"
 
 __all__ = [
     "CeleryManagerConfig",

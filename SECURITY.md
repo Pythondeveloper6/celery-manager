@@ -1,6 +1,6 @@
 # Security Policy
 
-celery-manager is alpha software, developed in the open at
+celery-manager is beta software, developed in the open at
 https://github.com/Pythondeveloper6/celery-manager.
 
 ## Supported versions

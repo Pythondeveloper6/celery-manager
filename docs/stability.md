@@ -1,6 +1,6 @@
 # Stability and upgrade policy
 
-celery-manager is still released as alpha (`0.x` with `aN` suffixes), but the
+celery-manager is released as beta (`0.x` with `bN` suffixes), but the
 surfaces below are now treated as stable. A change that breaks one of them
 needs a deprecation period, a CHANGELOG entry under **Breaking**, and a
 migration note. Anything not listed may still change between minor releases.
@@ -57,7 +57,7 @@ replacement.
 
 ## Towards 1.0
 
-The `Development Status` classifier moves to Beta with the first beta release
-and to Production/Stable at 1.0. The remaining blockers for 1.0 are tracked in
+The `Development Status` classifier moved to Beta with `0.3.0b1` and moves
+to Production/Stable at 1.0. The remaining blockers for 1.0 are tracked in
 the [roadmap](roadmap.md): an independent security review, overhead numbers
 from a production deployment, and a production trial.

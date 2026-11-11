@@ -1,4 +1,4 @@
-# 0.3.0a1: real-codebase operations
+# 0.3.0b1: real-codebase operations
 
 This release focuses on SQL schedule authority, exclusion locks, individual
 failure handling and operational history: the pieces that matter most when an

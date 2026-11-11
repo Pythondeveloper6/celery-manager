@@ -22,7 +22,7 @@ quickstart per framework.
 
 ## Install
 
-celery-manager is an alpha, so pass `--pre` to pip:
+celery-manager is in beta (a pre-release on PyPI), so pass `--pre` to pip:
 
 ```bash
 pip install --pre celery-manager

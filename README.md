@@ -15,7 +15,7 @@ Django, Flask, or FastAPI project that already uses Celery.
 [![CI](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml)
 ![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Status: alpha](https://img.shields.io/badge/status-alpha-orange)
+![Status: beta](https://img.shields.io/badge/status-beta-yellow)
 
 **[Documentation](https://pythondeveloper6.github.io/celery-manager/)** · [Quickstart](https://pythondeveloper6.github.io/celery-manager/quickstart/) · [PyPI](https://pypi.org/project/celery-manager/)
 
@@ -184,7 +184,7 @@ celery-manager demo     # seeded SQLite dashboard on http://127.0.0.1:8765/
 See [Is celery-manager the right tool?](docs/choosing.md) for how it compares
 with Flower, Sentry Crons and Grafana, and a 10-line quickstart per framework.
 
-celery-manager is an alpha, so pass `--pre` to pip:
+celery-manager is in beta (a pre-release on PyPI), so pass `--pre` to pip:
 
 ```bash
 pip install --pre celery-manager
@@ -319,7 +319,7 @@ threat model and how to report a vulnerability privately.
 
 ## Limits
 
-- Alpha software: APIs may change before 1.0.
+- Beta software: the surfaces in the [stability policy](docs/stability.md) are covered by a deprecation promise; everything else may change before 1.0.
 - Celery 5.x only; other task runners are observed, not controlled
   ([details](docs/other-runners.md)).
 - Retry, revoke, purge and worker controls need a reachable broker and live workers.
@@ -349,7 +349,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is an alpha, **0.3.0a1**. APIs may still change before 1.0; see the
+This is a beta, **0.3.0b1**. APIs outside the stability policy may still change before 1.0; see the
 [CHANGELOG](CHANGELOG.md) for release history and
 [docs/roadmap.md](docs/roadmap.md) for planned follow-ups.
 

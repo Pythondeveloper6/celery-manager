@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "celery-manager"
-version = "0.3.0a1"
+version = "0.3.0b1"
 description = "A dashboard and control API for Celery background tasks."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,7 +13,7 @@ keywords = ["celery", "dashboard", "monitoring", "task-queue", "scheduler"]
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Web Environment",
     "Framework :: Celery",
     "Framework :: FastAPI",

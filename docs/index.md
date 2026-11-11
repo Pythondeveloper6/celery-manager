@@ -25,11 +25,11 @@ uses Celery.</p>
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-light.png){ .cm-shot .cm-only-light }
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-dark.png){ .cm-shot .cm-only-dark }
 
-!!! warning "Alpha — `0.1.0a5`"
+!!! warning "Beta — `0.3.0b1`"
 
-    Working and tested, but the API may still move, and there is no role system yet
-    (any signed-in user can do anything). Use it on an internal tool and pin the
-    exact version. The [changelog](changelog.md) records what breaks between
+    Working and tested, with roles, audit logging and a documented
+    [stability policy](stability.md). Anything outside that policy may still
+    move before 1.0, so pin the exact version. The [changelog](changelog.md) records what breaks between
     development builds.
 
 ## Sixty seconds

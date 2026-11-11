@@ -6,7 +6,17 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0b1] — 2026-11-11
+
+First beta. The `Development Status` classifier moves from Alpha to Beta;
+the 0.3.0a1 candidate was never published, so its notes below are part of
+this release.
+
 ### Added
+- The schedule editor has a **Preset** menu (every minute, every 5/15
+  minutes, hourly, daily, weekdays, weekly, monthly) that fills the crontab
+  fields. The fields stay editable and show "Custom" when they match no
+  preset; the next-five-runs preview is unchanged.
 - The **Run now** dialog renders a form from the task's `args_schemas`
   model (scalars and enums), and `GET /api/tasks/registered` returns the
   model's JSON Schema as `args_schema`. The server still validates on start.

@@ -1,6 +1,6 @@
 # Upgrading
 
-celery-manager is an alpha, so pass `--pre` to pip and read the
+celery-manager is in beta (a pre-release on PyPI), so pass `--pre` to pip and read the
 [Changelog](changelog.md) before moving between versions. APIs may still change
 before 1.0; the [stability policy](stability.md) says what is covered.
 

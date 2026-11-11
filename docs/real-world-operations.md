@@ -1,6 +1,6 @@
 # Observe real application work
 
-This guide covers ten operating capabilities added to the same 0.3.0a1 release:
+This guide covers ten operating capabilities added to the same 0.3.0b1 release:
 non-Celery observations, tenant isolation, durable lifecycle diagnostics, custom
 probes/outbox measurements, independent scheduler expectations, correlation,
 duplicate visibility, preflight, operational annotations and sensitive-action
