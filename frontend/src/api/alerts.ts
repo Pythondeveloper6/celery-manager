@@ -12,6 +12,7 @@ export type RuleKind =
   | "queue_growing"
   // RabbitMQ
   | "rabbitmq_alarm"
+  | "llm_cost"
   | "task_failed"
   | "consecutive_failures"
   | "run_stuck"

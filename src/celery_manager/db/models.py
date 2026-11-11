@@ -392,5 +392,6 @@ from celery_manager.db.health_data import (  # noqa: F401
     HealthObservation,
     SchedulerInstance,
 )
+from celery_manager.db.llm import LlmCall  # noqa: F401
 from celery_manager.db.operations import OperationAnnotation  # noqa: F401
 from celery_manager.db.worker_history import WorkerHeartbeatSample  # noqa: F401

@@ -1,3 +1,4 @@
+import { LlmRunCard } from "../components/LlmRunCard";
 import { OperationalContext } from "../components/OperationalContext";
 import { RelatedRuns } from "../components/RelatedRuns";
 import "../styles/task-detail.css";
@@ -719,6 +720,8 @@ export function TaskDetail() {
 
               {/* Renders nothing unless this run is part of a chain, group or chord. */}
               <WorkflowCard taskId={task.task_id} status={task.status} />
+
+              <LlmRunCard taskId={task.task_id} />
 
               <section className="cm-card cm-detail-section" aria-labelledby="cm-result-heading">
                 <h2 className="cm-card-title" id="cm-result-heading">Result</h2>

@@ -43,6 +43,7 @@ _LAZY = {
     "RunObserver": ("celery_manager.observation", "RunObserver"),
     "current_run": ("celery_manager.observation", "current_run"),
     "report_progress": ("celery_manager.progress", "report_progress"),
+    "record_llm_usage": ("celery_manager.llm", "record_llm_usage"),
     "install_publish_hook": ("celery_manager.publish", "install_publish_hook"),
     "setup": ("celery_manager.runtime", "setup"),
 }
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from celery_manager.config import CeleryManagerConfig
     from celery_manager.decorator import track
     from celery_manager.links import task_url
+    from celery_manager.llm import record_llm_usage
     from celery_manager.observation import RunObserver, current_run
     from celery_manager.progress import report_progress
     from celery_manager.publish import install_publish_hook
@@ -82,6 +84,7 @@ __all__ = [
     "control",
     "current_run",
     "install_publish_hook",
+    "record_llm_usage",
     "report_progress",
     "setup",
     "task_url",

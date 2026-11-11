@@ -9,6 +9,8 @@ from sqlalchemy.orm import load_only
 
 from celery_manager.alerts.host_health import PARAMS as HOST_HEALTH_PARAMS
 from celery_manager.alerts.host_health import check as check_host_health
+from celery_manager.alerts.llm import PARAMS as LLM_PARAMS
+from celery_manager.alerts.llm import check as check_llm
 from celery_manager.control.health import aware, beat_health
 from celery_manager.db.models import TaskRun, WorkerState
 
@@ -23,6 +25,7 @@ PARAMS = {
     "daily_digest": {"hour_utc": (int, 8, 0, 23)},
     "run_late": {"seconds": (float, 300, 1, 86400), "window_minutes": (int, 60, 1, 10080)},
     **HOST_HEALTH_PARAMS,
+    **LLM_PARAMS,
 }
 
 
@@ -83,6 +86,8 @@ def _p95(values):
 def check(rule, params, probe):
     if rule.kind in HOST_HEALTH_PARAMS:
         return check_host_health(rule, params, probe)
+    if rule.kind in LLM_PARAMS:
+        return check_llm(rule, params, probe)
     unavailable, observation = _types()
     result = observation()
     if rule.kind == "beat_stale":

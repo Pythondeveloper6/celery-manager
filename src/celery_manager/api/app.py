@@ -276,6 +276,8 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(metrics_routes.router)
     app.include_router(user_routes.router)
     app.include_router(analytics_routes.router)
+    from celery_manager.api.routes.llm import router as llm_router
+    app.include_router(llm_router)
     app.include_router(worker_routes.router)
     app.include_router(delayed_routes.router)
     app.include_router(unacked_routes.router)

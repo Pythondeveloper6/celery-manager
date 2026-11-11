@@ -346,6 +346,9 @@ def run_prune(
     config = session.info.get("cm_config")
     heartbeat_days = config.worker_heartbeat_retention_days if config else 7
     heartbeats_deleted = prune_heartbeats(session, heartbeat_days, now=now, dry_run=dry_run)
+    from celery_manager.control.llm import prune_llm_calls
+    llm_days = config.llm_call_retention_days if config else 90
+    llm_deleted = prune_llm_calls(session, llm_days, now=now, dry_run=dry_run)
     by_task = prune_runs(session, now=now, batch_size=batch_size, dry_run=dry_run, rules=rules)
     audit_deleted = prune_audit_log(session, now=now, batch_size=batch_size, dry_run=dry_run, rules=rules)
     samples_deleted = prune_samples(
@@ -358,6 +361,7 @@ def run_prune(
         "audit_deleted": audit_deleted,
         "samples_deleted": samples_deleted,
         "heartbeats_deleted": heartbeats_deleted,
+        "llm_calls_deleted": llm_deleted,
         "by_task": by_task,
     }
     if dry_run:

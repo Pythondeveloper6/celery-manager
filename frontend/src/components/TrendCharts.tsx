@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Bucket, Overview } from "../api/analytics";
+import type { Bucket, Overview, RangeKey } from "../api/analytics";
+import type { LlmSeriesPoint } from "../api/llm";
 import type { DepthPoint } from "../api/queues";
 import { formatBucket, niceMax } from "../lib/insights";
+import { formatCost, formatTokens } from "../lib/llm";
 import { statusLabel } from "../lib/status";
 import { formatDuration } from "../lib/taskProgress";
 
@@ -379,6 +381,112 @@ export function DepthChart({ points, hours, queue }: { points: DepthPoint[]; hou
                 <tr key={p.at}>
                   <th scope="row">{formatDepthTime(p.at, hours)}</th>
                   <td>{p.depth.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </figure>
+  );
+}
+
+/** LLM cost per interval (one line). Intervals without any priced call break
+ *  the line rather than dipping to zero. Same frame, grid and table
+ *  alternative as the other charts. */
+export function LlmCostChart({ points, range }: { points: LlmSeriesPoint[]; range: RangeKey }) {
+  const [ref, width] = useWidth();
+  const [hover, setHover] = useState<number | null>(null);
+  const maxV = Math.max(0, ...points.map((p) => p.cost_usd ?? 0));
+  const yMax = maxV > 0 ? niceMax(maxV) : 1;
+  const plotW = width - MARGIN.left - MARGIN.right;
+  const plotH = HEIGHT - MARGIN.top - MARGIN.bottom;
+  const x = (i: number) => MARGIN.left + (points.length === 1 ? plotW / 2 : (i / (points.length - 1)) * plotW);
+  const y = (v: number) => MARGIN.top + plotH - (v / yMax) * plotH;
+  let d = "";
+  let pen = false;
+  points.forEach((p, i) => {
+    if (p.cost_usd === null) {
+      pen = false;
+      return;
+    }
+    d += `${pen ? "L" : "M"}${x(i).toFixed(1)} ${y(p.cost_usd).toFixed(1)}`;
+    pen = true;
+  });
+  const priced = points.filter((p) => p.cost_usd !== null);
+  const summary =
+    priced.length === 0
+      ? "No priced LLM calls in this period."
+      : `Highest cost in one interval: ${formatCost(maxV)} across ${points.length} intervals.`;
+  const hovered = hover !== null ? points[hover] : null;
+
+  return (
+    <figure className="cm-chart">
+      <figcaption className="cm-chart-title">LLM cost over time</figcaption>
+      <p className="cm-chart-readout" aria-hidden="true">
+        {hovered ? `${formatBucket(hovered.at, range)}: ${formatCost(hovered.cost_usd)}, ${hovered.calls.toLocaleString()} calls` : "Hover the chart for details."}
+      </p>
+      <div ref={ref} className="cm-chart-frame">
+        <svg
+          width={width}
+          height={HEIGHT}
+          role="img"
+          aria-label={`Line chart of LLM cost. ${summary}`}
+          onPointerLeave={() => setHover(null)}
+          onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const i = Math.round(((e.clientX - rect.left - MARGIN.left) / plotW) * (points.length - 1));
+            setHover(points.length > 0 && i >= 0 && i < points.length ? i : null);
+          }}
+        >
+          {[0, 0.5, 1].map((f) => (
+            <g key={f}>
+              <line className="cm-ch-grid" x1={MARGIN.left} x2={width - MARGIN.right} y1={y(yMax * f)} y2={y(yMax * f)} />
+              <text className="cm-ch-tick" x={MARGIN.left - 6} y={y(yMax * f)} textAnchor="end" dominantBaseline="middle">
+                {formatCost(yMax * f)}
+              </text>
+            </g>
+          ))}
+          {hover !== null && <line className="cm-ch-cursor" x1={x(hover)} x2={x(hover)} y1={MARGIN.top} y2={MARGIN.top + plotH} />}
+          <path className="cm-ch-line cm-ch-line-p95" d={d} />
+          {points.length <= 40 &&
+            points.map((p, i) => (p.cost_usd === null ? null : <circle key={p.at} className="cm-ch-dot" cx={x(i)} cy={y(p.cost_usd)} r={2.5} />))}
+          {points.length > 0 &&
+            xTickIndexes(points.length, width).map((i) => (
+              <text
+                key={i}
+                className="cm-ch-tick"
+                x={x(i)}
+                y={HEIGHT - 6}
+                textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}
+              >
+                {formatBucket(points[i].at, range)}
+              </text>
+            ))}
+        </svg>
+      </div>
+      <p className="cm-chart-summary">{summary}</p>
+      <details className="cm-chart-table">
+        <summary>View LLM cost as a table</summary>
+        <div className="cm-table-scroll">
+          <table className="cm-table">
+            <thead>
+              <tr>
+                <th scope="col">Interval start</th>
+                <th scope="col">Calls</th>
+                <th scope="col">Tokens in</th>
+                <th scope="col">Tokens out</th>
+                <th scope="col">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {points.map((p) => (
+                <tr key={p.at}>
+                  <th scope="row">{formatBucket(p.at, range)}</th>
+                  <td>{p.calls.toLocaleString()}</td>
+                  <td>{formatTokens(p.input_tokens)}</td>
+                  <td>{formatTokens(p.output_tokens)}</td>
+                  <td>{formatCost(p.cost_usd)}</td>
                 </tr>
               ))}
             </tbody>

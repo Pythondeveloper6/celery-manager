@@ -13,6 +13,23 @@ the 0.3.0a1 candidate was never published, so its notes below are part of
 this release.
 
 ### Added
+- **Model Context Protocol server**: `celery-manager mcp` serves 33 tools over
+  stdio to AI agents, with no extra dependency. Read-only by default
+  (`--role viewer`); `operator` adds retry, cancel, start, pause and rate
+  limits, `admin` adds queue purge. Tools call the dashboard's own routes
+  in-process as `mcp:<agent-name>`, so roles, safeguards and the audit log
+  apply, bulk tools default to a dry run, and unlisted tools cannot be called.
+  See [Building with AI agents](docs/agents.md).
+- **LLM-usage tracking**: `record_llm_usage(response=...)` and
+  `llm_call(...)` record model, tokens, cached tokens, tool calls, cost and
+  latency per call from inside a task (prompts and completions are never
+  stored). Migration `0021` adds `llm_calls`; `llm_prices` and
+  `llm_call_retention_days` are new settings. Shown on Insights and the run
+  page, served by `GET /api/llm/usage` and `GET /api/llm/runs/{task_id}`, and
+  alertable with the new `llm_cost` rule. See [LLM usage](docs/llm-usage.md).
+- **Agent-readable docs**: `docs/llms.txt`, a generated `docs/llms-full.txt`
+  (`scripts/build_llms_txt.py`, checked by a test), and
+  `celery-manager doctor --json`.
 - The schedule editor has a **Preset** menu (every minute, every 5/15
   minutes, hourly, daily, weekdays, weekly, monthly) that fills the crontab
   fields. The fields stay editable and show "Custom" when they match no

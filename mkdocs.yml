@@ -134,6 +134,8 @@ nav:
       - Metrics: metrics.md
       - Alerts: alerts.md
       - Roles: roles.md
+      - LLM usage: llm-usage.md
+      - Building with AI agents: agents.md
   - SQL schedules: sql-schedules.md
   - Singleton tasks: singleton.md
   - Reference:

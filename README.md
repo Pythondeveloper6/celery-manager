@@ -142,6 +142,11 @@ OIDC, dispatch policies, bounded logs/results and storage isolation. The
   time; it resumes from the current time, with no catch-up.
 - **Insights** — runs, success rate and p50/p95 runtime over 1h–30d, a page
   per task, and failures grouped by exception signature with retry-all.
+- **Built for agents** — a [Model Context Protocol server](docs/agents.md)
+  (`celery-manager mcp`, read-only by default, roles and audit apply),
+  [`llms.txt`](docs/llms.txt) for coding agents, and
+  [LLM-usage tracking](docs/llm-usage.md) (model, tokens, cost per task, with a
+  spend alert) for the agent workloads your tasks run.
 - **Workers and queues** — live worker state, pool grow/shrink, queue
   consume/cancel, shutdown, runtime rate limits, broker queue depth and purge.
 - **Shareable views** — filters live in the URL, saved views, and CSV/JSON
@@ -288,6 +293,8 @@ Full documentation is at **<https://pythondeveloper6.github.io/celery-manager/>*
 - [REST API](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/rest-api.md) — every endpoint and payload.
 - [Dashboard](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/dashboard.md) — the screens and what they do.
 - [Insights](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/insights.md) — trends, per-task pages and grouped failures.
+- [Building with AI agents](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/agents.md) — the MCP server, roles and `llms.txt`.
+- [LLM usage](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/llm-usage.md) — recording model, tokens and cost from tasks.
 - [Workers and rate limits](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/workers.md) — live worker state and controls.
 - [Queues, purge and bulk cancel](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/queues.md) — broker depth and clean-up.
 - [Deployment](docs/deployment.md) and [Upgrading](docs/upgrading.md) — process layout, checklist and upgrade steps.
