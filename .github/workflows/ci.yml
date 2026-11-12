@@ -244,9 +244,11 @@ jobs:
         if: matrix.port == 1433
         run: |
           curl -sSL -O https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb
-          sudo dpkg -i packages-microsoft-prod.deb
+          # The runner image may already ship this package; never stop at the
+          # conffile prompt (no stdin in CI), take the maintainer's files.
+          sudo DEBIAN_FRONTEND=noninteractive dpkg --force-confnew -i packages-microsoft-prod.deb
           sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+          sudo DEBIAN_FRONTEND=noninteractive ACCEPT_EULA=Y apt-get install -y msodbcsql18
       - run: pip install -e '.[dev,sqlalchemy-beat]' 'psycopg[binary]' pymysql pyodbc
       - run: pytest -q tests/integration/test_storage_backends.py tests/integration/test_sql_schedule_storage.py tests/integration/test_release_upgrade.py tests/integration/test_native_operability.py --junitxml=/tmp/storage.xml
       - run: python -m tests.release_gate /tmp/storage.xml

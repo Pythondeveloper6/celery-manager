@@ -489,7 +489,10 @@ def test_a_stamping_failure_still_sends_the_task(env):
     ):
         _beat(app).apply_async(entry, producer=None, advance=False)
     assert send.called
-    assert "headers" not in send.call_args.kwargs
+    # Celery 5.7 itself marks beat sends with a `celery_beat_task` header;
+    # what must be absent is anything of ours.
+    sent = send.call_args.kwargs.get("headers") or {}
+    assert not [key for key in sent if key.startswith("cm_")]
 
 
 def test_mixin_works_in_front_of_any_scheduler_class(env):

@@ -144,6 +144,9 @@ class FakeChannel:
     visibility_timeout = 3600
     global_keyprefix = ""
     ack_emulation = True
+    # kombu 5.7's _do_restore_message re-raises connection errors, so the
+    # channel it runs on must carry the tuple a real channel gets.
+    connection_errors = (ConnectionError,)
     priority_steps = PRIORITY_STEPS
     sep = RedisChannel.sep
     max_priority = RedisChannel.max_priority

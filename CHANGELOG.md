@@ -138,6 +138,9 @@ this release.
   route list.
 
 ### Fixed
+- Celery 5.7 compatibility: an impossible crontab (31 February) is refused
+  with the same "never fires" sentence as on earlier versions, although 5.7
+  now rejects it while building the schedule.
 - `celery-manager demo` registered its sample tasks from lambdas, which
   Celery cannot build a signature for (`SyntaxError` in
   `celery/utils/functional.py` when a task was finalized). They are now a named

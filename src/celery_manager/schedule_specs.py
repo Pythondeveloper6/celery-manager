@@ -220,6 +220,9 @@ def describe_spec(spec: dict) -> str:
     return f"Cron {expression}"
 
 
+_NEVER_FIRES = "This crontab never fires: no date matches it (for example the 31st of February)."
+
+
 def _crontab_message(kwargs: dict, exc: Exception) -> str:
     """Name the field that failed. Celery's own message ("Invalid weekday
     literal 'abc'") does not say which field it was reading, and its
@@ -230,6 +233,11 @@ def _crontab_message(kwargs: dict, exc: Exception) -> str:
         except Exception as field_exc:  # noqa: BLE001
             detail = str(field_exc).rstrip(".") or "not a valid value"
             return f"{_FIELD_LABELS[field]} '{kwargs[field]}' is not valid: {detail}."
+    # Celery 5.7 refuses an impossible date pair (day 31 of February) when
+    # the crontab is built; earlier versions only fail on the first
+    # next-run lookup, which validate_spec reports with the same sentence.
+    if "never occurs" in str(exc):
+        return _NEVER_FIRES
     return f"Not a valid crontab: {exc}."
 
 
@@ -246,9 +254,7 @@ def validate_spec(data, app=None, now: datetime | None = None):
         try:
             next_occurrence_after(celery_schedule, now or datetime.now(timezone.utc))
         except Exception as exc:  # RuntimeError("unable to rollover ...")
-            raise ScheduleSpecError(
-                "This crontab never fires: no date matches it (for example the 31st of February)."
-            ) from exc
+            raise ScheduleSpecError(_NEVER_FIRES) from exc
     return spec, celery_schedule
 
 
