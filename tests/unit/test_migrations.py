@@ -247,7 +247,10 @@ def test_auto_migrate_off_is_silent_when_current(tmp_path, caplog):
     init_db(_config(url)).dispose()
     with caplog.at_level(logging.WARNING, logger="celery_manager.db.session"):
         init_db(_config(url, auto_migrate=False))
-    assert caplog.text == ""
+    # Only this logger's silence is the contract. The root logger also carries
+    # asyncio's "Task was destroyed but it is pending" when the garbage
+    # collector reaps an ASGI task an earlier test in the same worker left behind.
+    assert [r for r in caplog.records if r.name.startswith("celery_manager")] == []
 
 
 # --- CLI ---------------------------------------------------------------------
