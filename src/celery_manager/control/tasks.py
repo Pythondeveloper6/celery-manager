@@ -10,7 +10,7 @@ from sqlalchemy import or_
 
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
-from celery_manager.db.runs import lock_task_run
+from celery_manager.db.runs import commit_with_deadlock_retry, lock_task_run
 
 # Maximum rows a list endpoint will hand back in one response, and the ceiling
 # each route clamps a caller-supplied `limit` to (`GET /api/tasks` and
@@ -464,22 +464,26 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     # more than we do; the seed values are create-only, so the dashboard has
     # something to show for the new run in the meantime without ever
     # restating `queued` over a run that has already started or finished.
-    new_run = lock_task_run(session, new_id, seed={
-        "task_name": run.task_name,
-        "status": "queued",
-        "args": json.dumps(final_args),
-        "kwargs": json.dumps(final_kwargs),
-        "initiator": getattr(principal, "subject", None) or getattr(username, "subject", None) or str(username),
-    })
-    if run_context is not None:
-        from celery_manager.run_context import merge_storage_context
-        merge_storage_context(new_run, run_context)
-    new_run.retried_from_id = task_id
+    def record_lineage():
+        new_run = lock_task_run(session, new_id, seed={
+            "task_name": run.task_name,
+            "status": "queued",
+            "args": json.dumps(final_args),
+            "kwargs": json.dumps(final_kwargs),
+            "initiator": getattr(principal, "subject", None) or getattr(username, "subject", None) or str(username),
+        })
+        if run_context is not None:
+            from celery_manager.run_context import merge_storage_context
+            merge_storage_context(new_run, run_context)
+        new_run.retried_from_id = task_id
 
     # record_audit commits, which flushes the row above with it — but commit
     # explicitly rather than relying on that, so the lineage is durable even
     # if auditing is ever made optional here the way it is in start_task.
-    session.commit()
+    # The task is already dispatched at this point, so a database deadlock
+    # (see `commit_with_deadlock_retry`) restarts only this write, never the
+    # dispatch.
+    commit_with_deadlock_retry(session, record_lineage)
     details: dict = {"new_task_id": new_id}
     if edited:
         # Record what was actually sent: an edited retry is a different call

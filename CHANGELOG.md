@@ -138,6 +138,16 @@ this release.
   route list.
 
 ### Fixed
+- MySQL/MariaDB: concurrent `task_runs` writers (the events listener, the
+  `@track` decorator and a retry) could be killed by InnoDB with error 1213
+  (deadlock) because every write bumps the indexed `updated_at`, losing an
+  event or a run's final state. These writes now restart the transaction on a
+  database-chosen deadlock (up to five attempts, jittered); a retry restarts
+  only its lineage write, never the dispatch.
+- Tenant-scoped dead letters: on SQLAlchemy 2.0.x (the only line that supports
+  Python 3.10) a retry made by another tenant could hide this tenant's failed
+  run, because the tenant criteria were not applied to the aliased retry-lineage
+  subquery. The subquery now states the tenant explicitly.
 - Celery 5.7 compatibility: an impossible crontab (31 February) is refused
   with the same "never fires" sentence as on earlier versions, although 5.7
   now rejects it while building the schedule.

@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from celery_manager.config import CeleryManagerConfig
-from celery_manager.db.runs import lock_task_run
+from celery_manager.db.runs import commit_with_deadlock_retry, lock_task_run
 
 _STATUS_BY_EVENT = {
     "task-sent": "queued",
@@ -309,9 +309,12 @@ class EventListener:
             state.event(event)
             with self._session_factory() as session:
                 from celery_manager.events.workers import record_worker_event
-                record_worker_event(session, event, retention_days=self._config.worker_heartbeat_retention_days)
-                upsert_task_run(session, event, self._config)
-                session.commit()
+
+                def write():
+                    record_worker_event(session, event, retention_days=self._config.worker_heartbeat_retention_days)
+                    upsert_task_run(session, event, self._config)
+
+                commit_with_deadlock_retry(session, write)
 
         thread = None
         if enable_events:

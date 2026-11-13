@@ -454,9 +454,13 @@ def _persist_run(task_id: str, create_defaults: dict | None = None, clear: tuple
     error is logged and dropped; the caller's control flow is unaffected.
     """
     try:
+        from celery_manager.db.runs import commit_with_deadlock_retry
+
         with _sessions()() as session:
-            _upsert_task_run(session, task_id, create_defaults=create_defaults, clear=clear, **fields)
-            session.commit()
+            commit_with_deadlock_retry(
+                session,
+                lambda: _upsert_task_run(session, task_id, create_defaults=create_defaults, clear=clear, **fields),
+            )
     except Exception:  # deliberate: storage must never affect the task's outcome
         logger.exception(
             "celery-manager: could not persist the task_runs row for %s; "
