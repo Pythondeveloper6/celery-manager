@@ -14,9 +14,12 @@ from celery_manager.db.models import FailureResolutionHistory, TaskRun
 
 
 @pytest.fixture
-def tenant_app():
+def tenant_app(tmp_path):
+    # A file database, not ":memory:": the in-memory form shares one connection
+    # across threads, and CPython 3.10's sqlite3 statement cache is not
+    # thread-safe (it raises KeyError under the concurrent-request test).
     app = Celery("tenants", broker="memory://")
-    config = CeleryManagerConfig(celery_app=app, db_url="sqlite:///:memory:", secret_key="tenant-test-key",
+    config = CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / 'tenants.db'}", secret_key="tenant-test-key",
                                 authenticate_request=lambda request: ExternalUser("admin", "admin", "same-user"),
                                 tenant_resolver=lambda request, principal: request.headers.get("x-trusted-tenant"))
     api, sessions = create_app(config)

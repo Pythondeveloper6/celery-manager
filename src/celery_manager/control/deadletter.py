@@ -40,6 +40,7 @@ from celery_manager.control.tasks import (
     _require_celery_origin,
     start_task,
 )
+from celery_manager.db.identity import exact_identity
 from celery_manager.db.models import FailureResolution, TaskRun
 from celery_manager.db.runs import lock_task_run
 
@@ -101,10 +102,19 @@ def _dead_letter_query(session, *, task_name: str | None = None, since: datetime
     # NOT EXISTS over the retry lineage. `retried_from_id` is indexed, so this
     # is an index probe per failed row rather than a scan.
     later = aliased(TaskRun)
+    retried = later.retried_from_id == TaskRun.task_id
+    # In a tenant-scoped request a retry made by another tenant must not hide
+    # this tenant's failure. SQLAlchemy 2.0.x does not reliably apply the
+    # request's loader criteria to an aliased entity inside EXISTS (2.1 does),
+    # so state the tenant on the alias explicitly.
+    from celery_manager.tenancy import current_tenant
+    tenant = current_tenant()
+    if tenant is not None:
+        retried = retried & exact_identity(later.tenant_id, tenant)
     query = session.query(TaskRun).filter(
         TaskRun.status == "failed",
         ~exists().where((FailureResolution.task_id == TaskRun.task_id) & FailureResolution.state.in_(("acknowledged", "ignored"))).correlate(TaskRun),
-        ~exists().where(later.retried_from_id == TaskRun.task_id).correlate(TaskRun),
+        ~exists().where(retried).correlate(TaskRun),
     )
     if task_name is not None:
         query = query.filter(TaskRun.task_name == task_name)

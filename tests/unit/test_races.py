@@ -36,7 +36,7 @@ from celery_manager.control.tasks import (
 )
 from celery_manager.db import runs as runs_module
 from celery_manager.db.models import AuditLog, Base, TaskRun
-from celery_manager.db.runs import lock_task_run
+from celery_manager.db.runs import commit_with_deadlock_retry, lock_task_run
 from celery_manager.decorator import _upsert_task_run
 from celery_manager.events.listener import _normalise_call_argument, upsert_task_run
 
@@ -324,22 +324,21 @@ def test_hammering_get_or_create_from_several_threads_never_collides(db):
     def listener():
         for task_id in task_ids:
             with theirs() as session:
-                upsert_task_run(session, {"type": "task-sent", "uuid": task_id, "name": "demo.echo",
-                                          "queue": "q", "args": "('x',)"})
-                session.commit()
+                commit_with_deadlock_retry(session, lambda task_id=task_id: upsert_task_run(
+                    session, {"type": "task-sent", "uuid": task_id, "name": "demo.echo",
+                              "queue": "q", "args": "('x',)"}))
 
     def decorator():
         for task_id in task_ids:
             with ours() as session:
-                _upsert_task_run(session, task_id, task_name="demo.echo", status="started",
-                                 args='["x"]', kwargs="{}")
-                session.commit()
+                commit_with_deadlock_retry(session, lambda task_id=task_id: _upsert_task_run(
+                    session, task_id, task_name="demo.echo", status="started", args='["x"]', kwargs="{}"))
 
     def worker_events():
         for task_id in task_ids:
             with theirs() as session:
-                upsert_task_run(session, {"type": "task-started", "uuid": task_id, "hostname": "w1"})
-                session.commit()
+                commit_with_deadlock_retry(session, lambda task_id=task_id: upsert_task_run(
+                    session, {"type": "task-started", "uuid": task_id, "hostname": "w1"}))
 
     def retrier():
         app = _app_returning(*task_ids)

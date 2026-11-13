@@ -21,10 +21,60 @@ everywhere else, so nothing here depends on SQLite.
 
 from __future__ import annotations
 
+import random
+import time
+
 from sqlalchemy import insert, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from celery_manager.db.models import TaskRun
+
+DEADLOCK_ATTEMPTS = 5
+
+
+def is_deadlock(exc: BaseException) -> bool:
+    """True when the database chose this transaction as a deadlock victim.
+
+    Covers MySQL/MariaDB (1213), PostgreSQL (40P01) and the SQLSTATE 40001
+    serialization failure, and SQL Server's "deadlock victim" message. These
+    are the errors the databases themselves document as "restart the
+    transaction"; nothing else is treated as retryable.
+    """
+    if not isinstance(exc, DBAPIError):
+        return False
+    orig = getattr(exc, "orig", None)
+    args = getattr(orig, "args", None) or ()
+    if args and args[0] == 1213:
+        return True
+    if (getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)) in ("40P01", "40001"):
+        return True
+    return "deadlock" in str(orig).lower()
+
+
+def commit_with_deadlock_retry(session, work, attempts: int = DEADLOCK_ATTEMPTS):
+    """Run `work()` and commit, restarting the whole transaction on a deadlock.
+
+    Every `task_runs` write bumps the indexed `updated_at` (the change feed's
+    cursor), so concurrent writers on InnoDB contend on the end of that index
+    and the engine kills one of them with error 1213. That is a normal,
+    documented outcome — the application must restart the transaction — not a
+    bug in either writer, and losing the event or the run's final state to it
+    would be wrong. `work` must therefore be safe to run again from the top
+    (it is handed a freshly rolled-back session); anything with side effects
+    outside the database belongs before this call. A deadlock that persists
+    through `attempts` tries, and every other error, propagates unchanged.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            result = work()
+            session.commit()
+            return result
+        except DBAPIError as exc:
+            if attempt == attempts or not is_deadlock(exc):
+                raise
+            session.rollback()
+            time.sleep(random.uniform(0, 0.02 * 2**attempt))
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _insert_if_absent(dialect_name: str, values: dict):
