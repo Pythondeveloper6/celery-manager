@@ -12,7 +12,7 @@ A dashboard and control API for Celery background tasks — for any
 Django, Flask, or FastAPI project that already uses Celery.
 
 [![PyPI](https://img.shields.io/pypi/v/celery-manager?include_prereleases&label=pypi&logo=pypi&logoColor=white)](https://pypi.org/project/celery-manager/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/celery-manager?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/celery-manager)
+[![Downloads](https://api.pepy.tech/personalized-badge/celery-manager?period=TOTAL&units=NONE&left_text=Downloads&right_color=BLUE)](https://pepy.tech/projects/celery-manager)
 [![CI](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Pythondeveloper6/celery-manager/actions/workflows/ci.yml)
 ![Python 3.10–3.13](https://img.shields.io/badge/python-3.10%E2%80%933.13-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
