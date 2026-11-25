@@ -190,6 +190,15 @@ round-trip, so [retrying such a run](rest-api.md#retrying-a-run-the-listener-rec
 re-dispatches the repr string rather than the original object. Pass explicit
 `args`/`kwargs` to `control.retry_task()` when that matters.
 
+### Hiding arguments per task
+
+`@track(redact_args=True)` stores every positional argument as `[redacted]`,
+and `@track(redact_kwargs=("token", "payload.email"))` does the same for those
+keyword names or dotted paths into nested dictionaries. Those values are also
+removed from the stored exception and traceback, and the run is marked
+`args_redacted`. Keys matching `sensitive_keys` are always redacted; see
+[Redacting arguments](production.md#redacting-arguments-results-and-errors).
+
 ## What "log capture" actually captures
 
 `capture_logs()` attaches a `logging.StreamHandler` to the **root logger**

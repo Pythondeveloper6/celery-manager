@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from celery_manager.api.deps import get_current_user
+from celery_manager.api.deps import Principal, get_current_user
 from celery_manager.db.models import TaskRun, WorkerState
 
 router = APIRouter(prefix="/api/flower")
@@ -46,7 +46,9 @@ def _epoch(value: datetime | None) -> float | None:
     return value.timestamp()
 
 
-def _task(run: TaskRun) -> dict:
+def _task(run: TaskRun, config, role: str) -> dict:
+    from celery_manager.redaction import view_payload
+    args, kwargs, traceback, _, _ = view_payload(config, role, run.args, run.kwargs, run.traceback)
     state = _STATE.get(run.status, run.status.upper())
     return {
         "uuid": run.task_id,
@@ -59,11 +61,11 @@ def _task(run: TaskRun) -> dict:
         "failed": _epoch(run.finished_at) if state == "FAILURE" else None,
         "revoked": _epoch(run.finished_at) if state == "REVOKED" else None,
         "timestamp": _epoch(run.finished_at or run.started_at or run.received_at or run.sent_at),
-        "args": run.args,
-        "kwargs": run.kwargs,
+        "args": args,
+        "kwargs": kwargs,
         "result": run.result_repr,
         "exception": run.exception,
-        "traceback": run.traceback,
+        "traceback": traceback,
         "retries": run.retry_count,
         "runtime": run.runtime_seconds,
         "worker": run.worker,
@@ -90,6 +92,7 @@ def _since(value: str | None, name: str) -> datetime | None:
 @router.get("/tasks")
 def tasks(
     request: Request,
+    principal: Principal,
     limit: int = Query(100, ge=1),
     offset: int = Query(0, ge=0),
     sort_by: str | None = None,
@@ -125,16 +128,16 @@ def tasks(
                 raise HTTPException(status_code=400, detail=f"sort_by must be one of {', '.join(sorted(_SORT))}")
             order = column.desc() if sort_by.startswith("-") else column.asc()
         runs = query.order_by(order, TaskRun.id.desc()).offset(offset).limit(limit).all()
-        return {run.task_id: _task(run) for run in runs}
+        return {run.task_id: _task(run, request.app.state.cm_config, principal.role) for run in runs}
 
 
 @router.get("/task/info/{task_id}")
-def task_info(task_id: str, request: Request, username: str = Depends(get_current_user)):
+def task_info(task_id: str, request: Request, principal: Principal, username: str = Depends(get_current_user)):
     with request.app.state.cm_session_factory() as session:
         run = session.query(TaskRun).filter(TaskRun.task_id == task_id).one_or_none()
         if run is None:
             raise HTTPException(status_code=404, detail=f"Unknown task '{task_id}'")
-        return _task(run)
+        return _task(run, request.app.state.cm_config, principal.role)
 
 
 @router.get("/workers")

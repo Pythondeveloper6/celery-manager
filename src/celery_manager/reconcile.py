@@ -33,6 +33,7 @@ from celery_manager.events.listener import (
     _merge_call_argument,
     _normalise_call_argument,
 )
+from celery_manager.redaction import redact_run
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ def _apply_backend(run: TaskRun, meta: dict, config) -> bool:
         run.args = _merge_call_argument(run.args, meta["args"], "[]")
     if meta.get("kwargs") is not None:
         run.kwargs = _merge_call_argument(run.kwargs, meta["kwargs"], "{}")
+    redact_run(config, run)
     return True
 
 
@@ -208,6 +210,7 @@ def seed_inflight(config, session_factory) -> int:
                         run.queue = (item.get("delivery_info") or {}).get("routing_key")
                         run.args = _normalise_call_argument(item.get("args", "[]"))
                         run.kwargs = _normalise_call_argument(item.get("kwargs", "{}"))
+                        redact_run(config, run)
                         started = item.get("time_start")
                         if status == "started" and isinstance(started, (int, float)):
                             run.started_at = datetime.fromtimestamp(started, timezone.utc)

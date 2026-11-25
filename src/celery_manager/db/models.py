@@ -45,6 +45,7 @@ class TaskRun(Base):
     worker: Mapped[str | None] = mapped_column(label_text(255), nullable=True)
     args: Mapped[str] = mapped_column(payload_text(), default="[]")
     kwargs: Mapped[str] = mapped_column(payload_text(), default="{}")
+    args_redacted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Queue wait inputs (migration 0011), from the task-sent / task-received
     # event timestamps. Earliest value wins; see events/listener.py and

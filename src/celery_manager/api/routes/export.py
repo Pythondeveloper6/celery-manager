@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from celery_manager.api.deps import get_current_user
+from celery_manager.api.deps import Principal, get_current_user
 from celery_manager.api.serialization import utc_bound
 from celery_manager.control.audit import record as record_audit
 from celery_manager.control.export import count_export_rows, iter_export
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/tasks")
 @router.get("/export")
 def export_tasks(
     request: Request,
+    principal: Principal,
     format: Literal["csv", "json"] = "csv",
     status: str | None = None,
     task_name: str | None = None,
@@ -57,7 +58,7 @@ def export_tasks(
         # The request-scoped session above is closed by now; the stream opens
         # its own so it lives exactly as long as the download.
         with session_factory() as stream_session:
-            yield from iter_export(stream_session, format, rows, **filters)
+            yield from iter_export(stream_session, format, rows, view=(config, principal.role), **filters)
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     headers = {

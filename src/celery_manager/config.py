@@ -245,6 +245,16 @@ class CeleryManagerConfig:
     log_capture_loggers: tuple[str, ...] = ()
     log_redactor: Callable[[str], str] | None = None
     log_view_role: str = "viewer"
+    # Redaction of stored arguments, results, exceptions and tracebacks; see
+    # celery_manager.redaction. `sensitive_keys` are regexes matched anywhere
+    # in a key; () turns key redaction off. `payload_redactor(kind, task_name,
+    # value)` runs last; kind is args, kwargs, result, exception or traceback.
+    sensitive_keys: tuple[str, ...] = (
+        "password", "passwd", "secret", "token", "authorization", "cookie", "api.?key", "credential", "signature",
+    )
+    payload_redactor: Callable[[str, str, object], object] | None = None
+    args_view_role: str = "viewer"
+    traceback_view_role: str = "viewer"
     store_results: bool = True
     result_max_bytes: int = 64_000
     live_stream: str = "sse"
@@ -368,6 +378,16 @@ class CeleryManagerConfig:
                 raise ValueError(f"{name} must be a positive integer")
         from celery_manager.auth.roles import validate_role
         validate_role(self.log_view_role)
+        validate_role(self.args_view_role)
+        validate_role(self.traceback_view_role)
+        if isinstance(self.sensitive_keys, str) or not all(isinstance(k, str) for k in self.sensitive_keys):
+            raise ValueError("sensitive_keys must be a sequence of regular expression strings")
+        import re
+        for pattern in self.sensitive_keys:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"sensitive_keys has an invalid pattern {pattern!r}: {exc}") from exc
         if self.live_stream not in ("sse", "poll"):
             raise ValueError("live_stream must be 'sse' or 'poll'")
         for name in ("log_capture_max_bytes", "result_max_bytes"):

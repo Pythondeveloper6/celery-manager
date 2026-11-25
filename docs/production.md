@@ -63,6 +63,41 @@ the raw output. Capture is scoped
 to the task's execution context and thread; logs in newly spawned threads are not
 attributed to the parent task. `log_view_role` controls API access to captured logs.
 
+### Redacting arguments, results and errors
+
+Everything stored about a call goes through one redaction step: the `@track`
+decorator, the events listener, the publish hook, dashboard and API dispatch
+(`start_task`, retries, dead-letter reruns), the reconciler, audit details and
+the queue browser preview.
+
+- `sensitive_keys` is a tuple of regular expressions matched anywhere in a
+  keyword-argument or nested dictionary key, case-insensitively. The default
+  covers `password`, `passwd`, `secret`, `token`, `authorization`, `cookie`,
+  `api.?key`, `credential` and `signature`. Matching values are stored as
+  `[redacted]`. Text (strings in arguments, results, exceptions and
+  tracebacks) is also scrubbed of `key=value` pairs for those keys, `Bearer` and
+  `Basic` credentials, and signed-URL query parameters. `sensitive_keys=()`
+  turns key matching off.
+- `payload_redactor(kind, task_name, value)` runs last. `kind` is `args`
+  (a list), `kwargs` (a dict), `result`, `exception` or `traceback` (strings),
+  and it must return the same type. If it raises, the value is withheld.
+- Per task: `@track(redact_args=True)` stores every positional argument as a
+  placeholder, and `@track(redact_kwargs=("token", "payload.email"))` hides
+  those names or dotted paths. Values hidden this way are also removed from the
+  stored exception and traceback. The events listener and publish hook read
+  these options from the registered task, so the task module must be imported
+  in that process (the `celery-manager events` command does this when it loads
+  your app); key-based redaction needs nothing.
+- A run whose arguments were changed has `args_redacted = true`. Retrying it, or
+  re-running it as a dead letter, needs `args` and `kwargs` in the request
+  (`409` otherwise); the placeholders are never sent to the broker.
+- `args_view_role` and `traceback_view_role` (default `viewer`) set the lowest
+  role that sees stored arguments and tracebacks. Lower roles get the masked
+  shape (`["str", "int"]`, `{"user_id": "int"}`) and no traceback, in the task
+  detail, the Flower-shaped API, dead letters, export and the MCP tools.
+
+Redaction applies on write: rows stored before upgrading keep what they have.
+
 Results default to 64,000 bytes (`result_max_bytes`) and can be disabled with
 `store_results=False` in both workers and listener. JSON-compatible returns are
 encoded as JSON; other values use a representation. Truncation is explicit and

@@ -1435,6 +1435,41 @@ the raw output. Capture is scoped
 to the task's execution context and thread; logs in newly spawned threads are not
 attributed to the parent task. `log_view_role` controls API access to captured logs.
 
+### Redacting arguments, results and errors
+
+Everything stored about a call goes through one redaction step: the `@track`
+decorator, the events listener, the publish hook, dashboard and API dispatch
+(`start_task`, retries, dead-letter reruns), the reconciler, audit details and
+the queue browser preview.
+
+- `sensitive_keys` is a tuple of regular expressions matched anywhere in a
+  keyword-argument or nested dictionary key, case-insensitively. The default
+  covers `password`, `passwd`, `secret`, `token`, `authorization`, `cookie`,
+  `api.?key`, `credential` and `signature`. Matching values are stored as
+  `[redacted]`. Text (strings in arguments, results, exceptions and
+  tracebacks) is also scrubbed of `key=value` pairs for those keys, `Bearer` and
+  `Basic` credentials, and signed-URL query parameters. `sensitive_keys=()`
+  turns key matching off.
+- `payload_redactor(kind, task_name, value)` runs last. `kind` is `args`
+  (a list), `kwargs` (a dict), `result`, `exception` or `traceback` (strings),
+  and it must return the same type. If it raises, the value is withheld.
+- Per task: `@track(redact_args=True)` stores every positional argument as a
+  placeholder, and `@track(redact_kwargs=("token", "payload.email"))` hides
+  those names or dotted paths. Values hidden this way are also removed from the
+  stored exception and traceback. The events listener and publish hook read
+  these options from the registered task, so the task module must be imported
+  in that process (the `celery-manager events` command does this when it loads
+  your app); key-based redaction needs nothing.
+- A run whose arguments were changed has `args_redacted = true`. Retrying it, or
+  re-running it as a dead letter, needs `args` and `kwargs` in the request
+  (`409` otherwise); the placeholders are never sent to the broker.
+- `args_view_role` and `traceback_view_role` (default `viewer`) set the lowest
+  role that sees stored arguments and tracebacks. Lower roles get the masked
+  shape (`["str", "int"]`, `{"user_id": "int"}`) and no traceback, in the task
+  detail, the Flower-shaped API, dead letters, export and the MCP tools.
+
+Redaction applies on write: rows stored before upgrading keep what they have.
+
 Results default to 64,000 bytes (`result_max_bytes`) and can be disabled with
 `store_results=False` in both workers and listener. JSON-compatible returns are
 encoded as JSON; other values use a representation. Truncation is explicit and
@@ -3257,6 +3292,15 @@ value stays searchable by `q=`. The trade-off: those leaves no longer
 round-trip, so [retrying such a run](rest-api.md#retrying-a-run-the-listener-recorded)
 re-dispatches the repr string rather than the original object. Pass explicit
 `args`/`kwargs` to `control.retry_task()` when that matters.
+
+### Hiding arguments per task
+
+`@track(redact_args=True)` stores every positional argument as `[redacted]`,
+and `@track(redact_kwargs=("token", "payload.email"))` does the same for those
+keyword names or dotted paths into nested dictionaries. Those values are also
+removed from the stored exception and traceback, and the run is marked
+`args_redacted`. Keys matching `sensitive_keys` are always redacted; see
+[Redacting arguments](production.md#redacting-arguments-results-and-errors).
 
 ## What "log capture" actually captures
 
@@ -6098,8 +6142,11 @@ messages still waiting in a queue ([Looking inside a queue](queues.md#looking-in
 `queue_browser_show_args=False` leaves those out of the response for every
 role. That's on purpose: a read-only role is
 mostly used for debugging, and the list and detail pages already show this
-data, so blocking export would only make it slower to get. If your task
-arguments hold secrets, don't give that person a dashboard account at all.
+data, so blocking export would only make it slower to get. Sensitive keys are redacted
+when stored, and `args_view_role` and `traceback_view_role` can hide arguments
+and tracebacks from lower roles
+([Redacting arguments](production.md#redacting-arguments-results-and-errors));
+anything your redaction rules miss is still visible to viewers.
 
 ## Managing accounts
 
@@ -6927,11 +6974,11 @@ rule (duplicate username, last admin, deleting yourself).
 | Method | Path | Auth | Request | Response |
 |---|---|---|---|---|
 | `GET` | `/api/tasks` | required | Query params: `status`, `task_name`, `q`, `date_from`, `date_to`, `limit` (default `50`), `offset` (default `0`) — all optional. See [Filtering, search and pagination](#filtering-search-and-pagination) below for exact semantics. | `200 {"items": [...], "total": int, "limit": int, "offset": int}` — **an envelope, not a bare array** (see the change note below). Each item is `{"task_id", "task_name", "status", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at"}`, newest first (ordered by internal row id descending). `total` is the number of runs matching the *same filters*, ignoring `limit`/`offset`. `limit`/`offset` are echoed back *after* clamping, so a client can see what it actually got. |
-| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "eta", "sent_at", "received_at", "wait_seconds", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at", "retried_from_id", "retried_by"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). `queue`/`worker` come from the events listener and the timings from the decorator, so any of them may be `null` for a run that hasn't started or wasn't seen by both. `eta`, `sent_at` and `received_at` come from the `task-sent`/`task-received` events (`null` if never seen); `wait_seconds` is `started_at - max(sent_at, eta)`, `null` without a send time or a start (see [Wait time](queues.md#wait-time)). `retried_from_id` is the id of the run this one was dispatched as a retry of, or `null`; `retried_by` is a **list** of the ids dispatched as retries *of this run* (an operator can retry the same failed run more than once), `[]` if there are none. The four `progress_*` fields are `null` unless the task calls [`report_progress()`](progress.md). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
+| `GET` | `/api/tasks/{task_id}` | required | — | `200` — `{"task_id", "task_name", "status", "args", "kwargs", "exception", "traceback", "log_output", "queue", "worker", "eta", "sent_at", "received_at", "wait_seconds", "started_at", "finished_at", "runtime_seconds", "progress_current", "progress_total", "progress_message", "progress_updated_at", "retried_from_id", "retried_by"}` (`args`/`kwargs` are JSON-encoded strings, not parsed objects). Also `args_redacted` (the stored arguments were redacted), and `args_restricted`/`traceback_restricted` when the caller's role is below `args_view_role`/`traceback_view_role`, in which case `args`/`kwargs` hold only the masked shape and `traceback` is `null`. `queue`/`worker` come from the events listener and the timings from the decorator, so any of them may be `null` for a run that hasn't started or wasn't seen by both. `eta`, `sent_at` and `received_at` come from the `task-sent`/`task-received` events (`null` if never seen); `wait_seconds` is `started_at - max(sent_at, eta)`, `null` without a send time or a start (see [Wait time](queues.md#wait-time)). `retried_from_id` is the id of the run this one was dispatched as a retry of, or `null`; `retried_by` is a **list** of the ids dispatched as retries *of this run* (an operator can retry the same failed run more than once), `[]` if there are none. The four `progress_*` fields are `null` unless the task calls [`report_progress()`](progress.md). `404 {"detail": "not found"}` if no run with that `task_id` exists. |
 | `GET` | `/api/tasks/registered` | required | — | `200 {"items": [{"name", "signature", "queue", "doc"}]}`. Task names registered on the Celery app in the **API process**, minus Celery's own `celery.*` tasks (the app's `include`/`imports` modules are imported first, best effort). `signature` is a list of `{"name", "kind", "required", "has_default", "default", "annotation"}` per parameter (`kind` is `positional`, `keyword_only`, `var_args` or `var_kwargs`; defaults that aren't JSON-able come back as their `repr`), or `null` when it can't be inspected. `queue` is the task's own or routed queue, `null` if none; `doc` is the docstring's first line. The list is filtered through the dispatch allowlist for the current principal. If the web process never imports your task modules, the list is short or empty and unregistered starts are refused. Powers the dashboard's task picker. |
 | `POST` | `/api/tasks/start` | required | `{"task_name": str, "args": [...] = [], "kwargs": {...} = {}, "queue": str?, "countdown": number?, "eta": ISO datetime?}` | `200 {"task_id": str}`. Dispatches via `celery_app.send_task(...)` (`queue`, `countdown` >= 0 and `eta` are passed through only when set; a naive `eta` is read as UTC), seeds a `queued` run row so the run's detail page opens immediately, and writes an `AuditLog` row (`action="start"`, `target_type="task"`, `target_id` = the new task id, `details={"task_name", "args", "kwargs"}` plus `queue`/`countdown`/`eta` when given). `422` for a wrongly-typed field. An unregistered task returns 422 before publication; allowlist, queue and argument-schema checks also apply. Explicit queue override is refused unless enabled. |
 | `POST` | `/api/tasks/{task_id}/cancel` | required | Query param `terminate` (bool, default `false`) | `200 {"ok": true}`. Calls `celery_app.control.revoke(task_id, terminate=terminate)` and writes an `AuditLog` row (`action="cancel"`, `target_type="task"`, `target_id=task_id`, `details={"terminate": bool}`). `terminate=false` only prevents a not-yet-started task from starting; `terminate=true` also kills it if already running. Unknown IDs return 404 unless an admin explicitly supplies `force=true`. |
-| `POST` | `/api/tasks/{task_id}/retry` | required | optional `{"args": [...]?, "kwargs": {...}?}` | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them (or, if the body supplies `args` and/or `kwargs`, those instead; a field left out keeps the stored value, and no body behaves exactly as before; `422` if `args` is not a list or `kwargs` not an object) as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`; for an edited retry also `"args_edited": true` and the `args`/`kwargs` actually sent). The new run records `retried_from_id` either way). `404 {"detail": "not found"}` if no run exists for `task_id`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
+| `POST` | `/api/tasks/{task_id}/retry` | required | optional `{"args": [...]?, "kwargs": {...}?}` | `200 {"new_task_id": str}`. Looks up the original run's stored `args`/`kwargs` and re-dispatches them (or, if the body supplies `args` and/or `kwargs`, those instead; a field left out keeps the stored value, and no body behaves exactly as before; `422` if `args` is not a list or `kwargs` not an object) as a brand-new task (a new `task_id`, not a retry of the original in Celery's own sense). Writes an `AuditLog` row (`action="retry"`, `target_type="task"`, `target_id=task_id`, `details={"new_task_id": ...}`; for an edited retry also `"args_edited": true` and the `args`/`kwargs` actually sent). The new run records `retried_from_id` either way). `404 {"detail": "not found"}` if no run exists for `task_id`. `409` if the run's arguments were redacted and the body does not supply both `args` and `kwargs`. A `500` here means something else: the stored `args`/`kwargs` could not be decoded (see [Retrying a run the listener recorded](#retrying-a-run-the-listener-recorded)), which is a real server-side problem and deliberately keeps surfacing as one. |
 | `POST` | `/api/tasks/retry-bulk` | required | `{"task_ids": [str, ...], "dry_run"?: bool, "confirm_count"?: int}` | `200 {"new_task_ids": [str, ...]}`; with `dry_run`, `200 {"dry_run": true, "would_retry": [...], "count": int}` after the same validation, publishing nothing. At most 500 unique ids (`400` otherwise). A `confirm_count` different from the number of ids is `400`; `require_typed_confirmation` makes it mandatory. Retries each id via the same logic as the single-retry endpoint (one `AuditLog` row per task), in list order. The HTTP API validates the whole requested scope before publishing: an unknown ID returns 404 and a policy denial returns 403/422 without dispatch. Broker failures during actual publication can still be partial. |
 | `POST` | `/api/tasks/rate-limit` | required | `{"task_name": str, "rate_limit": str, "destination": [str] \| null}` | Changes a task's rate limit on running workers (not persisted). Documented with the other worker controls under [Workers](#workers). |
 
@@ -8001,7 +8048,7 @@ it:
   requires an admin and explicit `force=true`. Give `operator` and `admin` only to people you'd
   trust with that, use `viewer` for everyone else, and treat the dashboard
   as an admin surface, ideally reachable only from a private network or VPN.
-  Viewers can see task arguments and tracebacks; `log_view_role` can restrict logs.
+  Viewers can see task arguments and tracebacks; `log_view_role`, `args_view_role` and `traceback_view_role` can restrict logs, arguments and tracebacks.
 - **Upgrading makes every existing account `admin`**, because before roles
   every account could do everything. Demote accounts afterwards with
   `celery-manager set-role`.
@@ -8061,6 +8108,10 @@ compose with the existing configuration and retention UI.
 | `log_capture_loggers` | `()` | Optional logger-name prefixes; empty accepts all emitted task-context records. |
 | `log_redactor` | `None` | Callable transforming a formatted log record. Failure withholds the raw record. |
 | `log_view_role` | `"viewer"` | Minimum role that can retrieve captured logs. |
+| `sensitive_keys` | password, secret, token, authorization, cookie, API key, credential, signature patterns | Regular expressions for argument keys whose values (and `key=value` text) are stored as `[redacted]`. `()` disables. See [Redacting arguments](production.md#redacting-arguments-results-and-errors). |
+| `payload_redactor` | `None` | Callable `(kind, task_name, value) -> value` for `args`, `kwargs`, `result`, `exception` and `traceback`, run after key redaction. Failure withholds the value. |
+| `args_view_role` | `"viewer"` | Minimum role that sees stored arguments; lower roles get the masked shape. Applies to task detail, Flower-shaped routes, dead letters, export and MCP. |
+| `traceback_view_role` | `"viewer"` | Minimum role that sees stored tracebacks. |
 | `store_results` / `result_max_bytes` | `True` / `64_000` | Store bounded result representations in decorator and listener. |
 | `principal_providers` | `()` | Ordered external providers, before the existing host callable and local-cookie fallback. |
 | `session_max_age_seconds` | `604800` | Local-cookie lifetime; existing password fingerprints and live role lookup still apply. |

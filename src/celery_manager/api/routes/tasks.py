@@ -11,6 +11,7 @@ from celery_manager.auth.roles import role_allows
 from celery_manager.control.latency import wait_seconds
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
+    ArgumentsRedacted,
     BulkCancelTooLarge,
     BulkRetryRejected,
     TaskRunNotFound,
@@ -134,17 +135,24 @@ def get_task(task_id: str, request: Request, principal: Principal):
         scoped = current_tenant() is not None
         def visible_reference(value):
             return value if not scoped or (value and get_task_run(session, value) is not None) else None
+        config = request.app.state.cm_config
+        from celery_manager.redaction import view_payload
+        shown_args, shown_kwargs, shown_traceback, args_restricted, traceback_restricted = view_payload(
+            config, principal.role, run.args, run.kwargs, run.traceback)
         return {
             "task_id": run.task_id,
             "source": run.source, "tenant_id": run.tenant_id, "operation_key": run.operation_key,
             "correlation_id": run.correlation_id, "context_json": run.context_json,
             "task_name": run.task_name,
             "status": run.status,
-            "args": run.args,
-            "kwargs": run.kwargs,
+            "args": shown_args,
+            "kwargs": shown_kwargs,
+            "args_redacted": run.args_redacted,
+            "args_restricted": args_restricted,
             "exception": run.exception,
             "skip_reason": run.skip_reason,
-            "traceback": run.traceback,
+            "traceback": shown_traceback,
+            "traceback_restricted": traceback_restricted,
             "log_output": run.log_output if role_allows(principal.role, request.app.state.cm_config.log_view_role) else None,
             "log_output_truncated": run.log_output_truncated,
             "logs_restricted": not role_allows(principal.role, request.app.state.cm_config.log_view_role),
@@ -270,6 +278,8 @@ def retry(
             )
         except TaskRunNotFound:
             raise HTTPException(status_code=404, detail="not found")
+        except ArgumentsRedacted as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
     return {"new_task_id": new_id}
 
 
@@ -304,6 +314,8 @@ def retry_bulk(payload: BulkRetryRequest, request: Request, principal: Principal
             raise HTTPException(status_code=404, detail=str(exc))
         except BulkRetryRejected as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        except ArgumentsRedacted as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
     if payload.dry_run:
         return {"dry_run": True, "would_retry": ids, "count": len(ids)}
     return {"new_task_ids": ids}

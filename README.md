@@ -332,7 +332,9 @@ an admin surface: serve it over HTTPS, keep `cookie_secure=True`, set a long
 random `secret_key` from your secret store, create accounts explicitly (there
 is no default login) and use the `viewer`/`operator`/`admin` roles. See
 [docs/security.md](docs/security.md) and [`SECURITY.md`](SECURITY.md) for the
-threat model and how to report a vulnerability privately.
+threat model and how to report a vulnerability privately. Stored arguments, results,
+exceptions and tracebacks are redacted for sensitive keys and can be hidden from
+lower roles; see [Redacting arguments](docs/production.md#redacting-arguments-results-and-errors).
 
 ## Limits
 

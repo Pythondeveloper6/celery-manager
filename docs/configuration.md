@@ -277,7 +277,7 @@ it:
   requires an admin and explicit `force=true`. Give `operator` and `admin` only to people you'd
   trust with that, use `viewer` for everyone else, and treat the dashboard
   as an admin surface, ideally reachable only from a private network or VPN.
-  Viewers can see task arguments and tracebacks; `log_view_role` can restrict logs.
+  Viewers can see task arguments and tracebacks; `log_view_role`, `args_view_role` and `traceback_view_role` can restrict logs, arguments and tracebacks.
 - **Upgrading makes every existing account `admin`**, because before roles
   every account could do everything. Demote accounts afterwards with
   `celery-manager set-role`.
@@ -337,6 +337,10 @@ compose with the existing configuration and retention UI.
 | `log_capture_loggers` | `()` | Optional logger-name prefixes; empty accepts all emitted task-context records. |
 | `log_redactor` | `None` | Callable transforming a formatted log record. Failure withholds the raw record. |
 | `log_view_role` | `"viewer"` | Minimum role that can retrieve captured logs. |
+| `sensitive_keys` | password, secret, token, authorization, cookie, API key, credential, signature patterns | Regular expressions for argument keys whose values (and `key=value` text) are stored as `[redacted]`. `()` disables. See [Redacting arguments](production.md#redacting-arguments-results-and-errors). |
+| `payload_redactor` | `None` | Callable `(kind, task_name, value) -> value` for `args`, `kwargs`, `result`, `exception` and `traceback`, run after key redaction. Failure withholds the value. |
+| `args_view_role` | `"viewer"` | Minimum role that sees stored arguments; lower roles get the masked shape. Applies to task detail, Flower-shaped routes, dead letters, export and MCP. |
+| `traceback_view_role` | `"viewer"` | Minimum role that sees stored tracebacks. |
 | `store_results` / `result_max_bytes` | `True` / `64_000` | Store bounded result representations in decorator and listener. |
 | `principal_providers` | `()` | Ordered external providers, before the existing host callable and local-cookie fallback. |
 | `session_max_age_seconds` | `604800` | Local-cookie lifetime; existing password fingerprints and live role lookup still apply. |

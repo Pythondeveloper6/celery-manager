@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from celery import current_app, current_task, signals
 
 from celery_manager.db.runs import lock_task_run
+from celery_manager.redaction import redact_run
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ def install_publish_hook(celery_app, *, session_factory=None, initiator=None, co
                     "queue": routing_key, "eta": eta, "initiator": headers.get("cm_initiator"),
                     "sent_at": datetime.now(timezone.utc),
                 })
+                redact_run(hook_config, row, celery_app)
                 if headers.get("cm_context") is not None:
                     from celery_manager.run_context import (
                         merge_storage_context,

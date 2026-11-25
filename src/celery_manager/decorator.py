@@ -455,7 +455,9 @@ def _persist_run(task_id: str, create_defaults: dict | None = None, clear: tuple
     """
     try:
         from celery_manager.db.runs import commit_with_deadlock_retry
+        from celery_manager.redaction import redact_fields
 
+        fields = redact_fields(_settings(), fields.get("task_name"), fields)
         with _sessions()() as session:
             commit_with_deadlock_retry(
                 session,
@@ -563,7 +565,8 @@ def _initiator(task_self):
 
 
 def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwargs: tuple[str, ...] = (),
-          singleton=None, singleton_ttl: float = 1800, on_conflict: str = "skip"):
+          singleton=None, singleton_ttl: float = 1800, on_conflict: str = "skip",
+          redact_args: bool = False, redact_kwargs: tuple[str, ...] = ()):
     """Decorator for Celery tasks. Apply directly below @app.task:
 
         @app.task(name="demo.echo", bind=True)
@@ -586,7 +589,15 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
     process (the worker process, for tasks that actually execute there).
     Without it the wrapper degrades to a pass-through — the task body still
     runs, but with no pause/skip check and no log capture.
+
+    `redact_args=True` stores every positional argument as a placeholder;
+    `redact_kwargs=("token", "payload.email")` does the same for those keyword
+    argument names or dotted paths into nested dictionaries. The run is marked
+    `args_redacted`, and values hidden this way are also scrubbed from the
+    stored exception and traceback.
     """
+    if isinstance(redact_kwargs, str):
+        redact_kwargs = (redact_kwargs,)
 
     if singleton is not None and singleton is not False:
         from celery_manager.locks import ttl_ms
@@ -830,6 +841,7 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                     )
                     return result
 
+        wrapper._cm_redaction = (bool(redact_args), frozenset(redact_kwargs))
         controlled = wrapper
         if singleton is not None and singleton is not False:
             controlled = _singleton_wrapper(wrapper, func, singleton, singleton_ttl, on_conflict, consume_kwargs)

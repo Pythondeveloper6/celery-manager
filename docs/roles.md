@@ -139,8 +139,11 @@ messages still waiting in a queue ([Looking inside a queue](queues.md#looking-in
 `queue_browser_show_args=False` leaves those out of the response for every
 role. That's on purpose: a read-only role is
 mostly used for debugging, and the list and detail pages already show this
-data, so blocking export would only make it slower to get. If your task
-arguments hold secrets, don't give that person a dashboard account at all.
+data, so blocking export would only make it slower to get. Sensitive keys are redacted
+when stored, and `args_view_role` and `traceback_view_role` can hide arguments
+and tracebacks from lower roles
+([Redacting arguments](production.md#redacting-arguments-results-and-errors));
+anything your redaction rules miss is still visible to viewers.
 
 ## Managing accounts
 

@@ -292,6 +292,8 @@ def upsert_task_run(session, event: dict, config=None, stats=None) -> None:
             setattr(run, key, value)
     if event.get("traceback") is not None:
         run.traceback = event["traceback"]
+    from celery_manager.redaction import redact_run
+    redact_run(config, run)
 
 
 class ListenerGaveUp(RuntimeError):

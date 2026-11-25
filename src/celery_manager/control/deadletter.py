@@ -35,6 +35,7 @@ from sqlalchemy.orm import aliased
 from celery_manager.control.analytics import split_exception
 from celery_manager.control.audit import record as record_audit
 from celery_manager.control.tasks import (
+    ArgumentsRedacted,
     TaskRunNotFound,
     _decode_stored_call_argument,
     _require_celery_origin,
@@ -304,6 +305,8 @@ def rerun_with_arguments(
         # A stored value that cannot be decoded only matters when it is the
         # one being kept; replacing it is the way out of that error. "Edited"
         # then means different from what could be read back.
+        if run.args_redacted and (args is None or kwargs is None):
+            raise ArgumentsRedacted(f"run {task_id} had its arguments redacted; supply both args and kwargs explicitly to rerun it")
         stored_args = _stored_unless_replaced(run.args, "args", task_id, [], args)
         stored_kwargs = _stored_unless_replaced(run.kwargs, "kwargs", task_id, {}, kwargs)
         final_args = stored_args if args is None else args
@@ -340,7 +343,9 @@ def rerun_with_arguments(
         session.commit()
         details: dict = {"new_task_id": new_id, "args_edited": edited, "bulk": len(plan) > 1}
         if edited:
-            details.update({"args": final_args, "kwargs": final_kwargs})
+            from celery_manager.redaction import redact_call
+            audit_args, audit_kwargs = redact_call(session.info.get("cm_config"), run.task_name, final_args, final_kwargs, celery_app)
+            details.update({"args": audit_args, "kwargs": audit_kwargs})
         record_audit(session, username, "rerun_dead_letter", "task", run.task_id, details)
         reruns.append({"task_id": run.task_id, "new_task_id": new_id, "args_edited": edited})
     return {"reruns": reruns, "errors": errors}

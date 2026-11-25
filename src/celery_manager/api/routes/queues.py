@@ -155,6 +155,7 @@ def get_messages(
                 offset=offset,
                 show_args=config.queue_browser_show_args,
                 allow_amqp=config.queue_browser_amqp,
+                config=config,
             )
         except QueueBrokerError as exc:
             raise HTTPException(status_code=503, detail=str(exc))

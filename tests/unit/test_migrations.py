@@ -423,3 +423,21 @@ def test_oidc_session_migration_round_trips(tmp_path):
         command.upgrade(alembic_config(conn), "head")
     assert new <= columns()
     engine.dispose()
+
+
+def test_args_redacted_migration_round_trips(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+
+    def columns():
+        return {c["name"] for c in inspect(engine).get_columns("task_runs")}
+
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0025")
+    assert "args_redacted" in columns()
+    with engine.begin() as conn:
+        command.downgrade(alembic_config(conn), "0024")
+    assert "args_redacted" not in columns()
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "head")
+    assert "args_redacted" in columns()
+    engine.dispose()

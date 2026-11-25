@@ -20,7 +20,23 @@ All notable changes to celery-manager are recorded here. The format follows
   `event_clock_skew_seconds` (default 300) away from the listener's clock keeps
   the arrival time and is counted as `clock_skew` on `GET /api/health/listener`.
 
+### Security
+- **Redaction of arguments, results, exceptions and tracebacks.** Values under
+  `sensitive_keys` (default: password, secret, token, authorization, cookie,
+  API key, credential, signature), bearer credentials, `key=value` text and
+  signed-URL parameters are stored as `[redacted]` by every writer: the
+  decorator, events listener, publish hook, reconciler, dashboard and API
+  dispatch, retries, dead-letter reruns, audit details and the queue browser
+  preview. Existing rows are not rewritten. `args_view_role` and
+  `traceback_view_role` give lower roles the masked shape instead of values in
+  task detail, the Flower-shaped API, dead letters, export and the MCP tools.
+
 ### Added
+- `payload_redactor(kind, task_name, value)` for custom redaction (a failing
+  one withholds the value), `@track(redact_args=True, redact_kwargs=(...))` for
+  per-task rules, and `task_runs.args_redacted` (migration `0025`). Retrying or
+  re-running such a run needs `args` and `kwargs` in the request (`409`
+  otherwise); `sensitive_keys=()` turns key redaction off.
 - **Browser sign-in with an OIDC provider**: `oidc_client_id` turns on
   `GET /api/auth/oidc/login` and `/callback` (authorization code with PKCE) using
   the `OIDCBearerProvider` already configured. The session lasts

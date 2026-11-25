@@ -286,12 +286,16 @@ def start_task(
             "args": json.dumps(args), "kwargs": json.dumps(kwargs),
             "queue": queue, "eta": eta, "initiator": initiator,
         })
+        from celery_manager.redaction import redact_run
+        redact_run(config, seeded_run, celery_app)
         if normalized_context is not None:
             from celery_manager.run_context import merge_storage_context
             merge_storage_context(seeded_run, normalized_context)
         session.commit()
     if session is not None and username is not None:
-        details = {"task_name": task_name, "args": args, "kwargs": kwargs, "delivery_options": json.loads(json.dumps(options, default=str))}
+        from celery_manager.redaction import redact_call
+        audit_args, audit_kwargs = redact_call(config, task_name, args, kwargs, celery_app)
+        details = {"task_name": task_name, "args": audit_args, "kwargs": audit_kwargs, "delivery_options": json.loads(json.dumps(options, default=str))}
         if queue:
             details["queue"] = queue
         if countdown is not None:
@@ -407,6 +411,10 @@ def cancel_task(
         record_audit(session, username, "cancel", "task", task_id, {"terminate": terminate})
 
 
+class ArgumentsRedacted(ValueError):
+    """The stored arguments were redacted, so the run cannot be replayed from them."""
+
+
 def retry_task(celery_app: Celery, session, task_id: str, username: str, args: list | None = None, kwargs: dict | None = None) -> str:
     """Re-run a task, by default with its original args/kwargs; pass
     args/kwargs to override them.
@@ -427,6 +435,8 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
         raise TaskRunNotFound(f"no task run found for {task_id}")
 
     _require_celery_origin(run)
+    if run.args_redacted and (args is None or kwargs is None):
+        raise ArgumentsRedacted("this run's arguments were redacted; supply both args and kwargs explicitly to retry it")
     final_args = args if args is not None else _decode_stored_call_argument(run.args, "args", task_id, [])
     final_kwargs = kwargs if kwargs is not None else _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
 
@@ -472,6 +482,8 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
             "kwargs": json.dumps(final_kwargs),
             "initiator": getattr(principal, "subject", None) or getattr(username, "subject", None) or str(username),
         })
+        from celery_manager.redaction import redact_run
+        redact_run(config, new_run, celery_app)
         if run_context is not None:
             from celery_manager.run_context import merge_storage_context
             merge_storage_context(new_run, run_context)
@@ -489,7 +501,9 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
         # Record what was actually sent: an edited retry is a different call
         # from the one the run stored, and the audit log is the only place
         # that difference is kept.
-        details.update({"args_edited": True, "args": final_args, "kwargs": final_kwargs})
+        from celery_manager.redaction import redact_call
+        audit_args, audit_kwargs = redact_call(config, run.task_name, final_args, final_kwargs, celery_app)
+        details.update({"args_edited": True, "args": audit_args, "kwargs": audit_kwargs})
     record_audit(session, username, "retry", "task", task_id, details)
     return new_id
 

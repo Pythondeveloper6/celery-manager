@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @app.task(bind=True)
-@celery_manager.track()
+@celery_manager.track(redact_args=True)  # the address is personal data: store a placeholder
 def send_welcome_email(self, user_email: str):
     logger.info("sending welcome email to %s", user_email)
     time.sleep(1)
