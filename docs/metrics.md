@@ -73,8 +73,11 @@ scrape time, and every metric is a gauge.
 | `celery_manager_rabbitmq_queue_deliver_rate` | `queue` | Messages delivered or fetched from the queue per second. Absent until sampled. |
 | `celery_manager_rabbitmq_mem_alarm` | `node` | `1` while the node has a memory alarm (RabbitMQ blocks every publisher), else `0`. |
 | `celery_manager_rabbitmq_disk_alarm` | `node` | `1` while the node has a disk-space alarm, else `0`. |
+| `celery_manager_listener_last_event_age_seconds` | none | Seconds since the [events listener](deployment.md#events-listener-health) last stored an event. Absent until it has stored one, or when no listener heartbeat exists. |
+| `celery_manager_listener_events_failed` | none | Events the listener could not store since it started. |
+| `celery_manager_listener_lag_seconds` | none | Gap between the last stored event's own timestamp and the moment it arrived. |
 | `celery_manager_window_seconds` | none | The length of the window above: 900. |
-| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `queue_wait`, `workers`, `missed`, `broker`, and `rabbitmq` when RabbitMQ management is configured. `0` means that part failed and its metrics are left out of the response. |
+| `celery_manager_collector_up` | `collector` | `1` or `0` for `runs`, `queues`, `queue_wait`, `workers`, `missed`, `listener`, `broker`, and `rabbitmq` when RabbitMQ management is configured. `0` means that part failed and its metrics are left out of the response. |
 
 The "histogram" is windowed, so it is exposed as gauges named
 `_bucket`/`_sum`/`_count`, not as a Prometheus histogram. Use

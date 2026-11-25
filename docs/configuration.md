@@ -369,6 +369,8 @@ through its existing persistent rules; it is not replaced by a new config flag.
 | `login_backoff_reset_seconds` | `3600` | Positive integer: inactivity period after which a login budget resets. |
 | `llm_call_retention_days` | `90` | Integer 0–3650: keep [LLM usage](llm-usage.md) rows this many days; `0` keeps them. |
 | `llm_prices` | `{}` | Mapping of model-id prefix to `{"input": ..., "output": ..., "cache_read": ..., "cache_write": ...}` in USD per million tokens. Used to compute `cost_usd` when a call does not report one. `input` and `output` are required. |
+| `listener_reconnect_max_seconds` | `30` | Number 1–3600: longest wait between the events listener's attempts to reconnect to the broker (it backs off from 1 s, doubling). |
+| `listener_max_consecutive_errors` | `50` | Positive integer: the events listener skips an event it cannot store and carries on; after this many failures in a row it exits so the platform restarts it. |
 | `worker_heartbeat_retention_days` | `7` | Integer 0–3650: retain minute-bucket worker observations for this many days. `0` disables collection and automatic history pruning, preserving existing samples and current WorkerState updates. |
 
 The heartbeat history option supplements task-run retention rules; it does not

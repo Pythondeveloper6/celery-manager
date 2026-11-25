@@ -37,7 +37,7 @@ RULE_KINDS = (
 )
 # Kinds about the one broker rather than a named thing: their target is
 # always "*" whatever was sent, so a rule can't claim to watch "redis-2".
-BROKER_KINDS = ("broker_unreachable", "broker_memory", "beat_stale")
+BROKER_KINDS = ("broker_unreachable", "broker_memory", "beat_stale", "listener_stale")
 CHANNEL_KINDS = ("slack", "webhook", "email", "teams", "pagerduty")
 PAGERDUTY_EVENTS_URL = "https://events.pagerduty.com/v2/enqueue"
 # A PagerDuty Events API v2 integration ("routing") key: 32 characters in

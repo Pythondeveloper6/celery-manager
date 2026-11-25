@@ -11,7 +11,7 @@ from celery_manager.alerts.host_health import PARAMS as HOST_HEALTH_PARAMS
 from celery_manager.alerts.host_health import check as check_host_health
 from celery_manager.alerts.llm import PARAMS as LLM_PARAMS
 from celery_manager.alerts.llm import check as check_llm
-from celery_manager.control.health import aware, beat_health
+from celery_manager.control.health import aware, beat_health, listener_health
 from celery_manager.db.models import TaskRun, WorkerState
 
 PARAMS = {
@@ -20,6 +20,7 @@ PARAMS = {
     "run_stuck": {"seconds": (float, 3600, 1, 604800), "p95_multiplier": (float, 3, 1, 100), "min_runs": (int, 10, 2, 10000)},
     "worker_lost": {"seconds": (float, 120, 1, 86400)},
     "beat_stale": {"seconds": (float, 120, 30, 86400)},
+    "listener_stale": {"seconds": (float, 120, 30, 86400)},
     "task_sla": {"seconds": (float, 3600, 1, 604800), "window_minutes": (int, 60, 1, 10080)},
     "duration_regression": {"multiplier": (float, 2, 1.01, 100), "baseline_days": (int, 30, 1, 365), "recent_minutes": (int, 60, 1, 43200), "min_runs": (int, 10, 2, 10000)},
     "daily_digest": {"hour_utc": (int, 8, 0, 23)},
@@ -96,6 +97,13 @@ def check(rule, params, probe):
             raise unavailable(health["reason"])
         if health["state"] == "stale":
             result.firing["beat"] = health
+        return result
+    if rule.kind == "listener_stale":
+        health = listener_health(probe.session, stale_seconds=params["seconds"], now=probe.now)
+        if health["state"] == "unknown":
+            raise unavailable(health["reason"])
+        if health["state"] == "stale":
+            result.firing["listener"] = health
         return result
     rows = _matched(rule, _rows(rule, params, probe))
     if not rows and probe.session.query(TaskRun.id).first() is None:

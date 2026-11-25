@@ -14,6 +14,27 @@ links to.
 | Events listener | `celery-manager events --celery-app your_module:app --db-url ...` | one |
 | Migrate (deploy step) | `celery-manager migrate --db-url ...` | once per release |
 
+### Events listener health
+
+The listener reconnects to the broker with exponential backoff
+(`listener_reconnect_max_seconds`), skips an event it cannot store (logging
+only its type and task id) and exits after `listener_max_consecutive_errors`
+failures in a row. `SIGTERM` stops capture, writes a last heartbeat and exits 0.
+
+Every 15 seconds it writes a heartbeat row (instance, last event time,
+events processed and failed, reconnects, lag). `GET /api/health/listener`,
+the `listener_stale` alert and the `celery_manager_listener_*` metrics read it.
+A listener that is connected but receives nothing goes stale after two
+minutes; on a cluster with no workers that means "stale" is expected.
+
+For a container probe that needs no credentials:
+
+- `celery-manager events --health-file /tmp/alive` touches the file on every heartbeat while healthy; probe on its age.
+- `celery-manager events --health-port 8081` answers every GET with an empty 200, or 503 when no event arrived for two minutes. It listens on all interfaces and sends no data.
+
+Run one listener: a standby that takes over on its own is not built in, so
+let the platform restart the process.
+
 Every process must build the same `CeleryManagerConfig` (same `db_url`, same
 `db_schema`). Only the dashboard process needs `secret_key`.
 

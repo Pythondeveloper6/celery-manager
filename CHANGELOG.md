@@ -6,6 +6,18 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Events listener resilience and liveness**: the listener reconnects to the
+  broker with exponential backoff (`listener_reconnect_max_seconds`), survives
+  an event it cannot store (`listener_max_consecutive_errors`) and handles
+  `SIGTERM`. It writes a heartbeat every 15 seconds, served by
+  `GET /api/health/listener`, the `listener_stale` alert and the
+  `celery_manager_listener_last_event_age_seconds`,
+  `celery_manager_listener_events_failed` and
+  `celery_manager_listener_lag_seconds` metrics. `celery-manager events
+  --health-file` and `--health-port` give container platforms a probe that
+  needs no credentials. No schema change.
+
 ## [0.3.0b1] — 2026-11-11
 
 First beta. The `Development Status` classifier moves from Alpha to Beta;

@@ -267,6 +267,11 @@ def upsert_task_run(session, event: dict, config=None) -> None:
         run.traceback = event["traceback"]
 
 
+class ListenerGaveUp(RuntimeError):
+    """Too many consecutive events failed to be stored; the database is
+    probably down, and a restart by the platform is the honest outcome."""
+
+
 class EventListener:
     """Long-running consumer of the Celery event bus. Run via the
     `celery-manager events` CLI command (Task 16 wires this up for the
@@ -280,16 +285,27 @@ class EventListener:
         self._config = config
         self._session_factory = session_factory
 
-    def run(self, *, enable_events=True) -> None:
+    def run(self, *, enable_events=True, health_file=None, health_port=None) -> None:
         app = self._config.celery_app
         state = app.events.State()
 
         import logging
+        import signal
         import threading
         import time
+
+        from celery_manager.events.liveness import (
+            ListenerStats,
+            start_heartbeat,
+            write_heartbeat,
+        )
         log = logging.getLogger(__name__)
         stop = threading.Event()
+        stats = ListenerStats()
         last_heartbeat = [time.monotonic()]
+        consecutive_errors = [0]
+        receiver_box = [None]
+        delay = [1.0]
 
         def enable():
             try:
@@ -306,26 +322,77 @@ class EventListener:
         def on_event(event):
             if event.get("type") in ("worker-online", "worker-heartbeat"):
                 last_heartbeat[0] = time.monotonic()
-            state.event(event)
-            with self._session_factory() as session:
-                from celery_manager.events.workers import record_worker_event
+            try:
+                state.event(event)
+                with self._session_factory() as session:
+                    from celery_manager.events.workers import record_worker_event
 
-                def write():
-                    record_worker_event(session, event, retention_days=self._config.worker_heartbeat_retention_days)
-                    upsert_task_run(session, event, self._config)
+                    def write():
+                        record_worker_event(session, event, retention_days=self._config.worker_heartbeat_retention_days)
+                        upsert_task_run(session, event, self._config)
 
-                commit_with_deadlock_retry(session, write)
+                    commit_with_deadlock_retry(session, write)
+            except Exception:
+                # Never log the event body: it carries task arguments.
+                stats.failed += 1
+                consecutive_errors[0] += 1
+                log.warning("celery-manager: could not store %s event for task %s", event.get("type"),
+                            event.get("uuid"), exc_info=True)
+                if consecutive_errors[0] >= self._config.listener_max_consecutive_errors:
+                    raise ListenerGaveUp(f"{consecutive_errors[0]} events in a row could not be stored") from None
+                return
+            consecutive_errors[0] = 0
+            delay[0] = 1.0  # the connection is demonstrably working
+            stats.processed += 1
+            stats.last_event_mono = time.monotonic()
+            stats.last_event_at = datetime.now(timezone.utc)
+            stamp = _event_time(event)
+            if stamp is not None:
+                stats.lag_seconds = max(0.0, (stats.last_event_at - stamp).total_seconds())
+
+        def on_term(signum, frame):
+            stop.set()
+            if receiver_box[0] is not None:
+                receiver_box[0].should_stop = True
 
         thread = None
         if enable_events:
             enable()
             thread = threading.Thread(target=maintain, name="cm-enable-events", daemon=True)
             thread.start()
+        stop_probe = start_heartbeat(self._session_factory, stats, stop, health_file=health_file,
+                                     health_port=health_port)
+        previous = None
         try:
-            with app.connection() as connection:
-                receiver = app.events.Receiver(connection, handlers={"*": on_event})
-                receiver.capture(limit=None, timeout=None, wakeup=True)
+            previous = signal.signal(signal.SIGTERM, on_term)
+        except ValueError:  # not the main thread
+            pass
+        try:
+            while not stop.is_set():
+                try:
+                    with app.connection() as connection:
+                        receiver = app.events.Receiver(connection, handlers={"*": on_event})
+                        receiver_box[0] = receiver
+                        receiver.capture(limit=None, timeout=None, wakeup=True)
+                except ListenerGaveUp:
+                    raise
+                except Exception:
+                    log.warning("celery-manager: lost the broker connection; retrying in %.0fs", delay[0], exc_info=True)
+                finally:
+                    receiver_box[0] = None
+                if stop.is_set():
+                    break
+                stats.reconnects += 1
+                stop.wait(delay[0])
+                delay[0] = min(delay[0] * 2, self._config.listener_reconnect_max_seconds)
         finally:
             stop.set()
+            if previous is not None:
+                signal.signal(signal.SIGTERM, previous)
+            stop_probe()
+            try:
+                write_heartbeat(self._session_factory, stats)
+            except Exception:
+                log.warning("celery-manager: could not write the final listener heartbeat", exc_info=True)
             if thread:
                 thread.join(timeout=1)

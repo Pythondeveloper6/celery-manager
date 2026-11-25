@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from celery_manager.api.deps import get_current_user, require_admin
 from celery_manager.api.serialization import utc
-from celery_manager.control.health import attention_runs, beat_health
+from celery_manager.control.health import attention_runs, beat_health, listener_health
 from celery_manager.db.models import WorkerState
 
 router = APIRouter(prefix="/api/health", dependencies=[Depends(get_current_user)])
@@ -13,6 +13,12 @@ def beat(request: Request, stale_seconds: int = Query(120, ge=30, le=86400),
          owner_id: str | None = Query(None, min_length=1, max_length=500)):
     with request.app.state.cm_session_factory() as session:
         return beat_health(session, stale_seconds=stale_seconds, owner_id=owner_id)
+
+
+@router.get("/listener")
+def listener(request: Request, stale_seconds: int = Query(120, ge=30, le=86400)):
+    with request.app.state.cm_session_factory() as session:
+        return listener_health(session, stale_seconds=stale_seconds)
 
 
 @router.get("/workers")

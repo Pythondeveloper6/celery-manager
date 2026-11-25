@@ -235,6 +235,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="also evaluate alert rules in this process, on a background thread",
     )
     events_parser.add_argument("--enable-events", action=argparse.BooleanOptionalAction, default=True)
+    events_parser.add_argument("--health-file", help="touch this file on every heartbeat while the listener is healthy")
+    events_parser.add_argument("--health-port", type=int, help="serve HTTP 200 (healthy) or 503 on this port, for container probes")
     events_parser.add_argument("--alerts-interval", type=float, help="seconds between alert checks")
 
     alerts_parser = subparsers.add_parser("alerts", help="evaluate alert rules and send messages")
@@ -516,7 +518,8 @@ def main(argv: list[str] | None = None) -> None:
         )
 
         start_sampler(session_factory, config.celery_app, config)
-        EventListener(config, session_factory).run(enable_events=args.enable_events)
+        EventListener(config, session_factory).run(
+            enable_events=args.enable_events, health_file=args.health_file, health_port=args.health_port)
 
 
 if __name__ == "__main__":

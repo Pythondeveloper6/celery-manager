@@ -272,6 +272,10 @@ celery-manager events --celery-app your_module:your_celery_app \
                       --db-url sqlite:///celery_manager.db
 ```
 
+The listener reconnects after a broker restart and writes a heartbeat that
+`GET /api/health/listener`, a `listener_stale` alert and the metrics report;
+`--health-file` and `--health-port` give container probes a credential-free check.
+
 The listener sees nothing unless workers emit events: set `worker_send_task_events = True`
 and `task_send_sent_event = True` (or run the worker with `-E`). See
 [Required Celery settings](https://github.com/Pythondeveloper6/celery-manager/blob/main/docs/quickstart.md#required-celery-settings).

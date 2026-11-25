@@ -805,6 +805,7 @@ scheduler ownership, dispatch validation and the deployment checklist.
 | `POST` | `/api/schedules/{name}/skip-next` | operator | Records the next enabled occurrence as a one-off skip. Repeated calls use existing tolerance-based idempotence. No available occurrence returns 409. |
 | `POST` | `/api/schedules/{name}/run-now` | operator | Dispatches the entry arguments through the task policy. Returns `{task_id}`; carries no occurrence header and consumes no scheduled skip. |
 | `GET` | `/api/schedules/health` | viewer | Backend/definition drift, unregistered tasks and historical entries missing from the backend. Optional `inspect_consumers=true` adds bounded observed-consumer diagnostics; unknown replies do not prove absent workers. |
+| `GET` | `/api/health/listener` | viewer | Events listener liveness from its heartbeat row: `healthy`/`stale`/`unknown`, last event time and age, events processed and failed, reconnects, lag and clock-skew count. Optional `stale_seconds`. |
 | `GET` | `/api/health/beat` | viewer | Healthy/stale/unknown beat state, last tick and age. Optional `stale_seconds` threshold. |
 | `GET` | `/api/health/workers` | viewer | Durable last-seen worker online/offline observations. |
 | `GET` | `/api/health/runs` | viewer | Advisory `worker_lost`/`suspect_stuck` findings; optional `stuck_seconds`. Never changes execution status. |

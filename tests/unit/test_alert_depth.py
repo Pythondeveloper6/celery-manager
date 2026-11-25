@@ -35,7 +35,7 @@ def row(task_id, status="failed", seconds=100, ago=1):
                    runtime_seconds=seconds if status != "started" else None)
 
 
-@pytest.mark.parametrize("kind", ["task_failed", "consecutive_failures", "run_stuck", "worker_lost", "beat_stale", "task_sla", "duration_regression", "daily_digest"])
+@pytest.mark.parametrize("kind", ["task_failed", "consecutive_failures", "run_stuck", "worker_lost", "beat_stale", "listener_stale", "task_sla", "duration_regression", "daily_digest"])
 def test_no_evidence_is_unknown(kind, env):
     config, sessions = env
     with sessions() as session:
