@@ -17,6 +17,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from celery import Celery
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
 from sqlalchemy.orm import sessionmaker
 
 from celery_manager import cli
@@ -380,3 +381,26 @@ def test_status_source_migration_round_trips(tmp_path):
         command.upgrade(alembic_config(conn), "head")
     assert "status_source" in columns()
     engine.dispose()
+
+
+def test_unicode_payload_migration_alters_only_on_sql_server(tmp_path):
+    import importlib
+    import io
+
+    from alembic.operations import Operations
+    from sqlalchemy.dialects import mssql
+
+    module = importlib.import_module("celery_manager.db.migrations.versions.0023_unicode_payload_columns")
+    out = io.StringIO()
+    context = MigrationContext.configure(dialect_name="mssql", opts={"as_sql": True, "output_buffer": out})
+    with Operations.context(context):
+        module.upgrade()
+    sql = out.getvalue()
+    assert "ALTER COLUMN args NVARCHAR(max) NOT NULL" in sql
+    assert "ALTER COLUMN task_name NVARCHAR(255) NOT NULL" in sql
+    assert sql.index("DROP INDEX ix_task_runs_task_name") < sql.index("ALTER COLUMN task_name") < sql.index("CREATE INDEX ix_task_runs_task_name")
+    for name in ("args", "exception", "task_name", "worker"):
+        assert str(TaskRun.__table__.c[name].type.compile(dialect=mssql.dialect())).startswith("N")  # NTEXT offline
+    assert str(TaskRun.__table__.c.args.type.compile(dialect=sqlite_dialect())) == "TEXT"
+    engine = init_db(_config(_url(tmp_path)))  # other dialects: the revision applies as a no-op
+    assert _version(engine) == head_revision()

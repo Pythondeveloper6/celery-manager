@@ -1611,6 +1611,14 @@ SQLite, PostgreSQL, MySQL and SQL Server have dedicated CI contracts for migrati
 concurrent writers and pruning. SQL Server additionally needs ODBC Driver 18,
 installed outside Python; `[mssql]` installs its Python driver only.
 
+On SQL Server, free-text columns (arguments, results, exceptions, tracebacks,
+logs, task, queue, worker and schedule names, alert and audit details) are
+`NVARCHAR`, so text in any script and emoji are stored exactly under a non-UTF-8
+collation. Migration `0023` converts existing columns (rebuilding the indexes on
+the label columns) and does nothing on other databases. Until it has run on a
+SQL Server database with a non-UTF-8 collation, `celery-manager doctor` reports
+a `unicode_storage` note.
+
 ## Operational health
 
 The listener persists worker online/heartbeat/offline observations. Read

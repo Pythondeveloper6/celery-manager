@@ -1,5 +1,5 @@
 """Exact opaque identities, independent of a database's default text collation."""
-from sqlalchemy import LargeBinary, Unicode, and_, bindparam
+from sqlalchemy import LargeBinary, String, Text, Unicode, UnicodeText, and_, bindparam
 from sqlalchemy.dialects.mysql import VARCHAR
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql.functions import FunctionElement
@@ -18,6 +18,16 @@ def portable_text_fits(value, limit):
 def identity_type(length=255):
     """Unicode storage even when a MySQL database defaults to a legacy charset."""
     return Unicode(length).with_variant(VARCHAR(length, charset="utf8mb4"), "mysql")
+
+
+def payload_text():
+    """Free text; NVARCHAR(max) on SQL Server, whose VARCHAR drops characters outside the code page."""
+    return Text().with_variant(UnicodeText(), "mssql")
+
+
+def label_text(length=255):
+    """Short free-text label; NVARCHAR on SQL Server, plain VARCHAR elsewhere."""
+    return String(length).with_variant(Unicode(length), "mssql")
 
 
 class _IdentityBytes(FunctionElement):

@@ -10,12 +10,11 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
-    Text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from celery_manager.db.dialect import utcnow
-from celery_manager.db.identity import identity_type
+from celery_manager.db.identity import identity_type, label_text, payload_text
 
 
 class Base(DeclarativeBase):
@@ -31,10 +30,10 @@ class TaskRun(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    task_name: Mapped[str] = mapped_column(String(255), index=True)
+    task_name: Mapped[str] = mapped_column(label_text(255), index=True)
     source: Mapped[str] = mapped_column(String(32), default="celery", server_default="celery", index=True)
     tenant_id: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
-    context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    context_json: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     operation_key: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
     correlation_id: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), index=True)  # queued/started/succeeded/failed/retried/skipped/revoked/lost
@@ -42,10 +41,10 @@ class TaskRun(Base):
     # (read from the result backend), `reconcile` (`lost`) or `seed` (a run
     # found on a worker at listener start). NULL for event-driven statuses.
     status_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    queue: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    worker: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    args: Mapped[str] = mapped_column(Text, default="[]")
-    kwargs: Mapped[str] = mapped_column(Text, default="{}")
+    queue: Mapped[str | None] = mapped_column(label_text(255), nullable=True)
+    worker: Mapped[str | None] = mapped_column(label_text(255), nullable=True)
+    args: Mapped[str] = mapped_column(payload_text(), default="[]")
+    kwargs: Mapped[str] = mapped_column(payload_text(), default="{}")
     eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Queue wait inputs (migration 0011), from the task-sent / task-received
     # event timestamps. Earliest value wins; see events/listener.py and
@@ -55,15 +54,15 @@ class TaskRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     runtime_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    exception: Mapped[str | None] = mapped_column(Text, nullable=True)
-    traceback: Mapped[str | None] = mapped_column(Text, nullable=True)
-    log_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exception: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
+    traceback: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
+    log_output: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     log_output_truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    result_repr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_repr: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     result_truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    initiator: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    initiator: Mapped[str | None] = mapped_column(label_text(255), nullable=True, index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
-    schedule_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    schedule_name: Mapped[str | None] = mapped_column(label_text(255), nullable=True, index=True)
 
     # Retry lineage. Set by `retry_task` on the *new* run it dispatches, so a
     # run can point back at the run it was retried from and the detail view
@@ -84,7 +83,7 @@ class TaskRun(Base):
     # only a count and whatever message the task supplied.
     progress_current: Mapped[int | None] = mapped_column(Integer, nullable=True)
     progress_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    progress_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progress_message: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     progress_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Workflow lineage (chains, groups, chords), from Celery's own
@@ -105,7 +104,7 @@ class TaskRun(Base):
     # Why a `skipped` run was skipped, in words the dashboard shows as-is
     # ("schedule paused", "maintenance window: Sunday patching"). NULL for
     # every other status and for skips recorded before migration 0010.
-    skip_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    skip_reason: Mapped[str | None] = mapped_column(label_text(255), nullable=True)
     # When anything on this row last changed — the dashboard's change feed.
     # The API process polls `updated_at > cursor` (see `db/changefeed.py`) to
     # tell connected browsers about writes made by *other* processes (the
@@ -131,8 +130,8 @@ class PeriodicSchedule(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     task_name: Mapped[str] = mapped_column(String(255))
     schedule_spec: Mapped[str] = mapped_column(String(255))  # human-readable, e.g. "2h" or "crontab(minute=0,hour=7)"
-    args: Mapped[str] = mapped_column(Text, default="[]")
-    kwargs: Mapped[str] = mapped_column(Text, default="{}")
+    args: Mapped[str] = mapped_column(payload_text(), default="[]")
+    kwargs: Mapped[str] = mapped_column(payload_text(), default="{}")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Whole-schedule pause. `paused_at IS NOT NULL` *is* the paused state —
@@ -157,9 +156,9 @@ class PeriodicSchedule(Base):
     # describing the code's schedule, so "revert to code" has something to
     # show. Beat applies it only when it runs
     # `celery_manager.beat:DatabaseScheduler`.
-    definition: Mapped[str | None] = mapped_column(Text, nullable=True)
+    definition: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    schedule_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    schedule_override: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -197,7 +196,7 @@ class MaintenanceWindow(Base):
     start_time: Mapped[str] = mapped_column(String(5))
     duration_minutes: Mapped[int] = mapped_column(Integer)
     timezone: Mapped[str] = mapped_column(String(64))
-    applies_to: Mapped[str] = mapped_column(Text)
+    applies_to: Mapped[str] = mapped_column(payload_text())
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -250,7 +249,7 @@ class AppSetting(Base):
     __tablename__ = "app_settings"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -266,7 +265,7 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(64))
     target_type: Mapped[str] = mapped_column(String(64))
     target_id: Mapped[str] = mapped_column(String(255))
-    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -286,13 +285,13 @@ class AlertChannel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
     kind: Mapped[str] = mapped_column(String(16))  # slack | webhook | email
-    config: Mapped[str] = mapped_column(Text, default="{}")
+    config: Mapped[str] = mapped_column(payload_text(), default="{}")
     created_by: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     # Outcome of the most recent delivery (an alert or a test), for the
     # dashboard: an admin sees a broken channel before an incident does.
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -313,8 +312,8 @@ class AlertRule(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True)
     kind: Mapped[str] = mapped_column(String(32))  # failure_rate | queue_backlog | worker_offline | missed_run
     target: Mapped[str] = mapped_column(String(255), default="*")
-    params: Mapped[str] = mapped_column(Text, default="{}")
-    channel_ids: Mapped[str] = mapped_column(Text, default="[]")
+    params: Mapped[str] = mapped_column(payload_text(), default="{}")
+    channel_ids: Mapped[str] = mapped_column(payload_text(), default="[]")
     quiet_period_minutes: Mapped[int] = mapped_column(Integer, default=60)
     notify_resolved: Mapped[bool] = mapped_column(Boolean, default=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -325,7 +324,7 @@ class AlertRule(Base):
     # could not (broker unreachable, no worker replies...). A rule that
     # can't be checked neither fires nor resolves; the dashboard says so.
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_check_error: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
 
 
 class AlertIncident(Base):
@@ -357,9 +356,9 @@ class AlertIncident(Base):
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     # Why the last message for this incident failed on some channel, if it did.
-    delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivery_error: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
 
 
 class AlertWorkerSighting(Base):

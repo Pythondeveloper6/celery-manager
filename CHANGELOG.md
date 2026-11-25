@@ -7,6 +7,12 @@ All notable changes to celery-manager are recorded here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **SQL Server stores free text as Unicode.** Arguments, results, exceptions,
+  tracebacks, logs, task, queue, worker and schedule names, and alert and audit
+  details are `NVARCHAR`, so non-Latin text and emoji are no longer replaced
+  under a non-UTF-8 collation. Migration `0023` converts existing columns on
+  SQL Server only (other databases are untouched); `celery-manager doctor` notes
+  a non-UTF-8 collation until it has run.
 - The events listener stamps `started_at` and `finished_at` from the event's own
   timestamp (and `finished_at` as `started_at` plus the reported runtime)
   instead of its own clock, so a lagging or reconnecting listener no longer

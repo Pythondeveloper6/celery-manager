@@ -72,14 +72,25 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
             with engine.connect() as connection:
                 connection.execute(text("SELECT 1"))
             state = migration_status(engine)
-            return state.up_to_date
+            warning = None
+            if engine.dialect.name == "mssql" and (state.current or "") < "0023":
+                with engine.connect() as connection:
+                    collation = connection.execute(text("SELECT CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS NVARCHAR(128))")).scalar()
+                if not str(collation).upper().endswith("_UTF8"):
+                    warning = f"Database collation {collation} is not UTF-8 and Unicode payload columns are not migrated; run the explicit migrate command"
+            return state.up_to_date, warning
         finally:
             if record is None:
                 engine.dispose()
     ok, current = _bounded(config, "storage", storage, timeout)
+    warning = None
+    if ok:
+        current, warning = current
     add("storage_and_migrations", "pass" if ok and current else "fail",
         "Storage reachable and migrations current" if ok and current else
         "Storage reachable; run the explicit migrate command" if ok else "Storage check failed: " + current)
+    if warning:
+        add("unicode_storage", "warn", warning)
     external = config.authenticate_request is not None or bool(config.principal_providers)
     safe_key = bool(config.secret_key and config.secret_key.strip() and config.secret_key != "change-me")
     add("authentication", "pass" if safe_key and (external or config.local_login_enabled) else "fail",
