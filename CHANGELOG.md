@@ -21,6 +21,15 @@ All notable changes to celery-manager are recorded here. The format follows
   the arrival time and is counted as `clock_skew` on `GET /api/health/listener`.
 
 ### Added
+- **Browser sign-in with an OIDC provider**: `oidc_client_id` turns on
+  `GET /api/auth/oidc/login` and `/callback` (authorization code with PKCE) using
+  the `OIDCBearerProvider` already configured. The session lasts
+  `session_max_age_seconds`; the role is re-read with the refresh token every
+  `oidc_role_refresh_seconds` and a failed refresh revokes the session.
+  `auth_mode` and `oidc_login_url` appear in `GET /api/auth/options`, and the
+  bridge response reports `renew_after`. Migration `0024` adds the refresh
+  token, role and check time to `browser_sessions`. The OIDC network calls are
+  injectable on the provider (`fetch_json`, `post_form`).
 - **Reconciler** for runs left open while the events listener was down:
   `celery-manager reconcile --once`, or a thread of `celery-manager events`
   (`reconcile_interval_seconds`, `reconcile_after_seconds`,

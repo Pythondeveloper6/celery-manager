@@ -341,6 +341,11 @@ compose with the existing configuration and retention UI.
 | `principal_providers` | `()` | Ordered external providers, before the existing host callable and local-cookie fallback. |
 | `session_max_age_seconds` | `604800` | Local-cookie lifetime; existing password fingerprints and live role lookup still apply. |
 | `session_bridge_enabled` | `False` | Opt into a short external-authenticated dashboard cookie. |
+| `oidc_client_id` / `oidc_client_secret` | `None` | Turn on the built-in OIDC sign-in (needs an `OIDCBearerProvider` in `principal_providers`). |
+| `oidc_scopes` | `("openid", "profile", "offline_access")` | Scopes requested at sign-in. |
+| `oidc_redirect_path` | `/api/auth/oidc/callback` | Callback path, appended to `dashboard_url` or the request address. |
+| `oidc_role_refresh_seconds` | `900` | How often the role is re-read with the refresh token; a failure ends the session. |
+| `auth_mode` | `"cookie"` | `"bearer"` tells the dashboard the host sends a bearer token on every request. |
 | `bridge_max_age_seconds` | `300` | Bridge lifetime; fresh external authentication is required to renew. |
 | `trusted_origins` | `()` | Explicit HTTP(S) origins for credentialed CORS and cross-origin cookie writes. |
 | `frame_ancestors` | `()` | Explicit embedding origins. Empty denies framing; nonempty replaces deny-frame headers with the configured CSP. |

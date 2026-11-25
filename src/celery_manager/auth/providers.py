@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 from typing import Protocol
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
 
 from fastapi import HTTPException
@@ -23,6 +25,20 @@ class CallableProvider:
         return self.fn(request)
 
 
+def _fetch_json(url):
+    with urlopen(url, timeout=10) as response:
+        return json.load(response)
+
+
+def _post_form(url, data, auth=None):
+    headers = {"Accept": "application/json"}
+    if auth:
+        import base64
+        headers["Authorization"] = "Basic " + base64.b64encode(":".join(auth).encode()).decode()
+    with urlopen(UrlRequest(url, urlencode(data).encode(), headers), timeout=10) as response:
+        return json.load(response)
+
+
 class OIDCBearerProvider:
     """JWT/JWKS validation with explicit issuer, audience and asymmetric algorithms.
 
@@ -32,7 +48,8 @@ class OIDCBearerProvider:
 
     def __init__(self, *, issuer, audience, jwks_url=None, algorithms=("RS256",),
                  leeway_s=60, jwks_cache_s=3600, username_claim="preferred_username",
-                 subject_claim="sub", role_claim="roles", role_map=None, role_mapper=None):
+                 subject_claim="sub", role_claim="roles", role_map=None, role_mapper=None,
+                 fetch_json=_fetch_json, post_form=_post_form):
         if not issuer.startswith("https://") or (jwks_url and not jwks_url.startswith("https://")):
             raise ValueError("OIDC issuer and JWKS URL must use HTTPS")
         if not audience or not algorithms or any(a not in {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"} for a in algorithms):
@@ -44,17 +61,23 @@ class OIDCBearerProvider:
         self.cache_s = jwks_cache_s
         self.username_claim, self.subject_claim = username_claim, subject_claim
         self.role_claim, self.role_map, self.role_mapper = role_claim, role_map or {}, role_mapper
-        self._client = None
+        self._client = self._discovery = None
+        # Injectable so tests (and hosts behind a proxy) control every network call.
+        self.fetch_json, self.post_form = fetch_json, post_form
+
+    def discovery(self):
+        if self._discovery is None:
+            found = self.fetch_json(self.issuer.rstrip("/") + "/.well-known/openid-configuration")
+            if found.get("issuer") != self.issuer:
+                raise ValueError("Discovery issuer mismatch")
+            self._discovery = found
+        return self._discovery
 
     def _jwks_client(self, jwt):
         if self._client is None:
             url = self.jwks_url
             if url is None:
-                with urlopen(self.issuer.rstrip("/") + "/.well-known/openid-configuration", timeout=10) as response:
-                    discovery = json.load(response)
-                if discovery.get("issuer") != self.issuer:
-                    raise ValueError("Discovery issuer mismatch")
-                url = discovery["jwks_uri"]
+                url = self.discovery()["jwks_uri"]
                 if not url.startswith("https://"):
                     raise ValueError("JWKS URL must use HTTPS")
             self._client = jwt.PyJWKClient(url, lifespan=self.cache_s, timeout=10)
@@ -67,6 +90,10 @@ class OIDCBearerProvider:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
             raise HTTPException(401, "Expected a bearer token")
+        return self.validate(token)
+
+    def validate(self, token):
+        """The user a signed access token names; HTTPException 401 when invalid."""
         try:
             import jwt
         except ImportError as exc:

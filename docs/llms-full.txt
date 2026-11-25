@@ -1466,12 +1466,36 @@ Install `celery-manager[oidc]`. Issuer, audience, expiration and signatures are
 validated with an explicit asymmetric algorithm allowlist. Roles require an
 explicit mapping or `role_mapper(claims)`; unknown permissions grant no access.
 The adapter uses cached JWKS and refreshes for a rotated key ID. It validates
-bearer tokens; it does not implement an interactive OIDC redirect flow. Use the
-host application's existing login flow.
+bearer tokens on every request. For a browser with no host cookie, turn on the
+built-in sign-in below.
+
+### Browser sign-in with an OIDC provider
+
+Set `oidc_client_id` (and `oidc_client_secret` for a confidential client) next to
+the `OIDCBearerProvider` above. `GET /api/auth/oidc/login` redirects to the
+provider (authorization code with PKCE, `oidc_scopes`, default
+`openid profile offline_access`) and `GET /api/auth/oidc/callback`, at
+`oidc_redirect_path` under `dashboard_url` (or the request's own address), trades
+the code for tokens. Register that callback URL with the provider. The access
+token is validated and its roles mapped exactly like a bearer token. The
+dashboard then holds a tracked session for `session_max_age_seconds`, and
+`GET /api/auth/options` carries `oidc_login_url` for a sign-in button.
+
+Every `oidc_role_refresh_seconds` (900) the role is read again with the stored
+refresh token. If the refresh fails, or the role was removed, the session is
+revoked. A provider that issues no refresh token therefore ends the session at
+the first refresh; keep `offline_access` in the scopes. The refresh token is
+stored in the `browser_sessions` table; protect that database like the secret
+key. Nothing in this flow needs the host app's session.
+
+Embedded use where the host keeps the token in memory: set `auth_mode="bearer"`
+(reported by `GET /api/auth/options`) and send `Authorization: Bearer` on every
+request. `POST /api/auth/bridge` can be called again while the bearer token is
+valid; its response carries `renew_after`, 80% of the bridge lifetime.
 
 For link-outs into the SPA, opt in to `session_bridge_enabled=True`. A freshly
 authenticated `POST /api/auth/bridge` sets a signed dashboard cookie for
-`bridge_max_age_seconds` (300 by default). It cannot renew itself. Permission
+`bridge_max_age_seconds` (300 by default). It does not renew from the cookie alone; call it again with a valid bearer token. Permission
 changes take effect when that short session expires; deployments requiring
 immediate revocation should use the host request authenticator on every request.
 `session_max_age_seconds` controls local-account sessions.
@@ -7611,6 +7635,8 @@ scheduler ownership, dispatch validation and the deployment checklist.
 
 | Method | Path | Minimum role | Contract |
 |---|---|---|---|
+| `GET` | `/api/auth/oidc/login` | none | Redirects to the identity provider (code + PKCE). 404 unless `oidc_client_id` is set. |
+| `GET` | `/api/auth/oidc/callback` | none | Completes the sign-in, sets the session cookie, redirects to the dashboard. |
 | `POST` | `/api/auth/bridge` | viewer, external authentication | Disabled unless explicitly enabled. Issues a short cookie after fresh external authentication; cannot renew from the bridge cookie alone. |
 | `GET` | `/api/schedules/backend` | viewer | Backend `name`, `writable`, and recommended `beat_scheduler` class. |
 | `POST` | `/api/schedules/preview` | viewer | A schedule spec or `{schedule: spec}`; returns validated `schedule`, description, timezone and ten UTC ISO `occurrences`. Text specs use `{type:"text", text:"weekdays at 06:30"}`. Saves nothing. |
@@ -8039,6 +8065,11 @@ compose with the existing configuration and retention UI.
 | `principal_providers` | `()` | Ordered external providers, before the existing host callable and local-cookie fallback. |
 | `session_max_age_seconds` | `604800` | Local-cookie lifetime; existing password fingerprints and live role lookup still apply. |
 | `session_bridge_enabled` | `False` | Opt into a short external-authenticated dashboard cookie. |
+| `oidc_client_id` / `oidc_client_secret` | `None` | Turn on the built-in OIDC sign-in (needs an `OIDCBearerProvider` in `principal_providers`). |
+| `oidc_scopes` | `("openid", "profile", "offline_access")` | Scopes requested at sign-in. |
+| `oidc_redirect_path` | `/api/auth/oidc/callback` | Callback path, appended to `dashboard_url` or the request address. |
+| `oidc_role_refresh_seconds` | `900` | How often the role is re-read with the refresh token; a failure ends the session. |
+| `auth_mode` | `"cookie"` | `"bearer"` tells the dashboard the host sends a bearer token on every request. |
 | `bridge_max_age_seconds` | `300` | Bridge lifetime; fresh external authentication is required to renew. |
 | `trusted_origins` | `()` | Explicit HTTP(S) origins for credentialed CORS and cross-origin cookie writes. |
 | `frame_ancestors` | `()` | Explicit embedding origins. Empty denies framing; nonempty replaces deny-frame headers with the configured CSP. |

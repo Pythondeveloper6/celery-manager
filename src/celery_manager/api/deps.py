@@ -80,6 +80,21 @@ def get_current_principal(
                     if not active_session(db_session, sid, bridge["username"], SOURCE_EXTERNAL, bridge["subject"]):
                         raise HTTPException(401, "invalid or expired session")
             return CurrentUser(**bridge, source=SOURCE_EXTERNAL, session_id=sid)
+    if session is not None and config.oidc_client_id:
+        from celery_manager.auth.oidc_flow import session_role
+        from celery_manager.auth.sessions import (
+            OIDC_SALT,
+            browser_session_id,
+            verify_bridge,
+        )
+        claims = verify_bridge(config.secret_key, session, config.session_max_age_seconds, OIDC_SALT)
+        if claims is not None:
+            sid = browser_session_id(config.secret_key, session, config.session_max_age_seconds, salt=OIDC_SALT)
+            with request.app.state.cm_session_factory() as db_session:
+                role = sid and session_role(config, db_session, sid, claims["username"], claims["subject"])
+            if not role:
+                raise HTTPException(401, "invalid or expired session")
+            return CurrentUser(claims["username"], role, SOURCE_EXTERNAL, claims["subject"], sid)
     if not config.local_login_enabled:
         # Ignore cm_session cookies outright: turning local login off must
         # end the sessions it already issued, not only stop new ones.

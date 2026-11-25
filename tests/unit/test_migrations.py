@@ -404,3 +404,22 @@ def test_unicode_payload_migration_alters_only_on_sql_server(tmp_path):
     assert str(TaskRun.__table__.c.args.type.compile(dialect=sqlite_dialect())) == "TEXT"
     engine = init_db(_config(_url(tmp_path)))  # other dialects: the revision applies as a no-op
     assert _version(engine) == head_revision()
+
+
+def test_oidc_session_migration_round_trips(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+    new = {"refresh_token", "role", "roles_checked_at"}
+
+    def columns():
+        return {c["name"] for c in inspect(engine).get_columns("browser_sessions")}
+
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0024")
+    assert new <= columns()
+    with engine.begin() as conn:
+        command.downgrade(alembic_config(conn), "0023")
+    assert not new & columns()
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "head")
+    assert new <= columns()
+    engine.dispose()

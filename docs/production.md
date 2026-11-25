@@ -94,12 +94,36 @@ Install `celery-manager[oidc]`. Issuer, audience, expiration and signatures are
 validated with an explicit asymmetric algorithm allowlist. Roles require an
 explicit mapping or `role_mapper(claims)`; unknown permissions grant no access.
 The adapter uses cached JWKS and refreshes for a rotated key ID. It validates
-bearer tokens; it does not implement an interactive OIDC redirect flow. Use the
-host application's existing login flow.
+bearer tokens on every request. For a browser with no host cookie, turn on the
+built-in sign-in below.
+
+### Browser sign-in with an OIDC provider
+
+Set `oidc_client_id` (and `oidc_client_secret` for a confidential client) next to
+the `OIDCBearerProvider` above. `GET /api/auth/oidc/login` redirects to the
+provider (authorization code with PKCE, `oidc_scopes`, default
+`openid profile offline_access`) and `GET /api/auth/oidc/callback`, at
+`oidc_redirect_path` under `dashboard_url` (or the request's own address), trades
+the code for tokens. Register that callback URL with the provider. The access
+token is validated and its roles mapped exactly like a bearer token. The
+dashboard then holds a tracked session for `session_max_age_seconds`, and
+`GET /api/auth/options` carries `oidc_login_url` for a sign-in button.
+
+Every `oidc_role_refresh_seconds` (900) the role is read again with the stored
+refresh token. If the refresh fails, or the role was removed, the session is
+revoked. A provider that issues no refresh token therefore ends the session at
+the first refresh; keep `offline_access` in the scopes. The refresh token is
+stored in the `browser_sessions` table; protect that database like the secret
+key. Nothing in this flow needs the host app's session.
+
+Embedded use where the host keeps the token in memory: set `auth_mode="bearer"`
+(reported by `GET /api/auth/options`) and send `Authorization: Bearer` on every
+request. `POST /api/auth/bridge` can be called again while the bearer token is
+valid; its response carries `renew_after`, 80% of the bridge lifetime.
 
 For link-outs into the SPA, opt in to `session_bridge_enabled=True`. A freshly
 authenticated `POST /api/auth/bridge` sets a signed dashboard cookie for
-`bridge_max_age_seconds` (300 by default). It cannot renew itself. Permission
+`bridge_max_age_seconds` (300 by default). It does not renew from the cookie alone; call it again with a valid bearer token. Permission
 changes take effect when that short session expires; deployments requiring
 immediate revocation should use the host request authenticator on every request.
 `session_max_age_seconds` controls local-account sessions.

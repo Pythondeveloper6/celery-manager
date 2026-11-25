@@ -254,6 +254,16 @@ class CeleryManagerConfig:
     session_max_age_seconds: int = 604800
     bridge_max_age_seconds: int = 300
     session_bridge_enabled: bool = False
+    # Built-in sign-in with an OIDC provider (authorization code + PKCE). Needs
+    # an OIDCBearerProvider in principal_providers for issuer, audience and
+    # roles; sessions last session_max_age_seconds.
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = field(default=None, repr=False)
+    oidc_scopes: tuple[str, ...] = ("openid", "profile", "offline_access")
+    oidc_redirect_path: str = "/api/auth/oidc/callback"
+    oidc_role_refresh_seconds: int = 900
+    # What the dashboard sends: "cookie" or "bearer" (host keeps the token).
+    auth_mode: str = "cookie"
     db_schema: str | None = None
     engine_options: dict = field(default_factory=dict)
     scheduler_backend: object = None
@@ -368,6 +378,12 @@ class CeleryManagerConfig:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be positive seconds")
+        if self.auth_mode not in ("cookie", "bearer"):
+            raise ValueError("auth_mode must be 'cookie' or 'bearer'")
+        if isinstance(self.oidc_role_refresh_seconds, bool) or not isinstance(self.oidc_role_refresh_seconds, int) or self.oidc_role_refresh_seconds <= 0:
+            raise ValueError("oidc_role_refresh_seconds must be positive seconds")
+        if self.oidc_client_id and not any(hasattr(p, "validate") and hasattr(p, "discovery") for p in self.principal_providers):
+            raise ValueError("oidc_client_id needs an OIDCBearerProvider in principal_providers")
         if self.schedule_sync_interval_seconds < 0:
             raise ValueError("schedule_sync_interval_seconds cannot be negative")
         if isinstance(self.startable_tasks, str):

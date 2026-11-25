@@ -796,6 +796,8 @@ scheduler ownership, dispatch validation and the deployment checklist.
 
 | Method | Path | Minimum role | Contract |
 |---|---|---|---|
+| `GET` | `/api/auth/oidc/login` | none | Redirects to the identity provider (code + PKCE). 404 unless `oidc_client_id` is set. |
+| `GET` | `/api/auth/oidc/callback` | none | Completes the sign-in, sets the session cookie, redirects to the dashboard. |
 | `POST` | `/api/auth/bridge` | viewer, external authentication | Disabled unless explicitly enabled. Issues a short cookie after fresh external authentication; cannot renew from the bridge cookie alone. |
 | `GET` | `/api/schedules/backend` | viewer | Backend `name`, `writable`, and recommended `beat_scheduler` class. |
 | `POST` | `/api/schedules/preview` | viewer | A schedule spec or `{schedule: spec}`; returns validated `schedule`, description, timezone and ten UTC ISO `occurrences`. Text specs use `{type:"text", text:"weekdays at 06:30"}`. Saves nothing. |

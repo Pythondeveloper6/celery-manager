@@ -36,15 +36,18 @@ def verify_session(secret_key: str, token: str, max_age_seconds: int = 60 * 60 *
     return None if claims is None else claims[0]
 
 
-def sign_bridge(secret_key, username, role, subject=None, *, session_id=None):
-    return URLSafeTimedSerializer(secret_key, salt="celery-manager-bridge").dumps(
+OIDC_SALT = "celery-manager-oidc-session"
+
+
+def sign_bridge(secret_key, username, role, subject=None, *, session_id=None, salt="celery-manager-bridge"):
+    return URLSafeTimedSerializer(secret_key, salt=salt).dumps(
         {"username": username, "role": role, "subject": subject, **({"sid": session_id} if session_id else {})})
 
 
-def verify_bridge(secret_key, token, max_age):
+def verify_bridge(secret_key, token, max_age, salt="celery-manager-bridge"):
     from celery_manager.auth.roles import ROLES
     try:
-        data = URLSafeTimedSerializer(secret_key, salt="celery-manager-bridge").loads(token, max_age=max_age)
+        data = URLSafeTimedSerializer(secret_key, salt=salt).loads(token, max_age=max_age)
     except BadData:
         return None
     if (not isinstance(data, dict) or data.get("role") not in ROLES
@@ -53,13 +56,13 @@ def verify_bridge(secret_key, token, max_age):
     return {k: data.get(k) for k in ("username", "role", "subject")}
 
 
-def browser_session_id(secret_key, token, max_age, *, bridge=False):
+def browser_session_id(secret_key, token, max_age, *, bridge=False, salt=None):
     """Return a signed bearer ID, or None for old stateless cookies.
 
     This helper does not authenticate by itself: verify claims and account
     fingerprint before accepting a local session, then check DB revocation.
     """
-    salt = "celery-manager-bridge" if bridge else _SALT
+    salt = salt or ("celery-manager-bridge" if bridge else _SALT)
     try:
         data = URLSafeTimedSerializer(secret_key, salt=salt).loads(token, max_age=max_age)
     except BadData:

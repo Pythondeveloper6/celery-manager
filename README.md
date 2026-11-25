@@ -163,6 +163,8 @@ OIDC, dispatch policies, bounded logs/results and storage isolation. The
 - **Built-in auth** — bcrypt-hashed users and signed session cookies.
 - **Roles** — `viewer` (read-only), `operator` (day-to-day controls) and
   `admin` (purge, worker shutdown, settings), enforced on the server.
+- **Browser sign-in with OIDC** — built-in authorization-code + PKCE flow with
+  periodic role refresh (`oidc_client_id`), or bearer tokens from the host.
 - **No Node toolchain required** — the React dashboard ships prebuilt inside
   the Python package.
 
