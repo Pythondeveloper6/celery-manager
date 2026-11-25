@@ -64,10 +64,10 @@ def config(app, **extra):
 def test_survives_broker_restart_and_one_failed_write(sessions, monkeypatch):
     real = listener_module.upsert_task_run
 
-    def flaky(session, event, config=None):
+    def flaky(session, event, config=None, stats=None):
         if event["uuid"] == "t3":
             raise RuntimeError("write failed")
-        real(session, event, config)
+        real(session, event, config, stats)
 
     monkeypatch.setattr(listener_module, "upsert_task_run", flaky)
     # One connection delivers 5 events (one fails to store) then the broker

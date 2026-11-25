@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.runs import commit_with_deadlock_retry, lock_task_run
@@ -172,7 +172,23 @@ def _earliest(current: datetime | None, incoming: datetime | None) -> datetime |
     return incoming if incoming < current_utc else current
 
 
-def upsert_task_run(session, event: dict, config=None) -> None:
+def _lifecycle_time(event: dict, config, stats) -> datetime:
+    """When the event happened: its own timestamp, unless it is missing or
+    differs from this process's clock by more than `event_clock_skew_seconds`
+    (a worker with a wrong clock), in which case the arrival time is used and
+    the event is counted."""
+    now = datetime.now(timezone.utc)
+    stamp = _event_time(event)
+    if stamp is None:
+        return now
+    if abs((stamp - now).total_seconds()) > getattr(config, "event_clock_skew_seconds", 300):
+        if stats is not None:
+            stats.clock_skew += 1
+        return now
+    return stamp
+
+
+def upsert_task_run(session, event: dict, config=None, stats=None) -> None:
     """Apply a single Celery event to the task_runs table.
 
     Pure function over a SQLAlchemy session so it's testable without a
@@ -227,10 +243,17 @@ def upsert_task_run(session, event: dict, config=None) -> None:
         run.kwargs = _merge_call_argument(run.kwargs, event["kwargs"], "{}")
     # Timestamps follow the status: a stale task-started must not move
     # started_at past a finish time already recorded.
+    # They use the event's own time, so a lagging or reconnecting listener
+    # does not shift them (and does not inflate queue wait).
     if status_applied and event_type == "task-started":
-        run.started_at = datetime.now(timezone.utc)
+        run.started_at = _lifecycle_time(event, config, stats)
     if status_applied and event_type in ("task-succeeded", "task-failed"):
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = _lifecycle_time(event, config, stats)
+        runtime = event.get("runtime")
+        if run.started_at is not None and isinstance(runtime, (int, float)) and not isinstance(runtime, bool) and runtime >= 0:
+            started = run.started_at
+            started = started.replace(tzinfo=timezone.utc) if started.tzinfo is None else started
+            run.finished_at = started + timedelta(seconds=runtime)
     # Queue wait inputs. Merged outside the status guard on purpose: a
     # task-sent processed after the worker already started the run is stale
     # for *status* but its timestamp is exactly the fact we want. Earliest
@@ -329,7 +352,7 @@ class EventListener:
 
                     def write():
                         record_worker_event(session, event, retention_days=self._config.worker_heartbeat_retention_days)
-                        upsert_task_run(session, event, self._config)
+                        upsert_task_run(session, event, self._config, stats)
 
                     commit_with_deadlock_retry(session, write)
             except Exception:

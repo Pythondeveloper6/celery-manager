@@ -275,6 +275,9 @@ class CeleryManagerConfig:
     # many events in a row may fail to be stored before the process gives up.
     listener_reconnect_max_seconds: float = 30.0
     listener_max_consecutive_errors: int = 50
+    # A task event whose own timestamp is further than this from the listener's
+    # clock is assumed to come from a wrong worker clock; arrival time is used.
+    event_clock_skew_seconds: float = 300.0
     # LLM usage rows (record_llm_usage) are kept this many days; 0 keeps them.
     llm_call_retention_days: int = 90
     # Optional prices in USD per million tokens, used when a call does not
@@ -330,6 +333,9 @@ class CeleryManagerConfig:
         if (isinstance(self.listener_max_consecutive_errors, bool) or not isinstance(self.listener_max_consecutive_errors, int)
                 or self.listener_max_consecutive_errors < 1):
             raise ValueError("listener_max_consecutive_errors must be a positive integer")
+        if (isinstance(self.event_clock_skew_seconds, bool) or not isinstance(self.event_clock_skew_seconds, (int, float))
+                or not 1 <= self.event_clock_skew_seconds <= 86400):
+            raise ValueError("event_clock_skew_seconds must be 1..86400")
         if isinstance(self.llm_call_retention_days, bool) or not isinstance(self.llm_call_retention_days, int) or not 0 <= self.llm_call_retention_days <= 3650:
             raise ValueError("llm_call_retention_days must be 0..3650 (0 keeps all)")
         from celery_manager.llm import validate_prices

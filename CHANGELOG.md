@@ -6,6 +6,14 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The events listener stamps `started_at` and `finished_at` from the event's own
+  timestamp (and `finished_at` as `started_at` plus the reported runtime)
+  instead of its own clock, so a lagging or reconnecting listener no longer
+  shifts start times or overstates queue wait. An event more than
+  `event_clock_skew_seconds` (default 300) away from the listener's clock keeps
+  the arrival time and is counted as `clock_skew` on `GET /api/health/listener`.
+
 ### Added
 - **Events listener resilience and liveness**: the listener reconnects to the
   broker with exponential backoff (`listener_reconnect_max_seconds`), survives

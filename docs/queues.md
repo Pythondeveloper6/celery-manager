@@ -75,6 +75,7 @@ worker started them, over the last 15 minutes:
 - A retry reuses the task id, so a retried run forgets its first attempt's
   `sent_at`/`eta` and is left out of wait statistics unless the new attempt's
   events refill them.
+- `started_at` comes from the `task-started` event's own timestamp, so a listener that lags or reconnects does not add to the wait. An event whose timestamp is more than `event_clock_skew_seconds` from the listener's clock is stamped with its arrival time instead.
 - Negative results (the producer's clock ahead of the worker's) count as 0.
 - Only runs that *started* inside the window count, and a queue with none
   shows `—`.
