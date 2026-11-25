@@ -121,7 +121,7 @@ All parameters are optional and combine with AND.
 
 | Param | Type | Default | Meaning |
 |---|---|---|---|
-| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`, `interrupted`. An unknown value is not an error — it just matches nothing. |
+| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`, `interrupted`, `lost`. An unknown value is not an error — it just matches nothing. |
 | `task_name` | `str` | — | **Exact** match on the registered task name. Not a prefix and not a substring: `task_name=send` does *not* match `myapp.send_mail`. Use `q` for partial names. |
 | `q` | `str` | — | Case-insensitive substring search across four columns — see below. |
 | `date_from` | datetime | — | `started_at >= date_from`. |

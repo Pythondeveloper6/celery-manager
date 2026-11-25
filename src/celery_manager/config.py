@@ -278,6 +278,12 @@ class CeleryManagerConfig:
     # A task event whose own timestamp is further than this from the listener's
     # clock is assumed to come from a wrong worker clock; arrival time is used.
     event_clock_skew_seconds: float = 300.0
+    # Reconciler (`celery-manager reconcile`, or a thread of `events`): how
+    # often it runs (0 turns the thread off), how long a run must have been
+    # untouched before it is checked, and how many runs one transaction covers.
+    reconcile_interval_seconds: float = 0.0
+    reconcile_after_seconds: float = 120.0
+    reconcile_batch_size: int = 200
     # LLM usage rows (record_llm_usage) are kept this many days; 0 keeps them.
     llm_call_retention_days: int = 90
     # Optional prices in USD per million tokens, used when a call does not
@@ -336,6 +342,12 @@ class CeleryManagerConfig:
         if (isinstance(self.event_clock_skew_seconds, bool) or not isinstance(self.event_clock_skew_seconds, (int, float))
                 or not 1 <= self.event_clock_skew_seconds <= 86400):
             raise ValueError("event_clock_skew_seconds must be 1..86400")
+        for name, low in (("reconcile_interval_seconds", 0), ("reconcile_after_seconds", 1)):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= 86400:
+                raise ValueError(f"{name} must be {low}..86400")
+        if isinstance(self.reconcile_batch_size, bool) or not isinstance(self.reconcile_batch_size, int) or not 1 <= self.reconcile_batch_size <= 10000:
+            raise ValueError("reconcile_batch_size must be 1..10000")
         if isinstance(self.llm_call_retention_days, bool) or not isinstance(self.llm_call_retention_days, int) or not 0 <= self.llm_call_retention_days <= 3650:
             raise ValueError("llm_call_retention_days must be 0..3650 (0 keeps all)")
         from celery_manager.llm import validate_prices

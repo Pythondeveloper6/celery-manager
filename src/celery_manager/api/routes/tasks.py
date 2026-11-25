@@ -160,6 +160,7 @@ def get_task(task_id: str, request: Request, principal: Principal):
             # (extending TaskSummary) claim fields the response never sent.
             "queue": run.queue,
             "worker": run.worker,
+            "status_source": run.status_source,
             "eta": utc(run.eta),
             "sent_at": utc(run.sent_at),
             "received_at": utc(run.received_at),

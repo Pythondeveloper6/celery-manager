@@ -209,6 +209,24 @@ def alerts_command(config: CeleryManagerConfig, interval: float | None, once: bo
         engine.dispose()
 
 
+def reconcile_command(config: CeleryManagerConfig, once: bool) -> int:
+    """`celery-manager reconcile`. Returns the process exit code (only with --once)."""
+    from celery_manager import reconcile
+
+    engine = init_db(config)
+    session_factory = get_session_factory(engine)
+    session_factory.configure(info={"cm_config": config})
+    try:
+        if once:
+            counts = reconcile.reconcile_once(config, session_factory)
+            print(f"checked {counts['checked']}, from result backend {counts['from_backend']}, marked lost {counts['lost']}.")
+            return 0
+        reconcile.run_forever(config, session_factory)
+        return 0
+    finally:
+        engine.dispose()
+
+
 def _add_config_args(parser: argparse.ArgumentParser, *, required: bool) -> None:
     parser.add_argument(
         "--celery-app", "--app", dest="celery_app", required=required, help="import path, e.g. demo.celery:app"
@@ -245,6 +263,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--interval", type=float, help="seconds between checks (default: alert_interval_seconds, 60)"
     )
     alerts_parser.add_argument("--once", action="store_true", help="check every rule once and exit")
+
+    reconcile_parser = subparsers.add_parser(
+        "reconcile", help="repair runs left open while the events listener was down"
+    )
+    _add_config_args(reconcile_parser, required=False)
+    reconcile_parser.add_argument("--once", action="store_true", help="run one pass and exit")
 
     migrate_parser = subparsers.add_parser(
         "migrate", help="upgrade the database schema to the latest revision"
@@ -498,6 +522,12 @@ def main(argv: list[str] | None = None) -> None:
         config = _load_config(args.config, args.celery_app, args.db_url)
         sys.exit(alerts_command(config, args.interval, args.once))
 
+    if args.command == "reconcile":
+        config = _load_config(args.config, args.celery_app, args.db_url)
+        if config.celery_app is None:
+            parser.error("reconcile requires Celery")
+        sys.exit(reconcile_command(config, args.once))
+
     if args.command == "events":
         config = _load_config(args.config, args.celery_app, args.db_url)
         if config.celery_app is None:
@@ -518,6 +548,9 @@ def main(argv: list[str] | None = None) -> None:
         )
 
         start_sampler(session_factory, config.celery_app, config)
+        from celery_manager.reconcile import start_in_background as start_reconciler
+
+        start_reconciler(config, session_factory)  # a no-op when reconcile_interval_seconds is 0
         EventListener(config, session_factory).run(
             enable_events=args.enable_events, health_file=args.health_file, health_port=args.health_port)
 

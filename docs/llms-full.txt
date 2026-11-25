@@ -1616,7 +1616,8 @@ installed outside Python; `[mssql]` installs its Python driver only.
 The listener persists worker online/heartbeat/offline observations. Read
 `GET /api/health/workers` for last-seen status and `/api/health/runs` for possibly
 stuck runs or runs associated with a lost worker. These are advisory findings;
-worker loss does not prove execution stopped, so task status is never rewritten.
+worker loss does not prove execution stopped, so the dashboard's findings never rewrite a status.
+The one writer is the opt-in [reconciler](#reconciling-after-a-listener-gap).
 The initial stuck threshold is configurable through the request's `stuck_seconds`.
 
 For beat liveness, set `app.conf.celery_manager_db_url` and, where needed,
@@ -1630,6 +1631,33 @@ existing alert incident/dedup/delivery machinery. Webhook URLs remain write-only
 Existing failure-rate, missed-run and worker-offline alerts remain available;
 new health findings do not yet introduce separate alert rule kinds.
 
+
+## Reconciling after a listener gap
+
+Celery events are not stored, so a run whose `task-succeeded` was sent while
+`celery-manager events` was down stays `started` for ever. The reconciler repairs
+that. Run it as a thread of the listener (`reconcile_interval_seconds=60`; `0`,
+the default, turns it off) or once with `celery-manager reconcile --once`.
+
+1. **Result backend.** A `queued`, `started`, `retried` or `lost` run untouched
+   for `reconcile_after_seconds` (120) is looked up with `get_task_meta`. A
+   success, failure or revoke is applied (results through `result_max_bytes`) and
+   the run gets `status_source = "backend"`, shown on `GET /api/tasks/{id}`.
+   Needs a result backend. To recover the name and arguments of a run that has
+   no row yet, set `result_extended = True` in Celery.
+2. **Lost.** A run still `started` is marked `lost` (with a reason,
+   `status_source = "reconcile"`) only when every worker seen in the last two
+   minutes answered ping, active, reserved and scheduled, none holds the task,
+   and the Redis unacknowledged set does not hold it. If any source cannot be
+   read, or the broker is not Redis, nothing changes. `queued` and `retried`
+   runs are never marked lost: they may be waiting in a queue. A later lifecycle
+   event replaces `lost`.
+3. **Seed.** When the listener starts with the reconciler on, tasks that workers
+   report as active or reserved and that have no row get one
+   (`status_source = "seed"`).
+
+`reconcile_batch_size` (200) is how many runs one transaction covers; a pass
+checks all of them.
 
 ## Host-owned execution and native operations
 
@@ -4569,7 +4597,7 @@ Each queue shows two counts:
 
 They routinely differ, and neither is wrong:
 
-- tasks sent while the events listener was down never got a row;
+- tasks sent while the events listener was down never got a row (unless the [reconciler](production.md#reconciling-after-a-listener-gap) seeds one);
 - the listener lags the broker by however long event delivery takes;
 - a worker pulls ETA/countdown tasks off the queue right away and holds them
   until they're due. Broker depth drops, but the run is still `queued`;
@@ -6900,7 +6928,7 @@ All parameters are optional and combine with AND.
 
 | Param | Type | Default | Meaning |
 |---|---|---|---|
-| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`, `interrupted`. An unknown value is not an error — it just matches nothing. |
+| `status` | `str` | — | **Exact** match on the run's status: `queued`, `started`, `succeeded`, `failed`, `retried`, `skipped`, `revoked`, `interrupted`, `lost`. An unknown value is not an error — it just matches nothing. |
 | `task_name` | `str` | — | **Exact** match on the registered task name. Not a prefix and not a substring: `task_name=send` does *not* match `myapp.send_mail`. Use `q` for partial names. |
 | `q` | `str` | — | Case-insensitive substring search across four columns — see below. |
 | `date_from` | datetime | — | `started_at >= date_from`. |
@@ -8034,6 +8062,9 @@ through its existing persistent rules; it is not replaced by a new config flag.
 | `listener_reconnect_max_seconds` | `30` | Number 1–3600: longest wait between the events listener's attempts to reconnect to the broker (it backs off from 1 s, doubling). |
 | `listener_max_consecutive_errors` | `50` | Positive integer: the events listener skips an event it cannot store and carries on; after this many failures in a row it exits so the platform restarts it. |
 | `event_clock_skew_seconds` | `300` | Number 1–86400: the events listener stamps `started_at` and `finished_at` from the event's own timestamp. An event whose timestamp is further than this from the listener's clock (a worker with a wrong clock) is stamped with its arrival time instead, and counted as `clock_skew` on `GET /api/health/listener`. |
+| `reconcile_interval_seconds` | `0` | Number 0–86400: seconds between [reconciler](production.md#reconciling-after-a-listener-gap) passes run by `celery-manager events`. `0` turns that thread off; `celery-manager reconcile` then uses 60. |
+| `reconcile_after_seconds` | `120` | Number 1–86400: a `queued`, `started`, `retried` or `lost` run must have been untouched this long before the reconciler checks it. |
+| `reconcile_batch_size` | `200` | Integer 1–10000: runs per transaction in a reconciler pass. |
 | `worker_heartbeat_retention_days` | `7` | Integer 0–3650: retain minute-bucket worker observations for this many days. `0` disables collection and automatic history pruning, preserving existing samples and current WorkerState updates. |
 
 The heartbeat history option supplements task-run retention rules; it does not

@@ -372,6 +372,9 @@ through its existing persistent rules; it is not replaced by a new config flag.
 | `listener_reconnect_max_seconds` | `30` | Number 1–3600: longest wait between the events listener's attempts to reconnect to the broker (it backs off from 1 s, doubling). |
 | `listener_max_consecutive_errors` | `50` | Positive integer: the events listener skips an event it cannot store and carries on; after this many failures in a row it exits so the platform restarts it. |
 | `event_clock_skew_seconds` | `300` | Number 1–86400: the events listener stamps `started_at` and `finished_at` from the event's own timestamp. An event whose timestamp is further than this from the listener's clock (a worker with a wrong clock) is stamped with its arrival time instead, and counted as `clock_skew` on `GET /api/health/listener`. |
+| `reconcile_interval_seconds` | `0` | Number 0–86400: seconds between [reconciler](production.md#reconciling-after-a-listener-gap) passes run by `celery-manager events`. `0` turns that thread off; `celery-manager reconcile` then uses 60. |
+| `reconcile_after_seconds` | `120` | Number 1–86400: a `queued`, `started`, `retried` or `lost` run must have been untouched this long before the reconciler checks it. |
+| `reconcile_batch_size` | `200` | Integer 1–10000: runs per transaction in a reconciler pass. |
 | `worker_heartbeat_retention_days` | `7` | Integer 0–3650: retain minute-bucket worker observations for this many days. `0` disables collection and automatic history pruning, preserving existing samples and current WorkerState updates. |
 
 The heartbeat history option supplements task-run retention rules; it does not

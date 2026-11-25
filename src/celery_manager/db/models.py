@@ -37,7 +37,11 @@ class TaskRun(Base):
     context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     operation_key: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
     correlation_id: Mapped[str | None] = mapped_column(identity_type(), nullable=True, index=True)
-    status: Mapped[str] = mapped_column(String(32), index=True)  # queued/started/succeeded/failed/retried/skipped/revoked
+    status: Mapped[str] = mapped_column(String(32), index=True)  # queued/started/succeeded/failed/retried/skipped/revoked/lost
+    # Set when the reconciler (not a live event) decided the status: `backend`
+    # (read from the result backend), `reconcile` (`lost`) or `seed` (a run
+    # found on a worker at listener start). NULL for event-driven statuses.
+    status_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     queue: Mapped[str | None] = mapped_column(String(255), nullable=True)
     worker: Mapped[str | None] = mapped_column(String(255), nullable=True)
     args: Mapped[str] = mapped_column(Text, default="[]")

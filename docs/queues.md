@@ -37,7 +37,7 @@ Each queue shows two counts:
 
 They routinely differ, and neither is wrong:
 
-- tasks sent while the events listener was down never got a row;
+- tasks sent while the events listener was down never got a row (unless the [reconciler](production.md#reconciling-after-a-listener-gap) seeds one);
 - the listener lags the broker by however long event delivery takes;
 - a worker pulls ETA/countdown tasks off the queue right away and holds them
   until they're due. Broker depth drops, but the run is still `queued`;

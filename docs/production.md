@@ -244,7 +244,8 @@ installed outside Python; `[mssql]` installs its Python driver only.
 The listener persists worker online/heartbeat/offline observations. Read
 `GET /api/health/workers` for last-seen status and `/api/health/runs` for possibly
 stuck runs or runs associated with a lost worker. These are advisory findings;
-worker loss does not prove execution stopped, so task status is never rewritten.
+worker loss does not prove execution stopped, so the dashboard's findings never rewrite a status.
+The one writer is the opt-in [reconciler](#reconciling-after-a-listener-gap).
 The initial stuck threshold is configurable through the request's `stuck_seconds`.
 
 For beat liveness, set `app.conf.celery_manager_db_url` and, where needed,
@@ -258,6 +259,33 @@ existing alert incident/dedup/delivery machinery. Webhook URLs remain write-only
 Existing failure-rate, missed-run and worker-offline alerts remain available;
 new health findings do not yet introduce separate alert rule kinds.
 
+
+## Reconciling after a listener gap
+
+Celery events are not stored, so a run whose `task-succeeded` was sent while
+`celery-manager events` was down stays `started` for ever. The reconciler repairs
+that. Run it as a thread of the listener (`reconcile_interval_seconds=60`; `0`,
+the default, turns it off) or once with `celery-manager reconcile --once`.
+
+1. **Result backend.** A `queued`, `started`, `retried` or `lost` run untouched
+   for `reconcile_after_seconds` (120) is looked up with `get_task_meta`. A
+   success, failure or revoke is applied (results through `result_max_bytes`) and
+   the run gets `status_source = "backend"`, shown on `GET /api/tasks/{id}`.
+   Needs a result backend. To recover the name and arguments of a run that has
+   no row yet, set `result_extended = True` in Celery.
+2. **Lost.** A run still `started` is marked `lost` (with a reason,
+   `status_source = "reconcile"`) only when every worker seen in the last two
+   minutes answered ping, active, reserved and scheduled, none holds the task,
+   and the Redis unacknowledged set does not hold it. If any source cannot be
+   read, or the broker is not Redis, nothing changes. `queued` and `retried`
+   runs are never marked lost: they may be waiting in a queue. A later lifecycle
+   event replaces `lost`.
+3. **Seed.** When the listener starts with the reconciler on, tasks that workers
+   report as active or reserved and that have no row get one
+   (`status_source = "seed"`).
+
+`reconcile_batch_size` (200) is how many runs one transaction covers; a pass
+checks all of them.
 
 ## Host-owned execution and native operations
 

@@ -56,6 +56,7 @@ def _accepts_status(current: str | None, incoming: str) -> bool:
       the event is stale. That includes `retried`: the next attempt's
       task-received leaves the row showing `retried` until it actually
       starts, which is accurate.
+    - `lost` (set by the reconciler) is replaced by any later lifecycle event.
     - `started` never replaces a terminal status — a task-started landing
       after task-succeeded/the decorator's outcome is stale. It *does*
       replace `retried`, which is the ordinary next attempt.
@@ -74,7 +75,7 @@ def _accepts_status(current: str | None, incoming: str) -> bool:
     if current in _DECORATOR_OWNED_STATUSES:
         return False
     if incoming == "queued":
-        return current in (None, "queued")
+        return current in (None, "queued", "lost")
     if incoming == "started":
         return current not in _TERMINAL_STATUSES
     return True
@@ -215,7 +216,10 @@ def upsert_task_run(session, event: dict, config=None, stats=None) -> None:
         return  # An external observation's identity is never a Celery lifecycle.
     status_applied = _accepts_status(run.status, status)
     if status_applied:
+        if run.status == "lost":
+            run.exception = None  # the reconciler's reason no longer holds
         run.status = status
+        run.status_source = None
     # else: a decorator-owned or later status is already there (see
     # _accepts_status). Only `status` and the lifecycle timestamps below are
     # protected — every other field still merges, so a skipped run keeps
@@ -397,6 +401,7 @@ class EventListener:
                         receiver = app.events.Receiver(connection, handlers={"*": on_event})
                         receiver_box[0] = receiver
                         receiver.capture(limit=None, timeout=None, wakeup=True)
+                        stop.set()  # capture only returns when asked to stop
                 except ListenerGaveUp:
                     raise
                 except Exception:

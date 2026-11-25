@@ -362,3 +362,21 @@ def test_server_a3_database_is_adopted(server_url):
     engine = init_db(_config(server_url))
     _assert_at_head_with_data(engine)
     engine.dispose()
+
+
+def test_status_source_migration_round_trips(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+
+    def columns():
+        return {c["name"] for c in inspect(engine).get_columns("task_runs")}
+
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0022")
+    assert "status_source" in columns()
+    with engine.begin() as conn:
+        command.downgrade(alembic_config(conn), "0021")
+    assert "status_source" not in columns()
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "head")
+    assert "status_source" in columns()
+    engine.dispose()

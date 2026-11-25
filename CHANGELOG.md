@@ -15,6 +15,15 @@ All notable changes to celery-manager are recorded here. The format follows
   the arrival time and is counted as `clock_skew` on `GET /api/health/listener`.
 
 ### Added
+- **Reconciler** for runs left open while the events listener was down:
+  `celery-manager reconcile --once`, or a thread of `celery-manager events`
+  (`reconcile_interval_seconds`, `reconcile_after_seconds`,
+  `reconcile_batch_size`). It reads final states from the result backend
+  (`status_source = "backend"`), marks a `started` run `lost` only when every
+  worker and the Redis unacknowledged set agree nothing holds it, and seeds
+  rows for tasks workers report in flight at listener start. A later event
+  replaces `lost`. Migration `0022` adds `task_runs.status_source`. See
+  [Reconciling after a listener gap](docs/production.md#reconciling-after-a-listener-gap).
 - **Events listener resilience and liveness**: the listener reconnects to the
   broker with exponential backoff (`listener_reconnect_max_seconds`), survives
   an event it cannot store (`listener_max_consecutive_errors`) and handles
