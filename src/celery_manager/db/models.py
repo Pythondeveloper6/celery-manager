@@ -411,7 +411,10 @@ class WorkerState(Base):
 from celery_manager.db.api_tokens import ApiToken  # noqa: F401
 from celery_manager.db.auth_state import BrowserSession, LoginBackoff  # noqa: F401
 from celery_manager.db.external import ExternalCall  # noqa: F401
-from celery_manager.db.failures import FailureResolution, FailureResolutionHistory  # noqa: F401
+from celery_manager.db.failures import (  # noqa: F401
+    FailureResolution,
+    FailureResolutionHistory,
+)
 from celery_manager.db.firings import ScheduleFiring  # noqa: F401
 from celery_manager.db.health_data import (  # noqa: F401
     ExpectedSchedulerCommand,

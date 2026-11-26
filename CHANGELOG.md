@@ -6,6 +6,8 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0b2] — 2026-11-26
+
 ### Changed
 - **SQL Server stores free text as Unicode.** Arguments, results, exceptions,
   tracebacks, logs, task, queue, worker and schedule names, and alert and audit

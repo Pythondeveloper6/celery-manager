@@ -377,7 +377,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is a beta, **0.3.0b1**. APIs outside the stability policy may still change before 1.0; see the
+This is a beta, **0.3.0b2**. APIs outside the stability policy may still change before 1.0; see the
 [CHANGELOG](CHANGELOG.md) for release history and
 [docs/roadmap.md](docs/roadmap.md) for planned follow-ups.
 

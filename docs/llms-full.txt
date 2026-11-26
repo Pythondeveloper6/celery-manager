@@ -23,7 +23,7 @@ uses Celery.</p>
 </div>
 
 
-!!! warning "Beta — `0.3.0b1`"
+!!! warning "Beta — `0.3.0b2`"
 
     Working and tested, with roles, audit logging and a documented
     [stability policy](stability.md). Anything outside that policy may still

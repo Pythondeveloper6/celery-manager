@@ -19,7 +19,12 @@ from celery_manager.control.schedules import (
 from celery_manager.db.models import AuditLog, PeriodicSchedule
 
 # Reuse the fixtures/helpers of the whole-schedule pause tests.
-from tests.unit.test_schedule_pause import SCHEDULE, _client, _statuses, env  # noqa: F401
+from tests.unit.test_schedule_pause import (  # noqa: F401
+    SCHEDULE,
+    _client,
+    _statuses,
+    env,
+)
 
 
 def _in(**kw):
