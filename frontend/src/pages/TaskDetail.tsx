@@ -590,6 +590,23 @@ export function TaskDetail() {
                 </section>
               )}
 
+              {task.external_calls.length > 0 && (
+                <section className="cm-card cm-detail-section" aria-labelledby="cm-external-heading">
+                  <h2 className="cm-card-title" id="cm-external-heading">
+                    Time in external calls
+                  </h2>
+                  <ul className="cm-attempts">
+                    {task.external_calls.map((c) => (
+                      <li key={c.target}>
+                        <code>{c.target}</code> · {c.calls} call{c.calls === 1 ? "" : "s"} ·{" "}
+                        {formatDuration(c.total_ms / 1000)}
+                        {c.errors > 0 && ` · ${c.errors} failed`}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
               {task.attempts.length > 1 && (
                 <section className="cm-card cm-detail-section" aria-labelledby="cm-attempts-heading">
                   <h2 className="cm-card-title" id="cm-attempts-heading">

@@ -77,6 +77,8 @@ export interface TaskDetail extends TaskSummary {
   cancel_requested_by: string | null;
   // Every attempt of this run (Celery retries reuse the task id), first first.
   attempts: TaskAttempt[];
+  // Outbound calls recorded by celery_manager.contrib.http, per target.
+  external_calls: { target: string; calls: number; total_ms: number; errors: number }[];
 }
 
 export interface TaskPage {

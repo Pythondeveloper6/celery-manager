@@ -307,6 +307,9 @@ class CeleryManagerConfig:
     # events` stored every `inspect_snapshot_seconds` instead of asking the
     # broker per request (for a dashboard mounted in a synchronous WSGI host).
     inspect_source: str = "live"
+    # celery_manager.contrib.http: calls stored per run, and how long kept.
+    external_calls_max_per_run: int = 200
+    external_call_retention_days: int = 30
     inspect_snapshot_seconds: float = 10.0
     # How often `cancel_requested()` re-reads the flag per run.
     cancel_check_interval_seconds: float = 2.0

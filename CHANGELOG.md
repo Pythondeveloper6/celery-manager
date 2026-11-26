@@ -40,6 +40,12 @@ All notable changes to celery-manager are recorded here. The format follows
   and judges a schedule that never fired from when it was first seen.
   `pause_mode = "backend"` also disables the beat entry on a writable scheduler
   backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Outbound calls without hand-written code.** `celery_manager.contrib.http.instrument()`
+  records requests and httpx calls made inside tracked runs (target, method,
+  status, duration, error class, size; never paths, query strings, headers or
+  bodies) in `external_calls` (migration `0030`), shown on the run page as
+  time per target. `celery_manager.contrib.llm.instrument()` records
+  Anthropic and OpenAI SDK `create` calls through the existing LLM usage path.
 - **Dashboard reads without the broker.** `inspect_source = "snapshot"` makes
   `celery-manager events` store worker replies and the queue listing every
   `inspect_snapshot_seconds` (10); the Workers and Queues pages then read only

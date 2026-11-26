@@ -41,6 +41,26 @@ propagates. Recording never raises into your task: a failed write is logged and
 the task carries on. The process needs `celery_manager.setup(config)`, like
 `@track`.
 
+### Without code in the task
+
+```python
+from celery_manager.contrib import http, llm
+
+http.instrument()   # requests and httpx
+llm.instrument()    # Anthropic and OpenAI SDK create calls
+```
+
+Call both in the worker after `celery_manager.setup(config)`. `llm.instrument`
+records every message or chat-completion `create` call (sync and async,
+failures as errors) the same way `record_llm_usage` does; a streamed call
+records the model and duration but not tokens. `http.instrument` records each
+outbound call made inside a tracked run in `external_calls`: target
+(`scheme://host[:port]`), method, status, duration, error class and size from
+`Content-Length`, never the path, query string, headers or body. At most
+`external_calls_max_per_run` (200) are kept per run, for
+`external_call_retention_days` (30). The run page shows the time spent per
+target.
+
 ## Cost
 
 Cost is the `cost_usd` you pass, otherwise it is computed from `llm_prices` in

@@ -370,11 +370,20 @@ def run_prune(
         session, TaskRunAttempt, orphaned, batch_size
     )
     revokes_deleted = prune_revokes(session, now=now, dry_run=dry_run)
+    from celery_manager.db.external import ExternalCall
+    external_days = config.external_call_retention_days if config else 30
+    external_deleted = 0
+    if external_days:
+        old_calls = ExternalCall.at < now - timedelta(days=external_days)
+        external_deleted = (session.query(func.count(ExternalCall.id)).filter(old_calls).scalar() or 0) if dry_run else _delete_in_batches(
+            session, ExternalCall, old_calls, batch_size
+        )
     summary = {
         "dry_run": dry_run,
         "at": now.isoformat(),
         "attempts_deleted": attempts_deleted,
         "revokes_deleted": revokes_deleted,
+        "external_calls_deleted": external_deleted,
         "runs_deleted": sum(by_task.values()),
         "audit_deleted": audit_deleted,
         "samples_deleted": samples_deleted,

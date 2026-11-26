@@ -212,7 +212,20 @@ def get_task(task_id: str, request: Request, principal: Principal):
                  "traceback": None if traceback_restricted else a.traceback}
                 for a in list_attempts(session, task_id)
             ],
+            # Time spent in outbound calls, per target (celery_manager.contrib.http).
+            "external_calls": _external_summary(session, task_id),
         }
+
+
+def _external_summary(session, task_id):
+    from sqlalchemy import case, func
+
+    from celery_manager.db.external import ExternalCall
+    rows = (session.query(ExternalCall.target, func.count(ExternalCall.id), func.sum(ExternalCall.duration_ms),
+                          func.sum(case((ExternalCall.error.isnot(None) | (ExternalCall.status >= 400), 1), else_=0)))
+            .filter(ExternalCall.task_id == task_id).group_by(ExternalCall.target).all())
+    return [{"target": target, "calls": calls, "total_ms": round(total or 0, 1), "errors": int(errors or 0)}
+            for target, calls, total, errors in sorted(rows, key=lambda r: -(r[2] or 0))]
 
 
 def _aware(value: datetime | None) -> datetime | None:
