@@ -453,16 +453,19 @@ def _persist_run(task_id: str, create_defaults: dict | None = None, clear: tuple
     displace a real task exception on the failure path. So every storage
     error is logged and dropped; the caller's control flow is unaffected.
     """
+    from celery_manager.telemetry import Skipped, guarded
     try:
         from celery_manager.db.runs import commit_with_deadlock_retry
         from celery_manager.redaction import redact_fields
 
         fields = redact_fields(_settings(), fields.get("task_name"), fields)
-        with _sessions()() as session:
+        with guarded(_settings()), _sessions()() as session:
             commit_with_deadlock_retry(
                 session,
                 lambda: _upsert_task_run(session, task_id, create_defaults=create_defaults, clear=clear, **fields),
             )
+    except Skipped:
+        return
     except Exception:  # deliberate: storage must never affect the task's outcome
         logger.exception(
             "celery-manager: could not persist the task_runs row for %s; "
@@ -653,8 +656,9 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
             # celery-manager was only meant to observe.
             skipped = False
             skip_reason: str | None = None
+            from celery_manager.telemetry import Skipped, guarded
             try:
-                with _sessions()() as session:
+                with guarded(_settings()), _sessions()() as session:
                     override = _find_matching_override(session, control_schedule_name, beat_occurrence)
                     if override is not None and override.action in ("skip", "cancel"):
                         # Commit the "this occurrence is consumed" decision on
@@ -687,12 +691,11 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                         at = beat_occurrence.occurrence if beat_occurrence else datetime.now(timezone.utc)
                         skip_reason = _maintenance_window_reason(session, control_schedule_name, at)
                         skipped = skip_reason is not None
-            except Exception:  # deliberate fail-open: see _persist_run's docstring
-                logger.exception(
-                    "celery-manager: schedule-override check failed for %r; "
-                    "running the task normally.",
-                    effective_schedule_name,
-                )
+            except Exception as exc:  # fail open by default: see _persist_run's docstring
+                if not isinstance(exc, Skipped):
+                    logger.exception("celery-manager: schedule-override check failed for %r", effective_schedule_name)
+                if getattr(_settings(), "control_check_on_failure", "run") == "skip":
+                    skipped, skip_reason = True, "control check unavailable"
 
             if skipped:
                 now = datetime.now(timezone.utc)

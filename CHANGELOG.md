@@ -40,6 +40,16 @@ All notable changes to celery-manager are recorded here. The format follows
   and judges a schedule that never fired from when it was first seen.
   `pause_mode = "backend"` also disables the beat entry on a writable scheduler
   backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **A slow monitoring database no longer slows tasks and requests.** Writes
+  made by the decorator, progress and the publish hook go through a
+  per-process circuit breaker: after `telemetry_breaker_failures` (3)
+  consecutive failures they are skipped for `telemetry_breaker_seconds` (30),
+  then one probe write is tried. `telemetry_timeout_seconds` bounds connect,
+  pool wait and statement time per driver (off by default).
+  `control_check_on_failure = "skip"` skips the body when the pause,
+  skip and maintenance check cannot be read (default `"run"`).
+  `publish_hook_mode = "thread"` records published tasks from a bounded
+  background queue. `doctor` reports skipped writes in its own process.
 - **Lighter reads on a large history.** Five `task_runs` indexes for time
   ranges (migration `0028`; an index built by hand beforehand is kept). The
   task list no longer loads logs, results, tracebacks or arguments, counts at

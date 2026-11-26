@@ -47,7 +47,14 @@ def init_db(config: CeleryManagerConfig) -> Engine:
     With `auto_migrate=False` the database is not touched; a schema that
     isn't current is only logged, and running `celery-manager migrate` is
     the deployment's job."""
-    engine = create_db_engine(config.db_url, db_schema=config.db_schema, engine_options=config.engine_options)
+    from celery_manager.telemetry import timeout_options
+    options = timeout_options(config.db_url, getattr(config, "telemetry_timeout_seconds", None))
+    user = dict(config.engine_options or {})
+    # The host's own engine_options win over the telemetry defaults.
+    options["connect_args"] = {**options.get("connect_args", {}), **user.pop("connect_args", {})}
+    if not options["connect_args"]:
+        del options["connect_args"]
+    engine = create_db_engine(config.db_url, db_schema=config.db_schema, engine_options={**options, **user})
     if config.auto_migrate:
         upgrade_database(engine)
         return engine

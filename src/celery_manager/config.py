@@ -287,6 +287,19 @@ class CeleryManagerConfig:
     # `doctor` warns when no retention rule is set past this many task_runs
     # rows (None turns the check off).
     doctor_retention_warn_rows: int | None = 1_000_000
+    # Writes made inside tasks and requests (decorator, progress, publish
+    # hook). The timeout bounds connect, pool wait and statement time (None:
+    # the driver's own). After `telemetry_breaker_failures` consecutive
+    # failures the process skips them for `telemetry_breaker_seconds`.
+    telemetry_timeout_seconds: float | None = None
+    telemetry_breaker_failures: int = 3
+    telemetry_breaker_seconds: float = 30.0
+    # When the skip/pause/maintenance check cannot be read: "run" the body
+    # (fail open) or "skip" it.
+    control_check_on_failure: str = "run"
+    # "thread" records published tasks from a bounded background queue, so a
+    # publishing request never waits on the monitoring database.
+    publish_hook_mode: str = "sync"
     cron_parser: object = None
     tenant_resolver: Callable[[Request, object], str | None | Awaitable[str | None]] | None = None
     lock_provider: object = None  # LockProvider; Redis is inferred only for a Redis broker
@@ -413,6 +426,12 @@ class CeleryManagerConfig:
             raise ValueError("oidc_role_refresh_seconds must be positive seconds")
         if self.oidc_client_id and not any(hasattr(p, "validate") and hasattr(p, "discovery") for p in self.principal_providers):
             raise ValueError("oidc_client_id needs an OIDCBearerProvider in principal_providers")
+        if self.control_check_on_failure not in ("run", "skip"):
+            raise ValueError("control_check_on_failure must be 'run' or 'skip'")
+        if self.publish_hook_mode not in ("sync", "thread"):
+            raise ValueError("publish_hook_mode must be 'sync' or 'thread'")
+        if self.telemetry_timeout_seconds is not None and not self.telemetry_timeout_seconds > 0:
+            raise ValueError("telemetry_timeout_seconds must be positive or None")
         if self.pause_mode not in ("task", "backend"):
             raise ValueError("pause_mode must be 'task' or 'backend'")
         if self.schedule_sync_interval_seconds < 0:

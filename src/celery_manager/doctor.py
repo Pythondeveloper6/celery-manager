@@ -129,6 +129,12 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
         "Dedicated storage/schema must be provisioned separately from the host application database")
     add("operator_safeguards", "pass" if config.operator_safeguards else "info",
         "Action reasons and environment confirmation enabled" if config.operator_safeguards else "Operator guardrails are not enabled")
+    from celery_manager.telemetry import breaker_for
+    breaker = breaker_for(config)
+    add("telemetry_writes", "warn" if breaker.open or breaker.skipped else "pass",
+        f"Telemetry writes paused in this process; {breaker.skipped} skipped" if breaker.open else
+        f"{breaker.skipped} telemetry write(s) skipped in this process" if breaker.skipped else
+        "No telemetry writes skipped in this process")
     observers = list(getattr(config, "_cm_observers", ()))
     failed = any(observer.health()["writes_failed"] for observer in observers)
     add("observer_telemetry", "fail" if failed else "pass" if observers else "info",
