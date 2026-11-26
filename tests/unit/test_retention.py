@@ -28,7 +28,7 @@ from celery_manager.db.models import AuditLog, ScheduleFiring, TaskRun
 from celery_manager.db.session import get_session_factory, init_db
 from celery_manager.tasks import PRUNE_BEAT_ENTRY, register_prune_task
 
-NOW = datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 
 
 def days_ago(n: float) -> datetime:

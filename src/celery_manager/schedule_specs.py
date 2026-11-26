@@ -70,18 +70,28 @@ class _TzCrontab(crontab):
         return self._cm_timezone or super().tz
 
     def remaining_delta(self, last_run_at, tz=None, **kwargs):
-        # Beat passes UTC timestamps while the cron fields describe wall time
-        # in the entry's zone. Keep Celery's calendar calculation, including
-        # its starting-deadline behavior, and convert both inputs first.
+        # Beat passes UTC timestamps while cron fields describe wall time in
+        # this entry's zone. Keep Celery's calendar and starting-deadline
+        # calculation, converting both inputs before it runs.
         from copy import copy
 
-        local = copy(self)
-        now = self.now()
-        local.nowfun = lambda: now.astimezone(self.tz)
         last = last_run_at
         if last.tzinfo is None:
             last = last.replace(tzinfo=timezone.utc)
+        now = self.now()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        local = copy(self)
+        local.nowfun = lambda: now.astimezone(self.tz)
         return crontab.remaining_delta(local, last.astimezone(self.tz), tz=tz, **kwargs)
+
+    def remaining_estimate(self, last_run_at, ffwd=None):
+        # Celery 5.3's `remaining()` subtracts localized datetimes across a
+        # DST edge using the old offset. Preserve its calendar result, then
+        # calculate the elapsed time between UTC instants.
+        kwargs = {} if ffwd is None else {"ffwd": ffwd}
+        start, delta, now = self.remaining_delta(last_run_at, **kwargs)
+        return (start + delta).astimezone(timezone.utc) - now.astimezone(timezone.utc)
 
     def __reduce__(self):
         # RedBeat and shelve persist schedules using pickle. Celery's default

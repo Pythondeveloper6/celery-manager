@@ -10,7 +10,7 @@ from celery_manager.api.app import create_app
 from celery_manager.auth.external import ExternalUser
 from celery_manager.db.models import TaskRun
 from celery_manager.observation import ObservationError, RunObserver, current_run
-from celery_manager.runtime import setup
+from celery_manager.runtime import setup as setup_runtime
 
 
 def observer(tmp_path, **changes):
@@ -32,7 +32,7 @@ def test_sync_outcome_context_and_duplicate_visibility_preserve_return(tmp_path)
     rows = observe.duplicates("business-1", tenant_id="a")
     assert len(rows) == 2 and {row["status"] for row in rows} == {"succeeded", "failed"}
     assert observe.duplicates("business-1", tenant_id="b") == []
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         runs = session.query(TaskRun).all()
         assert all(run.source == "external" and run.correlation_id == "request-1" for run in runs)
         assert json.loads(runs[0].context_json) == {"integration":"voice", "token":"[redacted]"}
@@ -56,7 +56,7 @@ def test_async_isolation_offloop_and_cancellation(tmp_path):
             await cancelled()
         assert current_run() is None
     asyncio.run(scenario())
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         assert session.query(TaskRun).filter_by(task_id="external:cancelled").one().status == "interrupted"
         assert {run.tenant_id for run in session.query(TaskRun).filter_by(task_name="native.async")} == {"a", "b"}
 
@@ -71,7 +71,7 @@ def test_lifecycle_immutable_identity_and_no_host_exception_replacement(tmp_path
         pass
     with pytest.raises(BodyError), observe.observe("failure"):
         raise BodyError("token=do-not-store")
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         assert "do-not-store" not in session.query(TaskRun).filter_by(task_name="failure").one().exception
 
 
@@ -103,7 +103,7 @@ def test_monitoring_only_capabilities_and_controls_are_explicit(tmp_path):
 def test_monitoring_only_boot_does_not_disable_existing_schedules(tmp_path):
     from celery_manager.db.models import PeriodicSchedule
     config, _observe = observer(tmp_path)
-    factory = setup(config)
+    factory = setup_runtime(config)
     with factory() as session:
         session.add(PeriodicSchedule(name="owned-by-host", task_name="host.command", schedule_spec="daily", enabled=True))
         session.commit()
@@ -144,7 +144,7 @@ def test_active_run_inherits_explicit_identity_to_nested_runs_and_restores_outer
             assert child.operation_key == "business"
         with observe.observe("restored") as restored:
             assert restored.tenant_id == "outer" and restored.correlation_id == "outer-request"
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         assert session.query(TaskRun).filter_by(task_name="child").one().tenant_id == "inner"
 
 
@@ -152,7 +152,7 @@ def test_metadata_defaults_are_allowlisted_and_bearer_exception_is_redacted(tmp_
     config, observe = observer(tmp_path)
     with pytest.raises(ValueError), observe.observe("failure", context={"integration":"safe", "unapproved":"do-not-store"}):
         raise ValueError("Authorization: Bearer do-not-store-this-token")
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         row = session.query(TaskRun).one()
         assert json.loads(row.context_json) == {"integration":"safe"}
         assert "do-not-store-this-token" not in row.exception
@@ -161,7 +161,7 @@ def test_metadata_defaults_are_allowlisted_and_bearer_exception_is_redacted(tmp_
 def test_async_cancel_during_entry_keeps_database_offloop_and_records_interrupted(tmp_path, monkeypatch):
     import threading
     config, observe = observer(tmp_path)
-    setup(config)
+    setup_runtime(config)
     handle = observe.observe("cancel-during-entry", run_id="entry-cancel")
     entered, release = threading.Event(), threading.Event()
     threads, body = [], []
@@ -186,7 +186,7 @@ def test_async_cancel_during_entry_keeps_database_offloop_and_records_interrupte
         assert current_run() is None
     asyncio.run(scenario())
     assert body == [] and all(identity != threading.get_ident() for identity in threads)
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         assert session.query(TaskRun).filter_by(task_id=handle.run_id).one().status == "interrupted"
 
 
@@ -212,12 +212,12 @@ def test_telemetry_exit_and_hook_errors_never_replace_original_body_exception(tm
 
 def test_concurrent_same_run_id_cannot_reassign_tenant(tmp_path):
     config, observe = observer(tmp_path)
-    setup(config)
+    setup_runtime(config)
     def record(tenant):
         observe.queued("same-run", run_id="shared-native-id", tenant_id=tenant).success()
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(record, ["a", "b"]))
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         rows = session.query(TaskRun).all()
         assert len(rows) == 1 and rows[0].tenant_id in {"a", "b"}
         assert rows[0].status == "succeeded"
@@ -236,7 +236,7 @@ def test_duplicate_visibility_defaults_to_active_tenant_context(tmp_path):
 def test_native_skip_reason_fits_supported_database_column(tmp_path):
     config, observe = observer(tmp_path, observer_fail_open=False)
     observe.queued("long-skip", run_id="long-skip").skip("x" * 1000)
-    with setup(config)() as session:
+    with setup_runtime(config)() as session:
         row = session.query(TaskRun).filter_by(task_id="external:long-skip").one()
         assert row.status == "skipped" and row.skip_reason == "x" * 255
 
@@ -244,7 +244,7 @@ def test_native_skip_reason_fits_supported_database_column(tmp_path):
 def test_database_collation_cannot_redirect_external_attempt_identity(tmp_path):
     from sqlalchemy.schema import CreateIndex, CreateTable
     config, observe = observer(tmp_path, observer_fail_open=False, auto_migrate=False)
-    factory = setup(config)
+    factory = setup_runtime(config)
     engine = factory.kw["bind"]
     ddl = str(CreateTable(TaskRun.__table__).compile(engine)).replace("task_id VARCHAR(255)", "task_id VARCHAR(255) COLLATE NOCASE")
     assert "COLLATE NOCASE" in ddl

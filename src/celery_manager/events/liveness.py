@@ -12,11 +12,14 @@ import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from sqlalchemy.exc import IntegrityError
+
 HEARTBEAT_KEY = "listener_heartbeat"
 HEARTBEAT_SECONDS = 15
 # No event for this long means the listener is connected to nothing useful.
 SILENT_SECONDS = 120
 log = logging.getLogger(__name__)
+_heartbeat_write_lock = threading.Lock()
 
 
 class ListenerStats:
@@ -53,13 +56,24 @@ def write_heartbeat(session_factory, stats: ListenerStats) -> None:
     from celery_manager.db.models import AppSetting
 
     now = datetime.now(timezone.utc)
-    with session_factory() as session:
-        row = session.get(AppSetting, HEARTBEAT_KEY)
-        if row is None:
-            row = AppSetting(key=HEARTBEAT_KEY)
-            session.add(row)
-        row.value, row.updated_at, row.updated_by = json.dumps(stats.snapshot()), now, "events"
-        session.commit()
+    value = json.dumps(stats.snapshot())
+    # The capture loop and heartbeat thread can both initialize the row when
+    # the first event arrives during startup. Serialize local writers and
+    # retry a concurrent first insert from another listener process.
+    with _heartbeat_write_lock:
+        for attempt in range(2):
+            try:
+                with session_factory() as session:
+                    row = session.get(AppSetting, HEARTBEAT_KEY)
+                    if row is None:
+                        row = AppSetting(key=HEARTBEAT_KEY)
+                        session.add(row)
+                    row.value, row.updated_at, row.updated_by = value, now, "events"
+                    session.commit()
+                return
+            except IntegrityError:
+                if attempt:
+                    raise
 
 
 def _serve_probe(port: int, stats: ListenerStats) -> ThreadingHTTPServer:

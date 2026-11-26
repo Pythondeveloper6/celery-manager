@@ -8,7 +8,7 @@ from sqlalchemy import select
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.db.models import TaskRun
 from celery_manager.observation import RunObserver
-from celery_manager.runtime import setup
+from celery_manager.runtime import setup as setup_runtime
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def observer(tmp_path):
 
 
 def runs(observer, name=None):
-    with setup(observer.config)() as session:
+    with setup_runtime(observer.config)() as session:
         query = select(TaskRun).where(TaskRun.source == "external").order_by(TaskRun.id)
         if name:
             query = query.where(TaskRun.task_name == name)

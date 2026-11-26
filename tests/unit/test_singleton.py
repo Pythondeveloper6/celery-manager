@@ -17,7 +17,8 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from redis.exceptions import RedisError
 
-from celery_manager import CeleryManagerConfig, setup, track
+from celery_manager import CeleryManagerConfig, track
+from celery_manager import setup as setup_runtime
 from celery_manager.api.app import create_app
 from celery_manager.api.deps import CurrentUser, get_current_principal
 from celery_manager.db.models import AuditLog, TaskRun
@@ -158,7 +159,7 @@ def app_task(tmp_path, provider, name="singleton_test", **options):
     app = Celery(name, broker="memory://", backend="cache+memory://")
     config = CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / (name + '.db')}",
                                 lock_provider=provider, secret_key="test-only-secret")
-    sessions = setup(config)
+    sessions = setup_runtime(config)
     calls = []
     @app.task(name=name + ".run", shared=False)
     @track(singleton="resource", **options)
@@ -210,7 +211,7 @@ def test_redis_outage_fails_closed_and_unconfigured_broker_is_explicit(tmp_path)
 
 def test_concurrent_eager_tasks_execute_only_one_body(provider, tmp_path):
     app = Celery("concurrent_singleton", broker="memory://", backend="cache+memory://")
-    setup(CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / 'concurrent.db'}", lock_provider=provider))
+    setup_runtime(CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / 'concurrent.db'}", lock_provider=provider))
     entered, finish = Event(), Event()
     @app.task(name="concurrent_singleton.run", shared=False)
     @track(singleton=True, singleton_ttl=1)
@@ -282,7 +283,7 @@ def test_real_redis_atomic_contention(live_provider):
 
 def test_callable_key_uses_same_consumed_kwargs_contract_as_task_body(provider, tmp_path):
     app = Celery("singleton_identity", broker="memory://", backend="cache+memory://")
-    setup(CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / 'identity.db'}", lock_provider=provider))
+    setup_runtime(CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{tmp_path / 'identity.db'}", lock_provider=provider))
     @app.task(name="singleton_identity.run", shared=False)
     @track(singleton=lambda value: f"resource:{value}",
            schedule_from=lambda args, kwargs: kwargs.get("schedule_identity"), consume_kwargs=("schedule_identity",))

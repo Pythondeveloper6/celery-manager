@@ -4,7 +4,7 @@ from datetime import timezone
 from threading import Barrier
 
 from celery_manager import CeleryManagerConfig
-from celery_manager.db.models import WorkerState
+from celery_manager.db.models import WorkerHeartbeatSample, WorkerState
 from celery_manager.db.session import get_session_factory, init_db
 from celery_manager.events.workers import record_worker_event
 
@@ -48,5 +48,52 @@ def test_stale_identity_map_does_not_overwrite_newer_sighting(tmp_path):
             record_worker_event(stale, {"type": "worker-heartbeat", "hostname": "worker", "timestamp": 1050})
             stale.commit()
             assert original.state == "offline"
+    finally:
+        engine.dispose()
+
+
+def test_invalid_worker_event_shapes_are_ignored(tmp_path):
+    engine = init_db(CeleryManagerConfig(celery_app=None, db_url=f"sqlite:///{tmp_path / 'workers.db'}"))
+    sessions = get_session_factory(engine)
+    try:
+        with sessions() as session:
+            for event in (
+                {"type": "task-sent", "hostname": "worker", "timestamp": 1000},
+                {"type": "worker-online", "hostname": "", "timestamp": 1000},
+                {"type": "worker-heartbeat", "hostname": "x" * 256, "timestamp": 1000},
+                {"type": "worker-heartbeat", "hostname": "bad-time", "timestamp": "not-a-time"},
+            ):
+                record_worker_event(session, event)
+            session.commit()
+            assert session.query(WorkerState).count() == 0
+            assert session.query(WorkerHeartbeatSample).count() == 0
+    finally:
+        engine.dispose()
+
+
+def test_worker_event_counters_and_samples_are_bounded_by_event_age(tmp_path):
+    from datetime import datetime, timedelta
+
+    engine = init_db(CeleryManagerConfig(celery_app=None, db_url=f"sqlite:///{tmp_path / 'workers.db'}"))
+    sessions = get_session_factory(engine)
+    try:
+        now = datetime.now(timezone.utc)
+        with sessions() as session:
+            record_worker_event(session, {"type": "worker-heartbeat", "hostname": "worker",
+                                          "timestamp": (now - timedelta(days=3)).timestamp(),
+                                          "active": True, "processed": -1}, retention_days=1)
+            session.commit()
+            row = session.get(WorkerState, "worker")
+            assert row.active is None and row.processed is None
+            assert session.query(WorkerHeartbeatSample).count() == 0
+
+            recent = now.timestamp()
+            record_worker_event(session, {"type": "worker-heartbeat", "hostname": "worker",
+                                          "timestamp": recent, "active": 2, "processed": 50}, retention_days=1)
+            session.commit()
+            row = session.get(WorkerState, "worker")
+            sample = session.query(WorkerHeartbeatSample).one()
+            assert (row.active, row.processed, row.state) == (2, 50, "online")
+            assert (sample.active, sample.processed, sample.state) == (2, 50, "online")
     finally:
         engine.dispose()

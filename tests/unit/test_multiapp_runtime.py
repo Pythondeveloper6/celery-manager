@@ -5,7 +5,8 @@ from threading import Barrier
 
 from celery import Celery
 
-from celery_manager import CeleryManagerConfig, report_progress, setup, track
+from celery_manager import CeleryManagerConfig, report_progress, track
+from celery_manager import setup as setup_runtime
 from celery_manager.db.models import TaskRun
 
 
@@ -13,7 +14,7 @@ def make_app(name, database, *, store_results=True, redactor=None):
     app = Celery(name, broker="memory://", backend="cache+memory://")
     config = CeleryManagerConfig(celery_app=app, db_url=f"sqlite:///{database}", store_results=store_results,
                                 log_redactor=redactor)
-    sessions = setup(config)
+    sessions = setup_runtime(config)
     @app.task(name=f"{name}.run", shared=False)
     @track()
     def task(value):
@@ -30,7 +31,7 @@ def test_eager_apps_use_their_own_storage_and_result_log_policies(tmp_path):
     # B was configured last, but A must still use its own database and policy.
     assert task_a.apply(args=["a"], task_id="same-id").get() == "a"
     assert task_b.apply(args=["b"], task_id="same-id").get() == "b"
-    assert setup(config_a) is sessions_a
+    assert setup_runtime(config_a) is sessions_a
     with sessions_a() as session:
         row = session.query(TaskRun).one()
         assert row.task_name == "isolated_a.run" and row.result_repr is None
