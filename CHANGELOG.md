@@ -20,6 +20,15 @@ All notable changes to celery-manager are recorded here. The format follows
   `event_clock_skew_seconds` (default 300) away from the listener's clock keeps
   the arrival time and is counted as `clock_skew` on `GET /api/health/listener`.
 
+### Fixed
+- A beat firing of a task with no explicit schedule name (the `TrackedTask`
+  base class, bare `@track()`) was recorded under the task name instead of the
+  beat entry, so its runs and pause skips were not matched to the schedule
+  and missed-run detection never saw them arrive.
+- With `pause_mode = "backend"`, resuming a schedule that was not paused
+  turned on a backend entry disabled elsewhere, and the schedule list kept the
+  old enabled state until the next sync.
+
 ### Security
 - **Redaction of arguments, results, exceptions and tracebacks.** Values under
   `sensitive_keys` (default: password, secret, token, authorization, cookie,
