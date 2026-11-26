@@ -25,7 +25,7 @@ uses Celery.</p>
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-light.png){ .cm-shot .cm-only-light }
 ![The celery-manager task list: filters, status badges, runtimes and start times](assets/screenshots/task-list-dark.png){ .cm-shot .cm-only-dark }
 
-!!! warning "Beta — `0.3.0b1`"
+!!! warning "Beta — `0.3.0b2`"
 
     Working and tested, with roles, audit logging and a documented
     [stability policy](stability.md). Anything outside that policy may still

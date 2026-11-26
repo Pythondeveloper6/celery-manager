@@ -63,6 +63,41 @@ the raw output. Capture is scoped
 to the task's execution context and thread; logs in newly spawned threads are not
 attributed to the parent task. `log_view_role` controls API access to captured logs.
 
+### Redacting arguments, results and errors
+
+Everything stored about a call goes through one redaction step: the `@track`
+decorator, the events listener, the publish hook, dashboard and API dispatch
+(`start_task`, retries, dead-letter reruns), the reconciler, audit details and
+the queue browser preview.
+
+- `sensitive_keys` is a tuple of regular expressions matched anywhere in a
+  keyword-argument or nested dictionary key, case-insensitively. The default
+  covers `password`, `passwd`, `secret`, `token`, `authorization`, `cookie`,
+  `api.?key`, `credential` and `signature`. Matching values are stored as
+  `[redacted]`. Text (strings in arguments, results, exceptions and
+  tracebacks) is also scrubbed of `key=value` pairs for those keys, `Bearer` and
+  `Basic` credentials, and signed-URL query parameters. `sensitive_keys=()`
+  turns key matching off.
+- `payload_redactor(kind, task_name, value)` runs last. `kind` is `args`
+  (a list), `kwargs` (a dict), `result`, `exception` or `traceback` (strings),
+  and it must return the same type. If it raises, the value is withheld.
+- Per task: `@track(redact_args=True)` stores every positional argument as a
+  placeholder, and `@track(redact_kwargs=("token", "payload.email"))` hides
+  those names or dotted paths. Values hidden this way are also removed from the
+  stored exception and traceback. The events listener and publish hook read
+  these options from the registered task, so the task module must be imported
+  in that process (the `celery-manager events` command does this when it loads
+  your app); key-based redaction needs nothing.
+- A run whose arguments were changed has `args_redacted = true`. Retrying it, or
+  re-running it as a dead letter, needs `args` and `kwargs` in the request
+  (`409` otherwise); the placeholders are never sent to the broker.
+- `args_view_role` and `traceback_view_role` (default `viewer`) set the lowest
+  role that sees stored arguments and tracebacks. Lower roles get the masked
+  shape (`["str", "int"]`, `{"user_id": "int"}`) and no traceback, in the task
+  detail, the Flower-shaped API, dead letters, export and the MCP tools.
+
+Redaction applies on write: rows stored before upgrading keep what they have.
+
 Results default to 64,000 bytes (`result_max_bytes`) and can be disabled with
 `store_results=False` in both workers and listener. JSON-compatible returns are
 encoded as JSON; other values use a representation. Truncation is explicit and
@@ -94,12 +129,36 @@ Install `celery-manager[oidc]`. Issuer, audience, expiration and signatures are
 validated with an explicit asymmetric algorithm allowlist. Roles require an
 explicit mapping or `role_mapper(claims)`; unknown permissions grant no access.
 The adapter uses cached JWKS and refreshes for a rotated key ID. It validates
-bearer tokens; it does not implement an interactive OIDC redirect flow. Use the
-host application's existing login flow.
+bearer tokens on every request. For a browser with no host cookie, turn on the
+built-in sign-in below.
+
+### Browser sign-in with an OIDC provider
+
+Set `oidc_client_id` (and `oidc_client_secret` for a confidential client) next to
+the `OIDCBearerProvider` above. `GET /api/auth/oidc/login` redirects to the
+provider (authorization code with PKCE, `oidc_scopes`, default
+`openid profile offline_access`) and `GET /api/auth/oidc/callback`, at
+`oidc_redirect_path` under `dashboard_url` (or the request's own address), trades
+the code for tokens. Register that callback URL with the provider. The access
+token is validated and its roles mapped exactly like a bearer token. The
+dashboard then holds a tracked session for `session_max_age_seconds`, and
+`GET /api/auth/options` carries `oidc_login_url` for a sign-in button.
+
+Every `oidc_role_refresh_seconds` (900) the role is read again with the stored
+refresh token. If the refresh fails, or the role was removed, the session is
+revoked. A provider that issues no refresh token therefore ends the session at
+the first refresh; keep `offline_access` in the scopes. The refresh token is
+stored in the `browser_sessions` table; protect that database like the secret
+key. Nothing in this flow needs the host app's session.
+
+Embedded use where the host keeps the token in memory: set `auth_mode="bearer"`
+(reported by `GET /api/auth/options`) and send `Authorization: Bearer` on every
+request. `POST /api/auth/bridge` can be called again while the bearer token is
+valid; its response carries `renew_after`, 80% of the bridge lifetime.
 
 For link-outs into the SPA, opt in to `session_bridge_enabled=True`. A freshly
 authenticated `POST /api/auth/bridge` sets a signed dashboard cookie for
-`bridge_max_age_seconds` (300 by default). It cannot renew itself. Permission
+`bridge_max_age_seconds` (300 by default). It does not renew from the cookie alone; call it again with a valid bearer token. Permission
 changes take effect when that short session expires; deployments requiring
 immediate revocation should use the host request authenticator on every request.
 `session_max_age_seconds` controls local-account sessions.
@@ -239,12 +298,21 @@ SQLite, PostgreSQL, MySQL and SQL Server have dedicated CI contracts for migrati
 concurrent writers and pruning. SQL Server additionally needs ODBC Driver 18,
 installed outside Python; `[mssql]` installs its Python driver only.
 
+On SQL Server, free-text columns (arguments, results, exceptions, tracebacks,
+logs, task, queue, worker and schedule names, alert and audit details) are
+`NVARCHAR`, so text in any script and emoji are stored exactly under a non-UTF-8
+collation. Migration `0023` converts existing columns (rebuilding the indexes on
+the label columns) and does nothing on other databases. Until it has run on a
+SQL Server database with a non-UTF-8 collation, `celery-manager doctor` reports
+a `unicode_storage` note.
+
 ## Operational health
 
 The listener persists worker online/heartbeat/offline observations. Read
 `GET /api/health/workers` for last-seen status and `/api/health/runs` for possibly
 stuck runs or runs associated with a lost worker. These are advisory findings;
-worker loss does not prove execution stopped, so task status is never rewritten.
+worker loss does not prove execution stopped, so the dashboard's findings never rewrite a status.
+The one writer is the opt-in [reconciler](#reconciling-after-a-listener-gap).
 The initial stuck threshold is configurable through the request's `stuck_seconds`.
 
 For beat liveness, set `app.conf.celery_manager_db_url` and, where needed,
@@ -258,6 +326,33 @@ existing alert incident/dedup/delivery machinery. Webhook URLs remain write-only
 Existing failure-rate, missed-run and worker-offline alerts remain available;
 new health findings do not yet introduce separate alert rule kinds.
 
+
+## Reconciling after a listener gap
+
+Celery events are not stored, so a run whose `task-succeeded` was sent while
+`celery-manager events` was down stays `started` for ever. The reconciler repairs
+that. Run it as a thread of the listener (`reconcile_interval_seconds=60`; `0`,
+the default, turns it off) or once with `celery-manager reconcile --once`.
+
+1. **Result backend.** A `queued`, `started`, `retried` or `lost` run untouched
+   for `reconcile_after_seconds` (120) is looked up with `get_task_meta`. A
+   success, failure or revoke is applied (results through `result_max_bytes`) and
+   the run gets `status_source = "backend"`, shown on `GET /api/tasks/{id}`.
+   Needs a result backend. To recover the name and arguments of a run that has
+   no row yet, set `result_extended = True` in Celery.
+2. **Lost.** A run still `started` is marked `lost` (with a reason,
+   `status_source = "reconcile"`) only when every worker seen in the last two
+   minutes answered ping, active, reserved and scheduled, none holds the task,
+   and the Redis unacknowledged set does not hold it. If any source cannot be
+   read, or the broker is not Redis, nothing changes. `queued` and `retried`
+   runs are never marked lost: they may be waiting in a queue. A later lifecycle
+   event replaces `lost`.
+3. **Seed.** When the listener starts with the reconciler on, tasks that workers
+   report as active or reserved and that have no row get one
+   (`status_source = "seed"`).
+
+`reconcile_batch_size` (200) is how many runs one transaction covers; a pass
+checks all of them.
 
 ## Host-owned execution and native operations
 

@@ -6,6 +6,156 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0b2] — 2026-11-26
+
+### Changed
+- **SQL Server stores free text as Unicode.** Arguments, results, exceptions,
+  tracebacks, logs, task, queue, worker and schedule names, and alert and audit
+  details are `NVARCHAR`, so non-Latin text and emoji are no longer replaced
+  under a non-UTF-8 collation. Migration `0023` converts existing columns on
+  SQL Server only (other databases are untouched); `celery-manager doctor` notes
+  a non-UTF-8 collation until it has run.
+- The events listener stamps `started_at` and `finished_at` from the event's own
+  timestamp (and `finished_at` as `started_at` plus the reported runtime)
+  instead of its own clock, so a lagging or reconnecting listener no longer
+  shifts start times or overstates queue wait. An event more than
+  `event_clock_skew_seconds` (default 300) away from the listener's clock keeps
+  the arrival time and is counted as `clock_skew` on `GET /api/health/listener`.
+
+### Fixed
+- A beat firing of a task with no explicit schedule name (the `TrackedTask`
+  base class, bare `@track()`) was recorded under the task name instead of the
+  beat entry, so its runs and pause skips were not matched to the schedule
+  and missed-run detection never saw them arrive.
+- With `pause_mode = "backend"`, resuming a schedule that was not paused
+  turned on a backend entry disabled elsewhere, and the schedule list kept the
+  old enabled state until the next sync.
+
+### Security
+- **SIGKILL stays admin-only on the Flower-shaped revoke route.** `POST /api/flower/task/revoke/{id}` compared the signal before upper-casing it, so an operator (or operator API token) could send `signal=sigkill` and hard-kill a task. The signal is now normalised before the role check.
+- **Redaction of arguments, results, exceptions and tracebacks.** Values under
+  `sensitive_keys` (default: password, secret, token, authorization, cookie,
+  API key, credential, signature), bearer credentials, `key=value` text and
+  signed-URL parameters are stored as `[redacted]` by every writer: the
+  decorator, events listener, publish hook, reconciler, dashboard and API
+  dispatch, retries, dead-letter reruns, audit details and the queue browser
+  preview. Existing rows are not rewritten. `args_view_role` and
+  `traceback_view_role` give lower roles the masked shape instead of values in
+  task detail, the Flower-shaped API, dead letters, export and the MCP tools.
+
+### Added
+- **Track every task without a decorator**: `Celery(..., task_cls="celery_manager.task:TrackedTask")`
+  runs each task through the `@track()` wrapper, limited by `track_tasks` and
+  `track_exclude` globs; a task that also has `@track(...)` keeps its options.
+  The stamping beat records each send in `schedule_firings` (migration `0026`),
+  so missed-run detection reports `never_sent` and `never_arrived` separately
+  and judges a schedule that never fired from when it was first seen.
+  `pause_mode = "backend"` also disables the beat entry on a writable scheduler
+  backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Wider CI matrix.** The end-to-end stack runs on the prefork, threads and
+  solo pools (gevent allowed to fail), with prefork-only checks for
+  terminate, and a lowest-versions job runs the unit and end-to-end tiers on
+  Python 3.10 with Celery 5.3 and the lowest allowed SQLAlchemy. The tested
+  combinations are listed in `docs/stability.md`.
+- **Closer to Flower.** Audited worker controls for pool restart, autoscale
+  bounds and runtime task time limits. Flower-shaped `queues/length`,
+  `task/revoke`, `task/async-apply` and `worker/pool/grow|shrink` under
+  `/api/flower/`, through the same roles, dispatch policy and audit log.
+  Scoped API tokens for scripts (`/api/tokens`, admin only; hashed, with role,
+  owner, expiry and last use; migration `0031`), audited as `token:<name>`.
+- **Outbound calls without hand-written code.** `celery_manager.contrib.http.instrument()`
+  records requests and httpx calls made inside tracked runs (target, method,
+  status, duration, error class, size; never paths, query strings, headers or
+  bodies) in `external_calls` (migration `0030`), shown on the run page as
+  time per target. `celery_manager.contrib.llm.instrument()` records
+  Anthropic and OpenAI SDK `create` calls through the existing LLM usage path.
+- **Dashboard reads without the broker.** `inspect_source = "snapshot"` makes
+  `celery-manager events` store worker replies and the queue listing every
+  `inspect_snapshot_seconds` (10); the Workers and Queues pages then read only
+  the database and show the snapshot's time. `celery-manager serve --config
+  module:attr --host --port --root-path` serves the dashboard on its own.
+  Unauthenticated `GET /livez` and `GET /readyz` (database within one second)
+  for container probes.
+- **Cooperative cancel.** `POST /api/tasks/{id}/cancel?mode=cooperative`
+  flags a running run; the task stops itself through `cancel_requested()`,
+  `raise_if_cancelled()` (raises `TaskCancelled`) or the new boolean return of
+  `report_progress()`, so its `finally` blocks run. Such a run is recorded as
+  `cancelled`, not failed. `mode=terminate` takes `signal` (`SIGTERM`,
+  `SIGUSR1`, or `SIGKILL` for admins). The dashboard has an "Ask to stop"
+  button. Migration `0029` adds `task_runs.cancel_requested_at` and
+  `cancel_requested_by`.
+- **Revokes survive a worker restart.** Every single, bulk and delayed cancel
+  is stored in `revoked_tasks` until the task's ETA plus an hour, or
+  `revoke_retention_hours` (48). The events listener re-sends live revokes to
+  each worker that comes online, and a tracked task checks the table before
+  its body runs. Expired rows are pruned.
+- **Attempt history.** Each attempt of a retried run is kept in
+  `task_run_attempts` (status, worker, times, redacted exception and
+  traceback), written by the decorator and the events listener. `retry_count`
+  is now filled in, so the export and the Flower-shaped `retries` field are
+  correct, and the run page lists the attempts.
+- **A slow monitoring database no longer slows tasks and requests.** Writes
+  made by the decorator, progress and the publish hook go through a
+  per-process circuit breaker: after `telemetry_breaker_failures` (3)
+  consecutive failures they are skipped for `telemetry_breaker_seconds` (30),
+  then one probe write is tried. `telemetry_timeout_seconds` bounds connect,
+  pool wait and statement time per driver (off by default).
+  `control_check_on_failure = "skip"` skips the body when the pause,
+  skip and maintenance check cannot be read (default `"run"`).
+  `publish_hook_mode = "thread"` records published tasks from a bounded
+  background queue. `doctor` reports skipped writes in its own process.
+- **Lighter reads on a large history.** Five `task_runs` indexes for time
+  ranges (migration `0028`; an index built by hand beforehand is kept). The
+  task list no longer loads logs, results, tracebacks or arguments, counts at
+  most 10,000 matches (`total_capped`), and pages by key with `before_id` /
+  `next_before_id`. The Insights overview no longer reads exceptions and
+  tracebacks. `celery-manager prune --config` applies every retention setting,
+  and `doctor` warns when no retention rule is set past
+  `doctor_retention_warn_rows` (default 1,000,000) runs.
+- **Redis-backed schedules outside the API process.** A disabled entry has no
+  missed runs, and a re-enabled one is judged from when it was re-enabled
+  (`periodic_schedules.enabled_changed_at`, migration `0027`). Entries that exist
+  only in the scheduler backend get a `celery_manager_schedule_missed_runs_24h`
+  sample and can be named in a maintenance window. The alerts and metrics
+  processes keep a cached schedule snapshot, so one evaluation lists the
+  backend once. RedBeat edits and deletes take the same Redis lock as creates
+  and answer `409` when the entry changed since it was read. Schedule list
+  items carry `editable` and `reason` for schedule types the editor cannot
+  express.
+- `payload_redactor(kind, task_name, value)` for custom redaction (a failing
+  one withholds the value), `@track(redact_args=True, redact_kwargs=(...))` for
+  per-task rules, and `task_runs.args_redacted` (migration `0025`). Retrying or
+  re-running such a run needs `args` and `kwargs` in the request (`409`
+  otherwise); `sensitive_keys=()` turns key redaction off.
+- **Browser sign-in with an OIDC provider**: `oidc_client_id` turns on
+  `GET /api/auth/oidc/login` and `/callback` (authorization code with PKCE) using
+  the `OIDCBearerProvider` already configured. The session lasts
+  `session_max_age_seconds`; the role is re-read with the refresh token every
+  `oidc_role_refresh_seconds` and a failed refresh revokes the session.
+  `auth_mode` and `oidc_login_url` appear in `GET /api/auth/options`, and the
+  bridge response reports `renew_after`. Migration `0024` adds the refresh
+  token, role and check time to `browser_sessions`. The OIDC network calls are
+  injectable on the provider (`fetch_json`, `post_form`).
+- **Reconciler** for runs left open while the events listener was down:
+  `celery-manager reconcile --once`, or a thread of `celery-manager events`
+  (`reconcile_interval_seconds`, `reconcile_after_seconds`,
+  `reconcile_batch_size`). It reads final states from the result backend
+  (`status_source = "backend"`), marks a `started` run `lost` only when every
+  worker and the Redis unacknowledged set agree nothing holds it, and seeds
+  rows for tasks workers report in flight at listener start. A later event
+  replaces `lost`. Migration `0022` adds `task_runs.status_source`. See
+  [Reconciling after a listener gap](docs/production.md#reconciling-after-a-listener-gap).
+- **Events listener resilience and liveness**: the listener reconnects to the
+  broker with exponential backoff (`listener_reconnect_max_seconds`), survives
+  an event it cannot store (`listener_max_consecutive_errors`) and handles
+  `SIGTERM`. It writes a heartbeat every 15 seconds, served by
+  `GET /api/health/listener`, the `listener_stale` alert and the
+  `celery_manager_listener_last_event_age_seconds`,
+  `celery_manager_listener_events_failed` and
+  `celery_manager_listener_lag_seconds` metrics. `celery-manager events
+  --health-file` and `--health-port` give container platforms a probe that
+  needs no credentials. No schema change.
+
 ## [0.3.0b1] — 2026-11-11
 
 First beta. The `Development Status` classifier moves from Alpha to Beta;
@@ -138,6 +288,16 @@ this release.
   route list.
 
 ### Fixed
+- MySQL/MariaDB: concurrent `task_runs` writers (the events listener, the
+  `@track` decorator and a retry) could be killed by InnoDB with error 1213
+  (deadlock) because every write bumps the indexed `updated_at`, losing an
+  event or a run's final state. These writes now restart the transaction on a
+  database-chosen deadlock (up to five attempts, jittered); a retry restarts
+  only its lineage write, never the dispatch.
+- Tenant-scoped dead letters: on SQLAlchemy 2.0.x (the only line that supports
+  Python 3.10) a retry made by another tenant could hide this tenant's failed
+  run, because the tenant criteria were not applied to the aliased retry-lineage
+  subquery. The subquery now states the tenant explicitly.
 - Celery 5.7 compatibility: an impossible crontab (31 February) is refused
   with the same "never fires" sentence as on earlier versions, although 5.7
   now rejects it while building the schedule.

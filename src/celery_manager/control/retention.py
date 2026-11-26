@@ -6,9 +6,9 @@ document, so this feature needs no schema migration. They are deliberately
 anonymous visitors by `GET /api/settings`, and which tasks a deployment prunes
 (and for how long) has no business on the login screen.
 
-Defaults delete nothing. A deployment that upgrades without touching the
-settings keeps every row it had; pruning only ever starts after an admin sets
-`default_days` or a per-task override.
+Run and audit defaults delete nothing. A deployment that upgrades without
+touching the settings keeps those rows. Beat firing rows follow the existing
+queue sample retention window (14 days by default).
 
 What counts as "old", and what is never deleted
 -----------------------------------------------
@@ -45,7 +45,7 @@ from sqlalchemy.orm import aliased
 
 from celery_manager.control.audit import record as record_audit
 from celery_manager.control.depth_history import DEFAULT_RETENTION_DAYS, prune_samples
-from celery_manager.db.models import AppSetting, AuditLog, TaskRun
+from celery_manager.db.models import AppSetting, AuditLog, ScheduleFiring, TaskRun
 
 RETENTION_KEY = "retention"
 LAST_PRUNE_KEY = "retention_last_prune"
@@ -354,12 +354,40 @@ def run_prune(
     samples_deleted = prune_samples(
         session, sample_retention_days, now=now, dry_run=dry_run, batch_size=max(batch_size, 5000)
     )
+    firings_deleted = 0
+    if sample_retention_days:
+        old_firings = ScheduleFiring.sent_at < now - timedelta(days=sample_retention_days)
+        firings_deleted = (session.query(func.count(ScheduleFiring.id)).filter(old_firings).scalar() or 0) if dry_run else _delete_in_batches(
+            session, ScheduleFiring, old_firings, batch_size
+        )
+    # Attempts follow their run; revokes expire on their own.
+    from sqlalchemy import exists
+
+    from celery_manager.control.revokes import prune_revokes
+    from celery_manager.db.run_control import TaskRunAttempt
+    orphaned = ~exists().where(TaskRun.task_id == TaskRunAttempt.task_id)
+    attempts_deleted = (session.query(func.count(TaskRunAttempt.id)).filter(orphaned).scalar() or 0) if dry_run else _delete_in_batches(
+        session, TaskRunAttempt, orphaned, batch_size
+    )
+    revokes_deleted = prune_revokes(session, now=now, dry_run=dry_run)
+    from celery_manager.db.external import ExternalCall
+    external_days = config.external_call_retention_days if config else 30
+    external_deleted = 0
+    if external_days:
+        old_calls = ExternalCall.at < now - timedelta(days=external_days)
+        external_deleted = (session.query(func.count(ExternalCall.id)).filter(old_calls).scalar() or 0) if dry_run else _delete_in_batches(
+            session, ExternalCall, old_calls, batch_size
+        )
     summary = {
         "dry_run": dry_run,
         "at": now.isoformat(),
+        "attempts_deleted": attempts_deleted,
+        "revokes_deleted": revokes_deleted,
+        "external_calls_deleted": external_deleted,
         "runs_deleted": sum(by_task.values()),
         "audit_deleted": audit_deleted,
         "samples_deleted": samples_deleted,
+        "firings_deleted": firings_deleted,
         "heartbeats_deleted": heartbeats_deleted,
         "llm_calls_deleted": llm_deleted,
         "by_task": by_task,
@@ -377,10 +405,10 @@ def run_prune(
     row.updated_at = now
     row.updated_by = username
     session.commit()
-    if summary["runs_deleted"] or audit_deleted:
+    if summary["runs_deleted"] or audit_deleted or firings_deleted:
         record_audit(
             session, username, "prune", "retention", "task_runs",
             {"runs_deleted": summary["runs_deleted"], "audit_deleted": audit_deleted,
-             "samples_deleted": samples_deleted, "by_task": top},
+             "samples_deleted": samples_deleted, "firings_deleted": firings_deleted, "by_task": top},
         )
     return summary

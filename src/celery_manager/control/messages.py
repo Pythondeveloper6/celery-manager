@@ -562,6 +562,7 @@ def peek_messages(
     *,
     show_args: bool = True,
     allow_amqp: bool = False,
+    config=None,
 ) -> dict:
     """Messages waiting in `queue`, in the order workers will take them.
 
@@ -582,7 +583,10 @@ def peek_messages(
     ids = [m["task_id"] for m in messages if m.get("task_id")]
     runs = {run.task_id: run for run in session.query(TaskRun).filter(TaskRun.task_id.in_(ids)).all()} if ids else {}
     now = _now()
+    from celery_manager.redaction import redact_text
     for message in messages:
+        for kind in ("args", "kwargs"):
+            message[kind] = redact_text(config, kind, message.get("task_name"), message.get(kind))
         run = runs.get(message.get("task_id"))
         message["run"] = {"status": run.status} if run else None
         sent_at = message.get("sent_at")

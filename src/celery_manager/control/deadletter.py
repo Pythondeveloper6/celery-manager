@@ -35,11 +35,13 @@ from sqlalchemy.orm import aliased
 from celery_manager.control.analytics import split_exception
 from celery_manager.control.audit import record as record_audit
 from celery_manager.control.tasks import (
+    ArgumentsRedacted,
     TaskRunNotFound,
     _decode_stored_call_argument,
     _require_celery_origin,
     start_task,
 )
+from celery_manager.db.identity import exact_identity
 from celery_manager.db.models import FailureResolution, TaskRun
 from celery_manager.db.runs import lock_task_run
 
@@ -101,10 +103,19 @@ def _dead_letter_query(session, *, task_name: str | None = None, since: datetime
     # NOT EXISTS over the retry lineage. `retried_from_id` is indexed, so this
     # is an index probe per failed row rather than a scan.
     later = aliased(TaskRun)
+    retried = later.retried_from_id == TaskRun.task_id
+    # In a tenant-scoped request a retry made by another tenant must not hide
+    # this tenant's failure. SQLAlchemy 2.0.x does not reliably apply the
+    # request's loader criteria to an aliased entity inside EXISTS (2.1 does),
+    # so state the tenant on the alias explicitly.
+    from celery_manager.tenancy import current_tenant
+    tenant = current_tenant()
+    if tenant is not None:
+        retried = retried & exact_identity(later.tenant_id, tenant)
     query = session.query(TaskRun).filter(
         TaskRun.status == "failed",
         ~exists().where((FailureResolution.task_id == TaskRun.task_id) & FailureResolution.state.in_(("acknowledged", "ignored"))).correlate(TaskRun),
-        ~exists().where(later.retried_from_id == TaskRun.task_id).correlate(TaskRun),
+        ~exists().where(retried).correlate(TaskRun),
     )
     if task_name is not None:
         query = query.filter(TaskRun.task_name == task_name)
@@ -294,6 +305,8 @@ def rerun_with_arguments(
         # A stored value that cannot be decoded only matters when it is the
         # one being kept; replacing it is the way out of that error. "Edited"
         # then means different from what could be read back.
+        if run.args_redacted and (args is None or kwargs is None):
+            raise ArgumentsRedacted(f"run {task_id} had its arguments redacted; supply both args and kwargs explicitly to rerun it")
         stored_args = _stored_unless_replaced(run.args, "args", task_id, [], args)
         stored_kwargs = _stored_unless_replaced(run.kwargs, "kwargs", task_id, {}, kwargs)
         final_args = stored_args if args is None else args
@@ -330,7 +343,9 @@ def rerun_with_arguments(
         session.commit()
         details: dict = {"new_task_id": new_id, "args_edited": edited, "bulk": len(plan) > 1}
         if edited:
-            details.update({"args": final_args, "kwargs": final_kwargs})
+            from celery_manager.redaction import redact_call
+            audit_args, audit_kwargs = redact_call(session.info.get("cm_config"), run.task_name, final_args, final_kwargs, celery_app)
+            details.update({"args": audit_args, "kwargs": audit_kwargs})
         record_audit(session, username, "rerun_dead_letter", "task", run.task_id, details)
         reruns.append({"task_id": run.task_id, "new_task_id": new_id, "args_edited": edited})
     return {"reruns": reruns, "errors": errors}

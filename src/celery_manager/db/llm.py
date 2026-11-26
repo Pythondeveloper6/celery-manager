@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
+from celery_manager.db.identity import label_text
 from celery_manager.db.models import Base
 
 
@@ -13,7 +14,7 @@ class LlmCall(Base):
     # Plain strings, not foreign keys: the run row may be written later (or
     # purged earlier) than the call, same as retried_from_id on task_runs.
     task_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    task_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    task_name: Mapped[str | None] = mapped_column(label_text(255), nullable=True, index=True)
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model: Mapped[str] = mapped_column(String(128), index=True)
     input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)

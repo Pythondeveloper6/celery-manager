@@ -34,6 +34,26 @@ def _bounded(config, name, fn, timeout):
     return current[1][0] if current[1] else (False, "check_aborted")
 
 
+def _retention_warning(engine, limit):
+    """A warning when no retention rule is set and task_runs holds more than
+    `limit` rows (counted no further than that)."""
+    from sqlalchemy import func, select
+    from sqlalchemy.orm import Session
+
+    from celery_manager.control.retention import get_retention
+    from celery_manager.db.models import TaskRun
+    if not limit:
+        return None
+    with Session(engine) as session:
+        rules = get_retention(session)
+        if rules.default_days or rules.failed_days or any(rules.tasks.values()):
+            return None
+        rows = session.execute(select(func.count()).select_from(select(TaskRun.id).limit(limit + 1).subquery())).scalar()
+    if rows > limit:
+        return f"No retention rule is set and task_runs holds more than {limit:,} rows; set retention and run celery-manager prune"
+    return None
+
+
 def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
     """Return bounded, redacted check results; outbound checks require opt-in."""
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
@@ -72,14 +92,30 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
             with engine.connect() as connection:
                 connection.execute(text("SELECT 1"))
             state = migration_status(engine)
-            return state.up_to_date
+            warning = None
+            if engine.dialect.name == "mssql" and (state.current or "") < "0023":
+                with engine.connect() as connection:
+                    collation = connection.execute(text("SELECT CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS NVARCHAR(128))")).scalar()
+                if not str(collation).upper().endswith("_UTF8"):
+                    warning = f"Database collation {collation} is not UTF-8 and Unicode payload columns are not migrated; run the explicit migrate command"
+            retention = None
+            if state.up_to_date:
+                retention = _retention_warning(engine, config.doctor_retention_warn_rows)
+            return state.up_to_date, (warning, retention)
         finally:
             if record is None:
                 engine.dispose()
     ok, current = _bounded(config, "storage", storage, timeout)
+    warning = retention = None
+    if ok:
+        current, (warning, retention) = current
     add("storage_and_migrations", "pass" if ok and current else "fail",
         "Storage reachable and migrations current" if ok and current else
         "Storage reachable; run the explicit migrate command" if ok else "Storage check failed: " + current)
+    if warning:
+        add("unicode_storage", "warn", warning)
+    if retention:
+        add("retention", "warn", retention)
     external = config.authenticate_request is not None or bool(config.principal_providers)
     safe_key = bool(config.secret_key and config.secret_key.strip() and config.secret_key != "change-me")
     add("authentication", "pass" if safe_key and (external or config.local_login_enabled) else "fail",
@@ -93,6 +129,12 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
         "Dedicated storage/schema must be provisioned separately from the host application database")
     add("operator_safeguards", "pass" if config.operator_safeguards else "info",
         "Action reasons and environment confirmation enabled" if config.operator_safeguards else "Operator guardrails are not enabled")
+    from celery_manager.telemetry import breaker_for
+    breaker = breaker_for(config)
+    add("telemetry_writes", "warn" if breaker.open or breaker.skipped else "pass",
+        f"Telemetry writes paused in this process; {breaker.skipped} skipped" if breaker.open else
+        f"{breaker.skipped} telemetry write(s) skipped in this process" if breaker.skipped else
+        "No telemetry writes skipped in this process")
     observers = list(getattr(config, "_cm_observers", ()))
     failed = any(observer.health()["writes_failed"] for observer in observers)
     add("observer_telemetry", "fail" if failed else "pass" if observers else "info",
@@ -114,6 +156,16 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
         scheduler = str(app.conf.get("beat_scheduler") or "")
         add("scheduler_stamping", "pass" if scheduler.startswith("celery_manager.beat") else "info",
             "Configured stamping scheduler" if scheduler.startswith("celery_manager.beat") else "Verify the actual beat launch command uses the stamping scheduler")
+        from celery_manager.task import TrackedTask, is_covered
+        uncovered = sorted({entry["task"] for entry in (app.conf.beat_schedule or {}).values()
+                            if entry.get("task") and not (
+                                (task := app.tasks.get(entry["task"])) and (
+                                    getattr(task.run, "_cm_tracked", False)
+                                    or isinstance(task, TrackedTask) and is_covered(task.name, config)
+                                )
+                            )})
+        add("untracked_scheduled_tasks", "warn" if uncovered else "pass",
+            ", ".join(uncovered) if uncovered else "Every scheduled task is tracked")
         if check_broker:
             def broker():
                 with app.connection_for_read(connect_timeout=timeout) as connection:

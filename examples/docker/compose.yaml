@@ -71,7 +71,12 @@ services:
 
   events:
     <<: *app
-    command: ["celery-manager", "events", "--config", "project:config", "--with-alerts"]
+    command: ["celery-manager", "events", "--config", "project:config", "--with-alerts", "--health-file", "/tmp/listener-alive"]
+    healthcheck:
+      # The file is touched every 15 s while events arrive.
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/listener-alive -mmin -2 2>/dev/null)\""]
+      interval: 30s
+      start_period: 60s
 
 volumes:
   pgdata:

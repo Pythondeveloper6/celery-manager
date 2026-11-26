@@ -36,7 +36,10 @@ export interface Worker {
 export interface WorkerSnapshot {
   workers: Worker[];
   timeout_seconds: number;
-  inspected_at: string;
+  inspected_at: string | null;
+  // True when served from the events listener's stored snapshot
+  // (`inspect_source = "snapshot"`); `inspected_at` is then its age.
+  snapshot?: boolean;
 }
 
 // Who answered a control broadcast. A worker missing from both lists didn't

@@ -50,7 +50,11 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat()
 
 
-def _row(run: TaskRun) -> dict:
+def _row(run: TaskRun, view=None) -> dict:
+    args, kwargs = run.args, run.kwargs
+    if view is not None:
+        from celery_manager.redaction import view_payload
+        args, kwargs = view_payload(view[0], view[1], args, kwargs, None)[:2]
     return {
         "source": run.source, "tenant_id": run.tenant_id, "operation_key": run.operation_key, "correlation_id": run.correlation_id,
         "task_id": run.task_id,
@@ -58,8 +62,8 @@ def _row(run: TaskRun) -> dict:
         "status": run.status,
         "queue": run.queue,
         "worker": run.worker,
-        "args": run.args,
-        "kwargs": run.kwargs,
+        "args": args,
+        "kwargs": kwargs,
         "started_at": _iso(run.started_at),
         "finished_at": _iso(run.finished_at),
         "runtime_seconds": run.runtime_seconds,
@@ -82,12 +86,13 @@ def count_export_rows(session, max_rows: int, **filters) -> tuple[int, int]:
     return total, min(total, max_rows)
 
 
-def iter_export(session, fmt: str, limit: int, **filters) -> Iterator[str]:
+def iter_export(session, fmt: str, limit: int, view=None, **filters) -> Iterator[str]:
     """Yield the export body in chunks, newest first, at most `limit` rows.
 
     Rows are streamed from the database in batches (`yield_per`), so memory
     stays flat regardless of table size. Filtering goes through the same
-    `_apply_task_filters` the list endpoint uses.
+    `_apply_task_filters` the list endpoint uses. `view=(config, role)` masks
+    arguments for roles below `args_view_role`.
     """
     query = _apply_task_filters(session.query(TaskRun), **filters).order_by(TaskRun.id.desc()).limit(limit)
     runs = query.yield_per(_BATCH)
@@ -100,14 +105,14 @@ def iter_export(session, fmt: str, limit: int, **filters) -> Iterator[str]:
         for run in runs:
             buf.seek(0)
             buf.truncate()
-            data = _row(run)
+            data = _row(run, view)
             writer.writerow([csv_safe(data[c]) for c in EXPORT_COLUMNS])
             yield buf.getvalue()
     else:
         yield "["
         first = True
         for run in runs:
-            data = _row(run)
+            data = _row(run, view)
             data["args"] = _decode_json(data["args"])
             data["kwargs"] = _decode_json(data["kwargs"])
             yield ("" if first else ",") + "\n" + json.dumps(data)

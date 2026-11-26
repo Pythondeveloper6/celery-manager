@@ -3,14 +3,18 @@ from __future__ import annotations
 import ast
 import inspect
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 
 from celery import Celery
 from sqlalchemy import or_
+from sqlalchemy.orm import defer
 
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
-from celery_manager.db.runs import lock_task_run
+from celery_manager.db.runs import commit_with_deadlock_retry, lock_task_run
+
+logger = logging.getLogger(__name__)
 
 # Maximum rows a list endpoint will hand back in one response, and the ceiling
 # each route clamps a caller-supplied `limit` to (`GET /api/tasks` and
@@ -168,8 +172,13 @@ def list_task_runs(
     initiator: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    before_id: int | None = None,
 ) -> list[TaskRun]:
     """One page of task runs, newest first, under the given filters.
+
+    `before_id` pages by key (runs with a smaller id), which stays fast deep
+    into history where a large `offset` does not. The large text columns are
+    deferred: a list never shows them, and accessing one still loads it.
 
     Ordered by the surrogate `id` rather than `started_at`: `started_at` is
     nullable (a queued run has none), so ordering by it would scatter queued
@@ -179,6 +188,10 @@ def list_task_runs(
         session.query(TaskRun),
         status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to, initiator=initiator,
     )
+    if before_id is not None:
+        query = query.filter(TaskRun.id < before_id)
+    query = query.options(defer(TaskRun.log_output), defer(TaskRun.result_repr), defer(TaskRun.traceback),
+                          defer(TaskRun.exception), defer(TaskRun.args), defer(TaskRun.kwargs))
     return query.order_by(TaskRun.id.desc()).offset(offset).limit(limit).all()
 
 
@@ -191,8 +204,11 @@ def count_task_runs(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     initiator: str | None = None,
+    cap: int | None = None,
 ) -> int:
-    """How many runs match these filters, ignoring limit/offset.
+    """How many runs match these filters, ignoring limit/offset. With
+    `cap`, counts at most `cap + 1` rows, so a result above `cap` means "more
+    than cap" and a huge table is not scanned for an exact number.
 
     Exists so the dashboard can honestly say "showing 50 of 1,284" and know
     whether a next page exists. Takes exactly the filter arguments
@@ -205,6 +221,8 @@ def count_task_runs(
     )
     # count() over the filtered entity; SQLAlchemy wraps this in a
     # SELECT count(*) subquery, so no rows are loaded into memory.
+    if cap is not None:
+        return query.with_entities(TaskRun.id).limit(cap + 1).count()
     return query.count()
 
 
@@ -286,12 +304,16 @@ def start_task(
             "args": json.dumps(args), "kwargs": json.dumps(kwargs),
             "queue": queue, "eta": eta, "initiator": initiator,
         })
+        from celery_manager.redaction import redact_run
+        redact_run(config, seeded_run, celery_app)
         if normalized_context is not None:
             from celery_manager.run_context import merge_storage_context
             merge_storage_context(seeded_run, normalized_context)
         session.commit()
     if session is not None and username is not None:
-        details = {"task_name": task_name, "args": args, "kwargs": kwargs, "delivery_options": json.loads(json.dumps(options, default=str))}
+        from celery_manager.redaction import redact_call
+        audit_args, audit_kwargs = redact_call(config, task_name, args, kwargs, celery_app)
+        details = {"task_name": task_name, "args": audit_args, "kwargs": audit_kwargs, "delivery_options": json.loads(json.dumps(options, default=str))}
         if queue:
             details["queue"] = queue
         if countdown is not None:
@@ -388,12 +410,38 @@ def cancel_task(
     terminate: bool = False,
     session=None,
     username: str | None = None,
+    mode: str | None = None,
+    signal: str | None = None,
 ) -> None:
-    """Revoke a queued task, or terminate it if already running (terminate=True).
+    """Cancel a run. `mode`:
 
+    - `cooperative`: only flag the run; the task stops itself when it next
+      calls `cancel_requested()`, `raise_if_cancelled()` or `report_progress()`.
+    - `revoke` (default): a queued task never starts.
+    - `terminate`: also signal a running one (`signal`: SIGTERM by default,
+      SIGUSR1 for Celery's soft time limit, SIGKILL).
+
+    Revokes are stored (`revoked_tasks`) so a restarted worker is told again.
     Pass `session` and `username` to record the action in the audit log; see
     `start_task` above for why they're optional.
     """
+    mode = mode or ("terminate" if terminate else "revoke")
+    if mode not in CANCEL_MODES:
+        raise ValueError(f"mode must be one of {', '.join(CANCEL_MODES)}")
+    if signal is not None and (mode != "terminate" or signal not in TERMINATE_SIGNALS):
+        raise ValueError(f"signal applies to terminate and must be one of {', '.join(TERMINATE_SIGNALS)}")
+    if mode == "cooperative":
+        run = get_task_run(session, task_id) if session is not None else None
+        if run is None:
+            raise TaskRunNotFound(f"no task run found for {task_id}")
+        _require_celery_origin(run)
+        run.cancel_requested_at = datetime.now(timezone.utc)
+        run.cancel_requested_by = username
+        session.commit()
+        if username is not None:
+            record_audit(session, username, "cancel", "task", task_id, {"mode": mode})
+        return
+    terminate = mode == "terminate"
     if session is not None:
         _require_celery_origin(get_task_run(session, task_id))
     elif task_id.startswith("external:"):
@@ -402,9 +450,35 @@ def cancel_task(
     if celery_app is None:
         from celery_manager.control.policy import DispatchDenied
         raise DispatchDenied("No Celery executor is configured.", 409)
-    celery_app.control.revoke(task_id, terminate=terminate)
+    celery_app.control.revoke(task_id, terminate=terminate, **({"signal": signal} if signal else {}))
+    if session is not None:
+        _remember(session, [task_id], terminate, username)
     if session is not None and username is not None:
-        record_audit(session, username, "cancel", "task", task_id, {"terminate": terminate})
+        details = {"terminate": terminate}
+        if signal:
+            details["signal"] = signal
+        record_audit(session, username, "cancel", "task", task_id, details)
+
+
+CANCEL_MODES = ("cooperative", "revoke", "terminate")
+TERMINATE_SIGNALS = ("SIGTERM", "SIGUSR1", "SIGKILL")
+
+
+def _remember(session, task_ids, terminate, username):
+    """Store the revokes; a storage failure never undoes the broadcast."""
+    from celery_manager.control.revokes import remember_revokes
+    config = session.info.get("cm_config")
+    try:
+        remember_revokes(session, task_ids, terminate=terminate, username=username,
+                         retention_hours=getattr(config, "revoke_retention_hours", 48))
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("celery-manager: revokes could not be stored; a restarted worker may run them")
+
+
+class ArgumentsRedacted(ValueError):
+    """The stored arguments were redacted, so the run cannot be replayed from them."""
 
 
 def retry_task(celery_app: Celery, session, task_id: str, username: str, args: list | None = None, kwargs: dict | None = None) -> str:
@@ -427,6 +501,8 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
         raise TaskRunNotFound(f"no task run found for {task_id}")
 
     _require_celery_origin(run)
+    if run.args_redacted and (args is None or kwargs is None):
+        raise ArgumentsRedacted("this run's arguments were redacted; supply both args and kwargs explicitly to retry it")
     final_args = args if args is not None else _decode_stored_call_argument(run.args, "args", task_id, [])
     final_kwargs = kwargs if kwargs is not None else _decode_stored_call_argument(run.kwargs, "kwargs", task_id, {})
 
@@ -464,28 +540,36 @@ def retry_task(celery_app: Celery, session, task_id: str, username: str, args: l
     # more than we do; the seed values are create-only, so the dashboard has
     # something to show for the new run in the meantime without ever
     # restating `queued` over a run that has already started or finished.
-    new_run = lock_task_run(session, new_id, seed={
-        "task_name": run.task_name,
-        "status": "queued",
-        "args": json.dumps(final_args),
-        "kwargs": json.dumps(final_kwargs),
-        "initiator": getattr(principal, "subject", None) or getattr(username, "subject", None) or str(username),
-    })
-    if run_context is not None:
-        from celery_manager.run_context import merge_storage_context
-        merge_storage_context(new_run, run_context)
-    new_run.retried_from_id = task_id
+    def record_lineage():
+        new_run = lock_task_run(session, new_id, seed={
+            "task_name": run.task_name,
+            "status": "queued",
+            "args": json.dumps(final_args),
+            "kwargs": json.dumps(final_kwargs),
+            "initiator": getattr(principal, "subject", None) or getattr(username, "subject", None) or str(username),
+        })
+        from celery_manager.redaction import redact_run
+        redact_run(config, new_run, celery_app)
+        if run_context is not None:
+            from celery_manager.run_context import merge_storage_context
+            merge_storage_context(new_run, run_context)
+        new_run.retried_from_id = task_id
 
     # record_audit commits, which flushes the row above with it — but commit
     # explicitly rather than relying on that, so the lineage is durable even
     # if auditing is ever made optional here the way it is in start_task.
-    session.commit()
+    # The task is already dispatched at this point, so a database deadlock
+    # (see `commit_with_deadlock_retry`) restarts only this write, never the
+    # dispatch.
+    commit_with_deadlock_retry(session, record_lineage)
     details: dict = {"new_task_id": new_id}
     if edited:
         # Record what was actually sent: an edited retry is a different call
         # from the one the run stored, and the audit log is the only place
         # that difference is kept.
-        details.update({"args_edited": True, "args": final_args, "kwargs": final_kwargs})
+        from celery_manager.redaction import redact_call
+        audit_args, audit_kwargs = redact_call(config, run.task_name, final_args, final_kwargs, celery_app)
+        details.update({"args_edited": True, "args": audit_args, "kwargs": audit_kwargs})
     record_audit(session, username, "retry", "task", task_id, details)
     return new_id
 
@@ -625,6 +709,7 @@ def bulk_cancel(
 
     for start in range(0, len(targets), _REVOKE_CHUNK):
         celery_app.control.revoke(targets[start:start + _REVOKE_CHUNK], terminate=terminate)
+    _remember(session, targets, terminate, username)
 
     record_audit(session, username, "cancel_bulk", "task", "filter" if task_ids is None else "selection", {
         "terminate": terminate,

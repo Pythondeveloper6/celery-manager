@@ -65,8 +65,8 @@ export function MissedRuns({ name }: { name: string }) {
       ) : !data.active ? (
         <div className="cm-card">
           <p className="cm-empty-state">
-            Detection isn&apos;t active yet: beat hasn&apos;t stamped a run of this schedule. Run beat with{" "}
-            <code>-S celery_manager.beat:Scheduler</code> (and make sure the task uses <code>@track</code>).
+            Detection isn&apos;t active yet: beat hasn&apos;t recorded this schedule. Run beat with{" "}
+            <code>-S celery_manager.beat:Scheduler</code> and configure its celery_manager_db_url.
           </p>
         </div>
       ) : data.missed.length === 0 ? (
@@ -81,6 +81,7 @@ export function MissedRuns({ name }: { name: string }) {
           {[...data.missed].reverse().map((m) => (
             <li key={m.due_at} className="cm-missed-row">
               <span className="cm-occurrence-time">{formatDue(m.due_at)}</span>
+              <span>{m.kind === "never_sent" ? "Never sent" : "Sent, never arrived"}</span>
               <span className="cm-missed-ago">{formatAgo(m.due_at)}</span>
             </li>
           ))}

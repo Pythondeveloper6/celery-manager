@@ -150,7 +150,8 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specKey, schedule.name]);
 
-  const editingOff = !schedule.schedule_editing;
+  const unsupported = schedule.editable === false && !!schedule.reason;
+  const editingOff = !schedule.schedule_editing || unsupported;
   const canSave = !editingOff && !busy && !!draft.spec && !previewError && !previewing;
 
   async function save(event: React.FormEvent) {
@@ -229,7 +230,12 @@ export function ScheduleEditor({ schedule, onClose, onSaved }: Props) {
         </header>
 
         <form className="cm-sheet-body" onSubmit={save} noValidate>
-          {editingOff && (
+          {unsupported && (
+            <div className="cm-alert" role="note">
+              <p>{schedule.reason}</p>
+            </div>
+          )}
+          {editingOff && !unsupported && (
             <div className="cm-alert" role="note">
               <p>
                 Editing is off. Beat only applies an edit when it runs <code>celery_manager.beat:DatabaseScheduler</code>.

@@ -300,9 +300,15 @@ jobs:
       - run: python -m tests.release_gate /tmp/brokers.xml
 
   e2e:
-    name: End-to-end (real processes)
+    name: End-to-end (${{ matrix.pool }} pool)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        pool: [prefork, threads, solo, gevent]
+    # gevent is allowed to fail until it passes.
+    continue-on-error: ${{ matrix.pool == 'gevent' }}
     services:
       redis:
         image: redis:7
@@ -315,6 +321,7 @@ jobs:
           --health-retries 10
     env:
       CM_E2E_REDIS_URL: redis://localhost:6379/0
+      CM_E2E_POOL: ${{ matrix.pool }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -325,6 +332,40 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       - run: pip install -e '.[dev]'
+      - if: matrix.pool == 'gevent'
+        run: pip install gevent
+      - run: pytest tests/e2e -m e2e -v --junitxml=e2e.xml
+      - run: python tests/release_gate.py e2e.xml
+
+  lowest-versions:
+    name: Lowest supported versions (Python 3.10, Celery 5.3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CM_E2E_REDIS_URL: redis://localhost:6379/0
+      CM_E2E_POOL: prefork
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.10"
+      # Direct dependencies at the lowest versions pyproject.toml allows
+      # (celery 5.3, SQLAlchemy 2.0, and their kombu), dev tools as usual.
+      - run: pip install uv && uv pip install --system --resolution lowest-direct -e '.[dev]'
+      - run: python -c "import celery, kombu, sqlalchemy; print(celery.__version__, kombu.__version__, sqlalchemy.__version__)"
+      - run: pytest tests/unit -q
       - run: pytest tests/e2e -m e2e -v --junitxml=e2e.xml
       - run: python tests/release_gate.py e2e.xml
 

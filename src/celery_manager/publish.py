@@ -3,13 +3,20 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import queue
+import threading
 from datetime import datetime, timezone
 
 from celery import current_app, current_task, signals
 
 from celery_manager.db.runs import lock_task_run
+from celery_manager.redaction import redact_run
+from celery_manager.telemetry import Skipped, guarded
 
 logger = logging.getLogger(__name__)
+
+PUBLISH_QUEUE_SIZE = 10_000
 
 
 def install_publish_hook(celery_app, *, session_factory=None, initiator=None, context=None):
@@ -66,20 +73,19 @@ def install_publish_hook(celery_app, *, session_factory=None, initiator=None, co
         except Exception:
             logger.exception("celery-manager: initiator callback failed")
 
-    def after(sender=None, headers=None, body=None, routing_key=None, **unused):
-        if not belongs() or not headers or not headers.get("id"):
-            return
+    def record(sender, headers, body, routing_key):
         try:
             args, kwargs = body[:2]
             eta = headers.get("eta")
             eta = datetime.fromisoformat(eta) if isinstance(eta, str) else None
-            with session_factory() as session:
+            with guarded(hook_config), session_factory() as session:
                 row = lock_task_run(session, headers["id"], seed={
                     "task_name": sender or headers.get("task") or "unknown", "status": "queued",
                     "args": json.dumps(args, default=repr), "kwargs": json.dumps(kwargs, default=repr),
                     "queue": routing_key, "eta": eta, "initiator": headers.get("cm_initiator"),
                     "sent_at": datetime.now(timezone.utc),
                 })
+                redact_run(hook_config, row, celery_app)
                 if headers.get("cm_context") is not None:
                     from celery_manager.run_context import (
                         merge_storage_context,
@@ -87,8 +93,42 @@ def install_publish_hook(celery_app, *, session_factory=None, initiator=None, co
                     )
                     merge_storage_context(row, normalize_context(headers["cm_context"], hook_config))
                 session.commit()
+        except Skipped:
+            return
         except Exception:
             logger.exception("celery-manager: published task could not be recorded")
+
+    threaded = getattr(hook_config, "publish_hook_mode", "sync") == "thread"
+    drainer = {"pid": None, "queue": None}
+    drainer_lock = threading.Lock()
+
+    def pending_queue():
+        # Started on first use in each process: a thread started before a
+        # pre-forking server forks does not exist in its workers.
+        with drainer_lock:
+            if drainer["pid"] != os.getpid():
+                work = queue.Queue(maxsize=PUBLISH_QUEUE_SIZE)
+
+                def drain():
+                    while True:
+                        record(*work.get())
+
+                threading.Thread(target=drain, name="celery-manager-publish", daemon=True).start()
+                drainer.update(pid=os.getpid(), queue=work)
+            return drainer["queue"]
+
+    def after(sender=None, headers=None, body=None, routing_key=None, **unused):
+        if not belongs() or not headers or not headers.get("id"):
+            return
+        if not threaded:
+            record(sender, headers, body, routing_key)
+            return
+        try:
+            pending_queue().put_nowait((sender, dict(headers), body, routing_key))
+        except queue.Full:
+            # shortcut: a full queue drops the row (the events listener still
+            # records the run); a bigger queue only delays the same loss.
+            logger.warning("celery-manager: publish queue full; run %s not seeded", headers.get("id"))
 
     # One hook per app. Reinstallation replaces it rather than doubling writes.
     old = getattr(celery_app, "_cm_uninstall_publish_hook", None)

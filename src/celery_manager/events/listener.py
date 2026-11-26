@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import ast
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from celery_manager.config import CeleryManagerConfig
-from celery_manager.db.runs import lock_task_run
+from celery_manager.db.runs import commit_with_deadlock_retry, lock_task_run
 
 _STATUS_BY_EVENT = {
     "task-sent": "queued",
@@ -43,7 +43,7 @@ _DECORATOR_OWNED_STATUSES = frozenset({"skipped"})
 # state wins". The observed failure: a `task-sent` processed after the worker
 # had already started (or finished) the run flipped it back to `queued`, and
 # nothing later ever corrected it.
-_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "revoked"})
+_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "revoked", "cancelled"})
 
 
 def _accepts_status(current: str | None, incoming: str) -> bool:
@@ -56,6 +56,7 @@ def _accepts_status(current: str | None, incoming: str) -> bool:
       the event is stale. That includes `retried`: the next attempt's
       task-received leaves the row showing `retried` until it actually
       starts, which is accurate.
+    - `lost` (set by the reconciler) is replaced by any later lifecycle event.
     - `started` never replaces a terminal status — a task-started landing
       after task-succeeded/the decorator's outcome is stale. It *does*
       replace `retried`, which is the ordinary next attempt.
@@ -74,7 +75,7 @@ def _accepts_status(current: str | None, incoming: str) -> bool:
     if current in _DECORATOR_OWNED_STATUSES:
         return False
     if incoming == "queued":
-        return current in (None, "queued")
+        return current in (None, "queued", "lost")
     if incoming == "started":
         return current not in _TERMINAL_STATUSES
     return True
@@ -172,7 +173,23 @@ def _earliest(current: datetime | None, incoming: datetime | None) -> datetime |
     return incoming if incoming < current_utc else current
 
 
-def upsert_task_run(session, event: dict, config=None) -> None:
+def _lifecycle_time(event: dict, config, stats) -> datetime:
+    """When the event happened: its own timestamp, unless it is missing or
+    differs from this process's clock by more than `event_clock_skew_seconds`
+    (a worker with a wrong clock), in which case the arrival time is used and
+    the event is counted."""
+    now = datetime.now(timezone.utc)
+    stamp = _event_time(event)
+    if stamp is None:
+        return now
+    if abs((stamp - now).total_seconds()) > getattr(config, "event_clock_skew_seconds", 300):
+        if stats is not None:
+            stats.clock_skew += 1
+        return now
+    return stamp
+
+
+def upsert_task_run(session, event: dict, config=None, stats=None) -> None:
     """Apply a single Celery event to the task_runs table.
 
     Pure function over a SQLAlchemy session so it's testable without a
@@ -199,7 +216,10 @@ def upsert_task_run(session, event: dict, config=None) -> None:
         return  # An external observation's identity is never a Celery lifecycle.
     status_applied = _accepts_status(run.status, status)
     if status_applied:
+        if run.status == "lost":
+            run.exception = None  # the reconciler's reason no longer holds
         run.status = status
+        run.status_source = None
     # else: a decorator-owned or later status is already there (see
     # _accepts_status). Only `status` and the lifecycle timestamps below are
     # protected — every other field still merges, so a skipped run keeps
@@ -227,10 +247,17 @@ def upsert_task_run(session, event: dict, config=None) -> None:
         run.kwargs = _merge_call_argument(run.kwargs, event["kwargs"], "{}")
     # Timestamps follow the status: a stale task-started must not move
     # started_at past a finish time already recorded.
+    # They use the event's own time, so a lagging or reconnecting listener
+    # does not shift them (and does not inflate queue wait).
     if status_applied and event_type == "task-started":
-        run.started_at = datetime.now(timezone.utc)
+        run.started_at = _lifecycle_time(event, config, stats)
     if status_applied and event_type in ("task-succeeded", "task-failed"):
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = _lifecycle_time(event, config, stats)
+        runtime = event.get("runtime")
+        if run.started_at is not None and isinstance(runtime, (int, float)) and not isinstance(runtime, bool) and runtime >= 0:
+            started = run.started_at
+            started = started.replace(tzinfo=timezone.utc) if started.tzinfo is None else started
+            run.finished_at = started + timedelta(seconds=runtime)
     # Queue wait inputs. Merged outside the status guard on purpose: a
     # task-sent processed after the worker already started the run is stale
     # for *status* but its timestamp is exactly the fact we want. Earliest
@@ -265,6 +292,27 @@ def upsert_task_run(session, event: dict, config=None) -> None:
             setattr(run, key, value)
     if event.get("traceback") is not None:
         run.traceback = event["traceback"]
+    # Attempt history (Celery reuses the task id across retries).
+    retries = event.get("retries")
+    if event_type == "task-received" and isinstance(retries, int) and not isinstance(retries, bool):
+        run.retry_count = max(run.retry_count or 0, retries)
+    if event_type in ("task-retried", "task-succeeded", "task-failed"):
+        from celery_manager.control.attempts import upsert_attempt
+        attempt = run.retry_count or 0
+        upsert_attempt(session, task_id, attempt, config=config, task_name=run.task_name,
+                       args=run.args, kwargs=run.kwargs, status=status,
+                       worker=event.get("hostname"), finished_at=_lifecycle_time(event, config, None),
+                       runtime_seconds=event.get("runtime") if isinstance(event.get("runtime"), (int, float)) else None,
+                       exception=event.get("exception"), traceback=event.get("traceback"))
+        if event_type == "task-retried":
+            run.retry_count = attempt + 1
+    from celery_manager.redaction import redact_run
+    redact_run(config, run)
+
+
+class ListenerGaveUp(RuntimeError):
+    """Too many consecutive events failed to be stored; the database is
+    probably down, and a restart by the platform is the honest outcome."""
 
 
 class EventListener:
@@ -280,16 +328,27 @@ class EventListener:
         self._config = config
         self._session_factory = session_factory
 
-    def run(self, *, enable_events=True) -> None:
+    def run(self, *, enable_events=True, health_file=None, health_port=None) -> None:
         app = self._config.celery_app
         state = app.events.State()
 
         import logging
+        import signal
         import threading
         import time
+
+        from celery_manager.events.liveness import (
+            ListenerStats,
+            start_heartbeat,
+            write_heartbeat,
+        )
         log = logging.getLogger(__name__)
         stop = threading.Event()
+        stats = ListenerStats()
         last_heartbeat = [time.monotonic()]
+        consecutive_errors = [0]
+        receiver_box = [None]
+        delay = [1.0]
 
         def enable():
             try:
@@ -303,26 +362,93 @@ class EventListener:
                 if time.monotonic() - last_heartbeat[0] > 120:
                     log.warning("celery-manager: no worker heartbeat received in two minutes")
 
+        def resend(hostname):
+            # A restarted worker forgot its revokes; a failure here only
+            # loses the re-send, never the event.
+            try:
+                from celery_manager.control.revokes import resend_revokes
+                with self._session_factory() as session:
+                    resend_revokes(self._config.celery_app, session, hostname)
+            except Exception:
+                log.warning("celery-manager: could not re-send revokes to %s", hostname, exc_info=True)
+
         def on_event(event):
             if event.get("type") in ("worker-online", "worker-heartbeat"):
                 last_heartbeat[0] = time.monotonic()
-            state.event(event)
-            with self._session_factory() as session:
-                from celery_manager.events.workers import record_worker_event
-                record_worker_event(session, event, retention_days=self._config.worker_heartbeat_retention_days)
-                upsert_task_run(session, event, self._config)
-                session.commit()
+            try:
+                state.event(event)
+                with self._session_factory() as session:
+                    from celery_manager.events.workers import record_worker_event
+
+                    def write():
+                        record_worker_event(session, event, retention_days=self._config.worker_heartbeat_retention_days)
+                        upsert_task_run(session, event, self._config, stats)
+
+                    commit_with_deadlock_retry(session, write)
+                if event.get("type") == "worker-online" and event.get("hostname") and self._config.celery_app is not None:
+                    resend(event["hostname"])
+            except Exception:
+                # Never log the event body: it carries task arguments.
+                stats.failed += 1
+                consecutive_errors[0] += 1
+                log.warning("celery-manager: could not store %s event for task %s", event.get("type"),
+                            event.get("uuid"), exc_info=True)
+                if consecutive_errors[0] >= self._config.listener_max_consecutive_errors:
+                    raise ListenerGaveUp(f"{consecutive_errors[0]} events in a row could not be stored") from None
+                return
+            consecutive_errors[0] = 0
+            delay[0] = 1.0  # the connection is demonstrably working
+            stats.processed += 1
+            stats.last_event_mono = time.monotonic()
+            stats.last_event_at = datetime.now(timezone.utc)
+            stamp = _event_time(event)
+            if stamp is not None:
+                stats.lag_seconds = max(0.0, (stats.last_event_at - stamp).total_seconds())
+
+        def on_term(signum, frame):
+            stop.set()
+            if receiver_box[0] is not None:
+                receiver_box[0].should_stop = True
 
         thread = None
         if enable_events:
             enable()
             thread = threading.Thread(target=maintain, name="cm-enable-events", daemon=True)
             thread.start()
+        stop_probe = start_heartbeat(self._session_factory, stats, stop, health_file=health_file,
+                                     health_port=health_port)
+        previous = None
         try:
-            with app.connection() as connection:
-                receiver = app.events.Receiver(connection, handlers={"*": on_event})
-                receiver.capture(limit=None, timeout=None, wakeup=True)
+            previous = signal.signal(signal.SIGTERM, on_term)
+        except ValueError:  # not the main thread
+            pass
+        try:
+            while not stop.is_set():
+                try:
+                    with app.connection() as connection:
+                        receiver = app.events.Receiver(connection, handlers={"*": on_event})
+                        receiver_box[0] = receiver
+                        receiver.capture(limit=None, timeout=None, wakeup=True)
+                        stop.set()  # capture only returns when asked to stop
+                except ListenerGaveUp:
+                    raise
+                except Exception:
+                    log.warning("celery-manager: lost the broker connection; retrying in %.0fs", delay[0], exc_info=True)
+                finally:
+                    receiver_box[0] = None
+                if stop.is_set():
+                    break
+                stats.reconnects += 1
+                stop.wait(delay[0])
+                delay[0] = min(delay[0] * 2, self._config.listener_reconnect_max_seconds)
         finally:
             stop.set()
+            if previous is not None:
+                signal.signal(signal.SIGTERM, previous)
+            stop_probe()
+            try:
+                write_heartbeat(self._session_factory, stats)
+            except Exception:
+                log.warning("celery-manager: could not write the final listener heartbeat", exc_info=True)
             if thread:
                 thread.join(timeout=1)

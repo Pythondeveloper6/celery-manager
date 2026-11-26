@@ -1,4 +1,12 @@
-# The `@track` decorator
+# Task tracking and the `@track` decorator
+
+To track every task without adding a decorator to each module, create the
+Celery app with `task_cls="celery_manager.task:TrackedTask"` and call
+`celery_manager.setup(config)` in each worker process. Set `track_tasks` or
+`track_exclude` in `CeleryManagerConfig` to include or exclude task names
+using glob patterns. A task that also uses `@track(...)` keeps its per-task
+options and is wrapped once. Run `celery-manager doctor` to see scheduled
+tasks that have neither tracking path.
 
 Apply `celery_manager.decorator.track()` above `@app.task` to opt a task
 into three things:
@@ -56,7 +64,7 @@ dashboard's periodic schedules (i.e. the key under `beat_schedule` in your
 Celery app's config). If omitted, it defaults to the task's registered
 name — fine as long as you only have one schedule per task.
 
-Tasks *without* `@track` are still visible in the dashboard (the events
+Tasks without `@track` or `TrackedTask` are still visible in the dashboard (the events
 listener picks up every task automatically) but don't support
 per-occurrence pause/cancel or full log capture — only the traceback
 Celery already provides on failure. ([`report_progress()`](progress.md) is
@@ -190,6 +198,15 @@ round-trip, so [retrying such a run](rest-api.md#retrying-a-run-the-listener-rec
 re-dispatches the repr string rather than the original object. Pass explicit
 `args`/`kwargs` to `control.retry_task()` when that matters.
 
+### Hiding arguments per task
+
+`@track(redact_args=True)` stores every positional argument as `[redacted]`,
+and `@track(redact_kwargs=("token", "payload.email"))` does the same for those
+keyword names or dotted paths into nested dictionaries. Those values are also
+removed from the stored exception and traceback, and the run is marked
+`args_redacted`. Keys matching `sensitive_keys` are always redacted; see
+[Redacting arguments](production.md#redacting-arguments-results-and-errors).
+
 ## What "log capture" actually captures
 
 `capture_logs()` attaches a `logging.StreamHandler` to the **root logger**
@@ -266,7 +283,9 @@ matched against the runs that actually happen.
 Beat then adds headers to every message it sends: `cm_schedule` (the entry
 name) and `cm_occurrence` (the scheduled time of this firing, computed from
 the schedule, the same value the dashboard lists), `cm_sent_at`, and
-`cm_interval` for interval schedules. Beat needs no database access for this.
+`cm_interval` for interval schedules. Set
+`app.conf.celery_manager_db_url` to the dashboard database URL in beat to
+record each send and enable detection of schedules that never fired.
 
 On every call, the wrapper reads those headers and looks for an unconsumed
 `ScheduleOverride` row for that entry and that occurrence:
@@ -294,14 +313,16 @@ fallback switches off by itself.
 ### Missed-run detection
 
 The same stamps let the dashboard notice a run that was due but never
-arrived (beat was down, the message was lost, no worker took it). The
+sent or was sent without a worker run arriving. The
 schedule page lists them under **Missed runs**, and the schedule list shows
 a badge with the last 24 hours' count. Rules:
 
-- Judging starts at the schedule's **first stamped run**. Before that a
-  missing run cannot be told from an unstamped one, so until beat runs
-  `celery_manager.beat:Scheduler` (and the task uses `@track`) the page says
-  detection is not active yet.
+- Judging starts at the schedule's first stamped run or beat firing. If beat
+  records to the dashboard database, a schedule with no firing is judged
+  from when the backend sync first saw it, after one period plus grace.
+- A beat firing without a matching worker run is marked **sent, never
+  arrived** when this schedule has worker tracking. A missing beat firing is
+  marked **never sent**.
 - A run **arrived** if any `task_runs` row has its `occurrence_at`, whatever
   its status: skipped (including runs skipped by a whole-schedule pause),
   revoked and failed runs all reached the worker.

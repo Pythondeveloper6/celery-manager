@@ -164,6 +164,8 @@ OIDC, dispatch policies, bounded logs/results and storage isolation. The
 - **Built-in auth** — bcrypt-hashed users and signed session cookies.
 - **Roles** — `viewer` (read-only), `operator` (day-to-day controls) and
   `admin` (purge, worker shutdown, settings), enforced on the server.
+- **Browser sign-in with OIDC** — built-in authorization-code + PKCE flow with
+  periodic role refresh (`oidc_client_id`), or bearer tokens from the host.
 - **No Node toolchain required** — the React dashboard ships prebuilt inside
   the Python package.
 
@@ -243,8 +245,7 @@ from celery_manager.api.app import create_app
 app, _ = create_app(config)   # then: uvicorn your_module:app
 ```
 
-**2. The Celery worker process** — where `@track`-decorated tasks actually
-run:
+**2. The Celery worker process** — where tracked tasks actually run:
 
 ```python
 import celery_manager
@@ -257,6 +258,12 @@ def send_report(self):
     ...
 ```
 
+To track all tasks without a decorator on each one, create your Celery app
+with `task_cls="celery_manager.task:TrackedTask"`. Keep `@track(...)` only
+where you need per-task options; it takes precedence and runs once. Use
+`track_tasks` and `track_exclude` in `CeleryManagerConfig` to select task
+names with glob patterns.
+
 For per-occurrence skips, run beat with celery-manager's scheduler. It tags
 each firing with its scheduled time, so a skip hits exactly that run, however
 late it starts, and never a manual `.delay()`:
@@ -265,6 +272,10 @@ late it starts, and never a manual `.delay()`:
 celery -A your_module beat -S celery_manager.beat:Scheduler
 ```
 
+Set `your_celery_app.conf.celery_manager_db_url` to the dashboard database URL
+in the beat process to record each firing. This lets the dashboard distinguish
+"never sent" from "sent, never arrived" and detect schedules that never fired.
+
 Then run the events listener alongside your worker and beat, so the dashboard
 sees every task rather than only the decorated ones:
 
@@ -272,6 +283,13 @@ sees every task rather than only the decorated ones:
 celery-manager events --celery-app your_module:your_celery_app \
                       --db-url sqlite:///celery_manager.db
 ```
+
+The listener reconnects after a broker restart and writes a heartbeat that
+`GET /api/health/listener`, a `listener_stale` alert and the metrics report;
+`--health-file` and `--health-port` give container probes a credential-free check.
+
+After an outage, `celery-manager reconcile --once` (or `reconcile_interval_seconds` on the
+listener) recovers final states from the result backend and flags runs no worker holds as `lost`.
 
 The listener sees nothing unless workers emit events: set `worker_send_task_events = True`
 and `task_send_sent_event = True` (or run the worker with `-E`). See
@@ -324,7 +342,9 @@ an admin surface: serve it over HTTPS, keep `cookie_secure=True`, set a long
 random `secret_key` from your secret store, create accounts explicitly (there
 is no default login) and use the `viewer`/`operator`/`admin` roles. See
 [docs/security.md](docs/security.md) and [`SECURITY.md`](SECURITY.md) for the
-threat model and how to report a vulnerability privately.
+threat model and how to report a vulnerability privately. Stored arguments, results,
+exceptions and tracebacks are redacted for sensitive keys and can be hidden from
+lower roles; see [Redacting arguments](docs/production.md#redacting-arguments-results-and-errors).
 
 ## Limits
 
@@ -358,7 +378,7 @@ and swaps to Postgres/MySQL/anything SQLAlchemy supports via `db_url`.
 
 ## Status
 
-This is a beta, **0.3.0b1**. APIs outside the stability policy may still change before 1.0; see the
+This is a beta, **0.3.0b2**. APIs outside the stability policy may still change before 1.0; see the
 [CHANGELOG](CHANGELOG.md) for release history and
 [docs/roadmap.md](docs/roadmap.md) for planned follow-ups.
 

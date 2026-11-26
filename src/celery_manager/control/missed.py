@@ -14,12 +14,19 @@ Rules, shared by both public functions:
 
 - **Judged only from the first stamp onward.** Before beat stamped anything
   for a schedule, a missing run cannot be told from an unstamped one, so the
-  earliest `occurrence_at` of that schedule is where judging starts. A
-  schedule with no stamped run is never reported (detection inactive).
+  earliest `occurrence_at` of that schedule, run or beat firing, is where
+  judging starts. With neither, and beat recording to this database (it has
+  written a heartbeat), judging starts when the schedule was first seen by
+  the backend sync, so a schedule that never fired is reported after one
+  period plus grace. Otherwise detection is inactive.
+- **Sent** means beat wrote a `schedule_firings` row; a firing with no row
+  and no stamped run was never sent (`kind: "never_sent"`). A sent firing
+  with no `task_runs` row for its task id was never received
+  (`kind: "never_arrived"`), judged only for schedules that have a stamped
+  run, since an untracked task writes none.
 - **Arrived means a `task_runs` row exists.** Its status does not matter:
   skipped (including whole-schedule pauses), revoked and failed runs all
-  reached the worker. Only `@track`ed tasks write rows, so an untracked task
-  never produces a first stamp and is never judged.
+  reached the worker. Tasks outside `@track` / `TrackedTask` write no rows.
 - **Grace.** A firing is only reported once `grace_seconds` have passed since
   it was due, so a slow broker or a busy worker is not a false alarm.
 - **crontab / solar**: the expected firings are recomputed from the schedule
@@ -47,10 +54,15 @@ import itertools
 from collections import deque
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func
+from sqlalchemy import exists, func
 
 from celery_manager.control.schedules import _entry_schedule
-from celery_manager.db.models import PeriodicSchedule, TaskRun
+from celery_manager.db.models import (
+    AppSetting,
+    PeriodicSchedule,
+    ScheduleFiring,
+    TaskRun,
+)
 from celery_manager.occurrences import (
     CALENDAR_MATCH_WINDOW,
     as_aware_utc,
@@ -73,13 +85,22 @@ __all__ = [
 
 
 def first_stamped_occurrence(session, schedule_name: str) -> datetime | None:
-    """The earliest stamped `occurrence_at` for the schedule (UTC), or None
-    when beat has never stamped one: detection is not active for it."""
-    value = (
-        session.query(func.min(TaskRun.occurrence_at))
-        .filter(TaskRun.schedule_name == schedule_name)
-        .scalar()
-    )
+    """Detection start: earliest stamped run/firing, or first backend sighting
+    when beat records to this database."""
+    values = [
+        session.query(func.min(TaskRun.occurrence_at)).filter(TaskRun.schedule_name == schedule_name).scalar(),
+        session.query(func.min(ScheduleFiring.occurrence_at)).filter(ScheduleFiring.schedule_name == schedule_name).scalar(),
+    ]
+    values = [as_aware_utc(v) for v in values if v is not None]
+    return min(values) if values else _first_seen(session, schedule_name)
+
+
+def _first_seen(session, schedule_name: str) -> datetime | None:
+    """When the backend sync first saw the schedule, but only while beat
+    records firings here (else a never-stamped schedule is not judged)."""
+    if session.get(AppSetting, "beat_last_tick") is None:
+        return None
+    value = session.query(PeriodicSchedule.first_seen_at).filter_by(name=schedule_name).scalar()
     return as_aware_utc(value) if value is not None else None
 
 
@@ -94,19 +115,24 @@ def list_missed_runs(
     now: datetime | None = None,
     max_results: int = DEFAULT_MAX_RESULTS,
     apply_edits: bool = True,
+    entry: dict | None = None,
 ) -> list[dict]:
     """Firings of `schedule_name` that were due in `[since, until]` and never
-    arrived, oldest first, as `{"due_at": datetime}` (aware UTC).
+    arrived, oldest first, as `{"due_at": datetime, "kind": "never_sent" |
+    "never_arrived"}` (aware UTC).
 
     `since` defaults to `now - DEFAULT_LOOKBACK` and is clamped to the first
     stamped occurrence; `until` defaults to `now` and is clamped to
     `now - grace_seconds`. Returns `[]` for a schedule that is not in the
     host app's `beat_schedule` or has no stamped run yet. Pure read.
-    `apply_edits` is as for `control.schedules.effective_schedule`.
+    `apply_edits` is as for `control.schedules.effective_schedule`. A
+    disabled entry has no missed runs, and a re-enabled one is judged from
+    when it was re-enabled. Pass `entry` when the caller already has it.
     """
     now = as_aware_utc(now) if now is not None else datetime.now(timezone.utc)
-    entry = entries_for(session, celery_app).get(schedule_name)
     if entry is None:
+        entry = entries_for(session, celery_app).get(schedule_name)
+    if entry is None or not entry.get("enabled", True):
         return []
     first = first_stamped_occurrence(session, schedule_name)
     if first is None:
@@ -115,16 +141,16 @@ def list_missed_runs(
     since = as_aware_utc(since) if since is not None else now - DEFAULT_LOOKBACK
     since = max(since, first)
     override, edited_at = None, None
-    if apply_edits:
-        row = (
-            session.query(PeriodicSchedule.schedule_override, PeriodicSchedule.edited_at)
-            .filter_by(name=schedule_name)
-            .one_or_none()
-        )
-        if row is not None and row.schedule_override:
-            override, edited_at = row.schedule_override, row.edited_at
-    if edited_at is not None:
-        since = max(since, as_aware_utc(edited_at))
+    row = (
+        session.query(PeriodicSchedule.schedule_override, PeriodicSchedule.edited_at, PeriodicSchedule.enabled_changed_at)
+        .filter_by(name=schedule_name)
+        .one_or_none()
+    )
+    if apply_edits and row is not None and row.schedule_override:
+        override, edited_at = row.schedule_override, row.edited_at
+    for changed in (edited_at, row.enabled_changed_at if row is not None else None):
+        if changed is not None:
+            since = max(since, as_aware_utc(changed))
     upper = now - timedelta(seconds=grace_seconds)
     if until is not None:
         upper = min(upper, as_aware_utc(until))
@@ -134,13 +160,15 @@ def list_missed_runs(
     celery_schedule = _entry_schedule(entry, override, app=celery_app)
     if is_interval_schedule(celery_schedule):
         missed = _missed_interval(
-            session, schedule_name, celery_schedule.run_every, since, upper, grace_seconds, max_results
+            session, schedule_name, celery_schedule.run_every, first, since, upper, grace_seconds, max_results
         )
     else:
         missed = _missed_calendar(
             session, schedule_name, celery_schedule, first, since, upper, max_results
         )
-    return [{"due_at": t} for t in missed]
+    found = [{"due_at": t, "kind": "never_sent"} for t in missed]
+    found += [{"due_at": t, "kind": "never_arrived"} for t in _never_arrived(session, schedule_name, since, upper)]
+    return sorted(found, key=lambda m: m["due_at"])[-max_results:]
 
 
 def missed_run_counts(
@@ -157,10 +185,10 @@ def missed_run_counts(
     omitted). Same rules as `list_missed_runs`; pure read. Counts are capped
     at `DEFAULT_MAX_RESULTS` per schedule."""
     counts: dict[str, int] = {}
-    for name in entries_for(session, celery_app):
+    for name, entry in entries_for(session, celery_app).items():
         missed = list_missed_runs(
             session, celery_app, name, since=since, grace_seconds=grace_seconds, now=now,
-            apply_edits=apply_edits,
+            apply_edits=apply_edits, entry=entry,
         )
         if missed:
             counts[name] = len(missed)
@@ -168,18 +196,39 @@ def missed_run_counts(
 
 
 def _stamped_occurrences(session, schedule_name: str, start: datetime, end: datetime) -> list[datetime]:
-    rows = (
-        session.query(TaskRun.occurrence_at)
-        .filter(
-            TaskRun.schedule_name == schedule_name,
-            TaskRun.occurrence_at.isnot(None),
-            TaskRun.occurrence_at >= start,
-            TaskRun.occurrence_at <= end,
+    rows = []
+    for model in (TaskRun, ScheduleFiring):
+        rows += (
+            session.query(model.occurrence_at)
+            .filter(
+                model.schedule_name == schedule_name,
+                model.occurrence_at.isnot(None),
+                model.occurrence_at >= start,
+                model.occurrence_at <= end,
+            )
+            .distinct()
+            .all()
         )
-        .distinct()
+    return sorted({as_aware_utc(r[0]) for r in rows})
+
+
+def _never_arrived(session, name, since, upper) -> list[datetime]:
+    """Sent firings in the window whose task id has no `task_runs` row. Only
+    judged where the schedule has stamped runs: an untracked task has none."""
+    if session.query(TaskRun.id).filter(TaskRun.schedule_name == name, TaskRun.occurrence_at.isnot(None)).first() is None:
+        return []
+    rows = (
+        session.query(ScheduleFiring.occurrence_at)
+        .filter(
+            ScheduleFiring.schedule_name == name,
+            ScheduleFiring.task_id.isnot(None),
+            ScheduleFiring.occurrence_at >= since,
+            ScheduleFiring.sent_at <= upper,
+            ~exists().where(TaskRun.task_id == ScheduleFiring.task_id),
+        )
         .all()
     )
-    return sorted(as_aware_utc(r[0]) for r in rows)
+    return sorted({as_aware_utc(r[0]) for r in rows})
 
 
 def _missed_calendar(session, name, celery_schedule, first, since, upper, max_results) -> list[datetime]:
@@ -208,31 +257,28 @@ def _missed_calendar(session, name, celery_schedule, first, since, upper, max_re
     return list(missed)
 
 
-def _missed_interval(session, name, run_every, since, upper, grace_seconds, max_results) -> list[datetime]:
+def _missed_interval(session, name, run_every, first, since, upper, grace_seconds, max_results) -> list[datetime]:
     if run_every <= timedelta(0):
         return []
     # The chain of (due time, beat-sent time) pairs, one per distinct stamped
     # firing. Include the last firing before `since` as the chain's base so
     # a gap that straddles `since` is still measured.
-    base = (
-        session.query(TaskRun.occurrence_at, TaskRun.beat_sent_at)
-        .filter(
-            TaskRun.schedule_name == name,
-            TaskRun.occurrence_at.isnot(None),
-            TaskRun.occurrence_at < since,
+    pairs = []
+    for model, sent in ((TaskRun, TaskRun.beat_sent_at), (ScheduleFiring, ScheduleFiring.sent_at)):
+        base = (
+            session.query(model.occurrence_at, sent)
+            .filter(model.schedule_name == name, model.occurrence_at.isnot(None), model.occurrence_at < since)
+            .order_by(model.occurrence_at.desc())
+            .first()
         )
-        .order_by(TaskRun.occurrence_at.desc())
-        .first()
-    )
-    rows = (
-        session.query(TaskRun.occurrence_at, TaskRun.beat_sent_at)
-        .filter(TaskRun.schedule_name == name, TaskRun.occurrence_at.isnot(None), TaskRun.occurrence_at >= since)
-        .order_by(TaskRun.occurrence_at)
-        .all()
-    )
+        pairs += ([tuple(base)] if base is not None else []) + [
+            tuple(r) for r in session.query(model.occurrence_at, sent)
+            .filter(model.schedule_name == name, model.occurrence_at.isnot(None), model.occurrence_at >= since)
+            .all()
+        ]
     chain: list[tuple[datetime, datetime]] = []
     seen: set[datetime] = set()
-    for occurrence, sent in ([base] if base is not None else []) + list(rows):
+    for occurrence, sent in sorted(pairs, key=lambda p: as_aware_utc(p[0])):
         occurrence = as_aware_utc(occurrence)
         if occurrence in seen:
             continue
@@ -240,7 +286,8 @@ def _missed_interval(session, name, run_every, since, upper, grace_seconds, max_
         # An older stamp without beat_sent_at: the due time is the best anchor.
         chain.append((occurrence, as_aware_utc(sent) if sent is not None else occurrence))
     if not chain:
-        return []
+        # Never stamped nor fired: count periods from when the schedule was first seen.
+        chain.append((first, first))
 
     grace = timedelta(seconds=grace_seconds)
     missed: set[datetime] = set()

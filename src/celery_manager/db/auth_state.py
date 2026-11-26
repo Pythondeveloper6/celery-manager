@@ -1,7 +1,7 @@
 """Durable browser sessions and login backoff shared by all API processes."""
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from celery_manager.db.models import Base
@@ -16,6 +16,11 @@ class BrowserSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Sign-in through the built-in OIDC flow only: the provider's refresh
+    # token and the role last read with it.
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    roles_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class LoginBackoff(Base):

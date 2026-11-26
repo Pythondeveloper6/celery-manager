@@ -46,6 +46,7 @@ from celery_manager.control.rabbitmq import (
 from celery_manager.control.rabbitmq import queue_stats as rabbitmq_queue_stats
 from celery_manager.control.tasks import list_registered_tasks
 from celery_manager.db.models import TaskRun
+from celery_manager.schedulers.service import entries_for, refresh_quietly
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,9 @@ METRIC_NAMES = (
     "celery_manager_broker_evicted_keys",
     "celery_manager_broker_connected_clients",
     "celery_manager_collector_up",
+    "celery_manager_listener_last_event_age_seconds",
+    "celery_manager_listener_events_failed",
+    "celery_manager_listener_lag_seconds",
     # RabbitMQ management API (only when rabbitmq_management_url is set).
     "celery_manager_rabbitmq_queue_unacked",
     "celery_manager_rabbitmq_queue_consumers",
@@ -297,10 +301,26 @@ def _workers_family(celery_app, timeout: float) -> Family:
     return family
 
 
+def _listener_families(session, now: datetime) -> list[Family]:
+    from celery_manager.control.health import listener_health
+    health = listener_health(session, now=now)
+    if health["state"] == "unknown":
+        return []
+    age = Family("celery_manager_listener_last_event_age_seconds", "Seconds since the events listener last stored an event. Absent until it has stored one.")
+    failed = Family("celery_manager_listener_events_failed", "Events the listener could not store since it started.")
+    lag = Family("celery_manager_listener_lag_seconds", "Seconds between the last stored event's own timestamp and its arrival. Absent until known.")
+    if health["last_event_age_seconds"] is not None:
+        age.samples.append(({}, health["last_event_age_seconds"]))
+    failed.samples.append(({}, health["events_failed"]))
+    if health.get("lag_seconds") is not None:
+        lag.samples.append(({}, health["lag_seconds"]))
+    return [age, failed, lag]
+
+
 def _missed_family(session, celery_app, grace_seconds: int, now: datetime) -> Family:
     counts = missed_run_counts(session, celery_app, now - MISSED_WINDOW, grace_seconds=grace_seconds, now=now)
     family = Family("celery_manager_schedule_missed_runs_24h", "Scheduled firings that never arrived in the last 24 hours, per beat schedule.")
-    names = sorted(celery_app.conf.beat_schedule or {})[:MAX_SCHEDULE_LABELS]
+    names = sorted(entries_for(session, celery_app))[:MAX_SCHEDULE_LABELS]
     family.samples = [({"schedule": n}, counts.get(n, 0)) for n in names]
     return family
 
@@ -376,6 +396,7 @@ def compute_snapshot(config, session_factory, now: datetime | None = None) -> li
         up.samples.append(({"collector": collector}, 1))
         return result
 
+    refresh_quietly(config, session_factory)
     with session_factory() as session:
         runs = attempt("runs", lambda: _run_families(session, celery_app, now))
         families.extend(runs or [])
@@ -402,6 +423,9 @@ def compute_snapshot(config, session_factory, now: datetime | None = None) -> li
         missed = attempt("missed", lambda: _missed_family(session, celery_app, config.missed_run_grace_seconds, now))
         if missed is not None:
             families.append(missed)
+
+        listener = attempt("listener", lambda: _listener_families(session, now))
+        families.extend(listener or [])
 
         broker = attempt("broker", lambda: _broker_families(celery_app))
         if broker is not None:

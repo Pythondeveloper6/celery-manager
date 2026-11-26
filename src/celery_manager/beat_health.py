@@ -77,6 +77,40 @@ def _maybe_ping(scheduler, now):
     return interval
 
 
+def _sessions(scheduler, db_url):
+    if getattr(scheduler, "_cm_health_sessions", None) is None:
+        from celery_manager.db.session import create_db_engine, get_session_factory
+        engine = create_db_engine(db_url, db_schema=scheduler.app.conf.get("celery_manager_db_schema"))
+        scheduler._cm_health_engine = engine
+        scheduler._cm_health_sessions = get_session_factory(engine)
+    return scheduler._cm_health_sessions
+
+
+def record_firing(scheduler, headers, task_id):
+    """Write one `schedule_firings` row for a message beat just sent. Never raises:
+    a database outage must not stop scheduled work."""
+    db_url = scheduler.app.conf.get("celery_manager_db_url")
+    if not db_url:
+        return
+    try:
+        from celery_manager.db.firings import ScheduleFiring
+        from celery_manager.occurrences import (
+            OCCURRENCE_HEADER,
+            SCHEDULE_HEADER,
+            SENT_AT_HEADER,
+            parse_occurrence,
+        )
+        with _sessions(scheduler, db_url)() as session:
+            session.add(ScheduleFiring(
+                schedule_name=headers[SCHEDULE_HEADER], task_id=task_id,
+                occurrence_at=parse_occurrence(headers[OCCURRENCE_HEADER]),
+                sent_at=parse_occurrence(headers[SENT_AT_HEADER]),
+            ))
+            session.commit()
+    except Exception:
+        logger.warning("celery-manager: could not record beat firing", exc_info=True)
+
+
 def record_tick(scheduler):
     now = time.monotonic()
     ping_interval = _maybe_ping(scheduler, now)
@@ -91,12 +125,7 @@ def record_tick(scheduler):
     scheduler._cm_last_heartbeat = now
     try:
         from celery_manager.db.models import AppSetting
-        from celery_manager.db.session import create_db_engine, get_session_factory
-        if getattr(scheduler, "_cm_health_sessions", None) is None:
-            engine = create_db_engine(db_url, db_schema=scheduler.app.conf.get("celery_manager_db_schema"))
-            scheduler._cm_health_engine = engine
-            scheduler._cm_health_sessions = get_session_factory(engine)
-        with scheduler._cm_health_sessions() as session:
+        with _sessions(scheduler, db_url)() as session:
             stamp = datetime.now(timezone.utc)
             owner = owner_identity(scheduler)
             data = json.dumps({"at": stamp.isoformat(), "hostname": socket.gethostname(),

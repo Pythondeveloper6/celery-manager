@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from celery_manager.api.deps import SESSION_COOKIE, Principal, cookie_path, require_role
@@ -43,6 +44,8 @@ def auth_options(request: Request):
         "allow_queue_override": config.allow_queue_override,
         "retry_edit_args": config.retry_edit_args,
         "provider_name": config.login_provider_name,
+        "auth_mode": config.auth_mode,
+        "oidc_login_url": "api/auth/oidc/login" if config.oidc_client_id else None,
         "login_url": config.login_url,
         "logout_url": config.logout_url,
     }
@@ -95,6 +98,7 @@ def logout(request: Request, response: Response):
     if token:
         from celery_manager.api.deps import CurrentUser
         from celery_manager.auth.sessions import (
+            OIDC_SALT,
             browser_session_id,
             verify_bridge,
             verify_session_claims,
@@ -102,6 +106,14 @@ def logout(request: Request, response: Response):
         from celery_manager.auth.state import revoke_session, session_hash
         claims = verify_session_claims(config.secret_key, token, config.session_max_age_seconds)
         bridge_claims = verify_bridge(config.secret_key, token, config.bridge_max_age_seconds)
+        oidc_claims = verify_bridge(config.secret_key, token, config.session_max_age_seconds, OIDC_SALT)
+        if oidc_claims is not None:
+            sid = browser_session_id(config.secret_key, token, config.session_max_age_seconds, salt=OIDC_SALT)
+            if sid:
+                with request.app.state.cm_session_factory() as db_session:
+                    revoke_session(db_session, session_hash(sid),
+                                   CurrentUser(oidc_claims["username"], oidc_claims["role"], SOURCE_EXTERNAL,
+                                               oidc_claims["subject"]))
         if claims is not None or bridge_claims is not None:
             is_bridge = bridge_claims is not None
             age = config.bridge_max_age_seconds if is_bridge else config.session_max_age_seconds
@@ -155,7 +167,55 @@ def bridge(request: Request, response: Response, principal: Principal, username:
                                                   session_id=sid),
                         max_age=config.bridge_max_age_seconds, path=cookie_path(request),
                         httponly=True, secure=config.cookie_secure, samesite="lax")
-    return {"username": external.username, "role": external.role, "expires_in": config.bridge_max_age_seconds}
+    return {"username": external.username, "role": external.role, "expires_in": config.bridge_max_age_seconds,
+            # The dashboard calls the bridge again at this point, while its bearer token is still valid.
+            "renew_after": int(config.bridge_max_age_seconds * 0.8)}
+
+
+@router.get("/auth/oidc/login")
+def oidc_login(request: Request):
+    config = request.app.state.cm_config
+    if not config.oidc_client_id:
+        raise HTTPException(404, "OIDC sign-in is not configured")
+    from celery_manager.auth import oidc_flow
+    try:
+        url, state = oidc_flow.start(config, request)
+    except Exception as exc:
+        raise HTTPException(502, "The identity provider could not be reached") from exc
+    response = RedirectResponse(url, status_code=303)
+    response.set_cookie(oidc_flow.STATE_COOKIE, state, max_age=oidc_flow.STATE_MAX_AGE, path=cookie_path(request),
+                        httponly=True, secure=config.cookie_secure, samesite="lax")
+    return response
+
+
+@router.get("/auth/oidc/callback")
+def oidc_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    config = request.app.state.cm_config
+    if not config.oidc_client_id:
+        raise HTTPException(404, "OIDC sign-in is not configured")
+    from celery_manager.auth import oidc_flow
+    from celery_manager.auth.sessions import OIDC_SALT, sign_bridge
+    from celery_manager.auth.state import create_session, now
+    verifier = oidc_flow.read_state(config, request.cookies.get(oidc_flow.STATE_COOKIE), state)
+    if error or not code or verifier is None:
+        raise HTTPException(400, "Sign-in was cancelled or the response did not match this browser")
+    user, refresh_token = oidc_flow.exchange_code(config, request, code, verifier)
+    if user.role is None:
+        raise HTTPException(403, f"Your {config.login_provider_name} account ({user.username}) has no access to this dashboard.")
+    from celery_manager.auth.state import session_hash
+    from celery_manager.db.auth_state import BrowserSession
+    with request.app.state.cm_session_factory() as db_session:
+        sid = create_session(db_session, config, user.username, SOURCE_EXTERNAL, user.subject)
+        row = db_session.get(BrowserSession, session_hash(sid))
+        row.refresh_token, row.role, row.roles_checked_at = refresh_token, user.role, now()
+        db_session.commit()
+    response = RedirectResponse(cookie_path(request).rstrip("/") + "/", status_code=303)
+    response.set_cookie(SESSION_COOKIE, sign_bridge(config.secret_key, user.username, user.role, user.subject,
+                                                    session_id=sid, salt=OIDC_SALT),
+                        max_age=config.session_max_age_seconds, path=cookie_path(request),
+                        httponly=True, secure=config.cookie_secure, samesite="lax")
+    response.delete_cookie(oidc_flow.STATE_COOKIE, path=cookie_path(request))
+    return response
 
 
 @router.get("/auth/sessions")

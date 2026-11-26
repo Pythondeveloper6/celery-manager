@@ -274,6 +274,24 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(settings_routes.router)
     app.include_router(retention_routes.router)
     app.include_router(metrics_routes.router)
+
+    # Container probes: no credentials, no broker. /readyz checks the
+    # database within one second.
+    @app.get("/livez", include_in_schema=False)
+    def livez():
+        return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False)
+    def readyz():
+        from sqlalchemy import text
+
+        from celery_manager.doctor import _bounded
+
+        def ping():
+            with session_factory() as session:
+                session.execute(text("SELECT 1"))
+        ok, _ = _bounded(config, "readyz", ping, 1.0)
+        return JSONResponse({"status": "ok" if ok else "unavailable"}, status_code=200 if ok else 503)
     app.include_router(user_routes.router)
     app.include_router(analytics_routes.router)
     from celery_manager.api.routes.llm import router as llm_router
@@ -288,6 +306,8 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(alert_routes.router)
     from celery_manager.api.routes.flower import router as flower_router
     app.include_router(flower_router)
+    from celery_manager.api.routes.tokens import router as token_router
+    app.include_router(token_router)
 
     if config.live_stream == "sse":
         @app.get("/api/stream")

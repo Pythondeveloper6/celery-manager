@@ -164,7 +164,9 @@
   background-color: var(--cm-color-status-retried);
 }
 .cm-ch-bar[data-status="revoked"],
-.cm-ch-swatch[data-status="revoked"] {
+.cm-ch-swatch[data-status="revoked"],
+.cm-ch-bar[data-status="cancelled"],
+.cm-ch-swatch[data-status="cancelled"] {
   fill: var(--cm-color-status-revoked);
   background-color: var(--cm-color-status-revoked);
 }

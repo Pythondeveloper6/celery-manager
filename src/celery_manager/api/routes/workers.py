@@ -12,8 +12,11 @@ from celery_manager.control.workers import (
     inspect_workers,
     list_task_rate_limits,
     resize_pool,
+    restart_pool,
+    set_autoscale,
     set_consumer,
     set_rate_limit,
+    set_time_limit,
     shutdown_worker,
 )
 
@@ -43,6 +46,12 @@ def list_workers(request: Request, username: str = Depends(get_current_user)):
     necessarily that none exist (see docs/workers.md)."""
     celery_app = request.app.state.cm_config.celery_app
     timeout = _timeout(request)
+    if request.app.state.cm_config.inspect_source == "snapshot":
+        from celery_manager.control.snapshots import read
+        with request.app.state.cm_session_factory() as session:
+            workers, at = read(session, "workers")
+        return {"workers": workers or [], "timeout_seconds": timeout,
+                "inspected_at": at.isoformat() if at else None, "snapshot": True}
     try:
         workers = inspect_workers(celery_app, timeout)
     except WorkerControlError as exc:
@@ -111,6 +120,40 @@ def add_consumer(worker: str, payload: QueueRequest, request: Request, username:
 def cancel_consumer(worker: str, payload: QueueRequest, request: Request, username: str = Depends(require_operator)):
     _check_worker_name(worker)
     return _run(request, set_consumer, username, worker, payload.queue, False, _timeout(request))
+
+
+@router.post("/api/workers/{worker}/pool-restart")
+def pool_restart(worker: str, request: Request, username: str = Depends(require_admin)):
+    _check_worker_name(worker)
+    return _run(request, restart_pool, username, worker, _timeout(request))
+
+
+class AutoscaleRequest(BaseModel):
+    max: int = Field(ge=1, le=10_000)
+    min: int = Field(ge=0, le=10_000)
+
+
+@router.post("/api/workers/{worker}/autoscale")
+def autoscale(worker: str, payload: AutoscaleRequest, request: Request, username: str = Depends(require_operator)):
+    _check_worker_name(worker)
+    try:
+        return _run(request, set_autoscale, username, worker, payload.max, payload.min, _timeout(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class TimeLimitRequest(BaseModel):
+    task_name: str = Name
+    soft: float | None = Field(default=None, gt=0)
+    hard: float | None = Field(default=None, gt=0)
+
+
+@router.post("/api/tasks/time-limit")
+def time_limit(payload: TimeLimitRequest, request: Request, username: str = Depends(require_operator)):
+    try:
+        return _run(request, set_time_limit, username, payload.task_name, payload.soft, payload.hard, _timeout(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class RateLimitRequest(BaseModel):

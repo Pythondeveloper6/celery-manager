@@ -284,7 +284,7 @@ def test_paths_and_http_urls_are_accepted(url):
 def test_auth_options_without_an_authenticator():
     client, _ = _build()
     assert client.get("/api/auth/options").json() == {
-        "local_login": True,
+        "local_login": True, "auth_mode": "cookie", "oidc_login_url": None,
         "live_stream": "sse", "allow_queue_override": False, "retry_edit_args": True,
         "environment": "", "monitoring_only": False, "read_only": False,
         "sensitive_actions": [], "tenant_scoped": False,
@@ -306,7 +306,7 @@ def test_auth_options_are_public_and_describe_the_host():
     response = client.get("/api/auth/options")  # no session at all
     assert response.status_code == 200
     assert response.json() == {
-        "local_login": False,
+        "local_login": False, "auth_mode": "cookie", "oidc_login_url": None,
         "live_stream": "sse", "allow_queue_override": False, "retry_edit_args": True,
         "environment": "", "monitoring_only": False, "read_only": False,
         "sensitive_actions": [], "tenant_scoped": False,

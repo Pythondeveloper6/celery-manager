@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api/dead-letters")
 @router.get("")
 def list_dead_letter_runs(
     request: Request,
+    principal: Principal,
     task_name: str | None = None,
     exception: str | None = None,
     since: datetime | None = None,
@@ -48,6 +49,8 @@ def list_dead_letter_runs(
             session, task_name=task_name, exception=exception, since=since, limit=limit, offset=offset,
         )
         attempts = earlier_attempts(session, runs)
+        from celery_manager.redaction import view_payload
+        views = {r.task_id: view_payload(request.app.state.cm_config, principal.role, r.args, r.kwargs, r.traceback) for r in runs}
         return {
             "items": [
                 {
@@ -55,9 +58,10 @@ def list_dead_letter_runs(
                     "task_name": r.task_name,
                     "exception": r.exception,
                     "exception_type": exception_type(r),
-                    "last_line": last_traceback_line(r),
-                    "args": r.args,
-                    "kwargs": r.kwargs,
+                    "last_line": last_traceback_line(r) if not views[r.task_id][4] else None,
+                    "args": views[r.task_id][0],
+                    "kwargs": views[r.task_id][1],
+                    "args_redacted": r.args_redacted,
                     "queue": r.queue,
                     "earlier_attempts": attempts.get(r.task_id, 0),
                     "started_at": utc(r.started_at),

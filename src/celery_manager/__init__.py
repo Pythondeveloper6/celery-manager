@@ -43,6 +43,9 @@ _LAZY = {
     "RunObserver": ("celery_manager.observation", "RunObserver"),
     "current_run": ("celery_manager.observation", "current_run"),
     "report_progress": ("celery_manager.progress", "report_progress"),
+    "cancel_requested": ("celery_manager.cancel", "cancel_requested"),
+    "raise_if_cancelled": ("celery_manager.cancel", "raise_if_cancelled"),
+    "TaskCancelled": ("celery_manager.cancel", "TaskCancelled"),
     "record_llm_usage": ("celery_manager.llm", "record_llm_usage"),
     "install_publish_hook": ("celery_manager.publish", "install_publish_hook"),
     "setup": ("celery_manager.runtime", "setup"),
@@ -50,6 +53,11 @@ _LAZY = {
 
 if TYPE_CHECKING:
     from celery_manager import control
+    from celery_manager.cancel import (
+        TaskCancelled,
+        cancel_requested,
+        raise_if_cancelled,
+    )
     from celery_manager.config import CeleryManagerConfig
     from celery_manager.decorator import track
     from celery_manager.links import task_url
@@ -75,15 +83,18 @@ def __dir__():
     return sorted(set(globals()) | set(_LAZY))
 
 
-__version__ = "0.3.0b1"
+__version__ = "0.3.0b2"
 
 __all__ = [
     "CeleryManagerConfig",
     "RunObserver",
+    "TaskCancelled",
     "__version__",
+    "cancel_requested",
     "control",
     "current_run",
     "install_publish_hook",
+    "raise_if_cancelled",
     "record_llm_usage",
     "report_progress",
     "setup",

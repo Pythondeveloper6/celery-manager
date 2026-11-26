@@ -37,7 +37,7 @@ Each queue shows two counts:
 
 They routinely differ, and neither is wrong:
 
-- tasks sent while the events listener was down never got a row;
+- tasks sent while the events listener was down never got a row (unless the [reconciler](production.md#reconciling-after-a-listener-gap) seeds one);
 - the listener lags the broker by however long event delivery takes;
 - a worker pulls ETA/countdown tasks off the queue right away and holds them
   until they're due. Broker depth drops, but the run is still `queued`;
@@ -75,6 +75,7 @@ worker started them, over the last 15 minutes:
 - A retry reuses the task id, so a retried run forgets its first attempt's
   `sent_at`/`eta` and is left out of wait statistics unless the new attempt's
   events refill them.
+- `started_at` comes from the `task-started` event's own timestamp, so a listener that lags or reconnects does not add to the wait. An event whose timestamp is more than `event_clock_skew_seconds` from the listener's clock is stamped with its arrival time instead.
 - Negative results (the producer's clock ahead of the worker's) count as 0.
 - Only runs that *started* inside the window count, and a queue with none
   shows `—`.
@@ -120,7 +121,7 @@ queue, depth)`, indexed by `(queue, sampled_at)`.
   (`celery-manager prune`, the `prune` Celery task) and, at most once an hour,
   by the sampler itself, so a deployment that never schedules the prune still
   stays bounded. A prune's summary reports `samples_deleted`.
-  `celery-manager prune` has no config, so it uses the 14-day default.
+  `celery-manager prune` uses the 14-day default unless you pass `--config`.
 - **The chart.** `GET /api/queues/{name}/history?hours=24` returns the window
   cut into at most 240 buckets (never narrower than a minute), each holding
   the *highest* depth sampled in it so a spike is not averaged away. Gaps in

@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from celery_manager import CeleryManagerConfig
 from celery_manager.api.app import create_app
 from celery_manager.auth.external import ExternalUser
-from celery_manager.db.models import AuditLog, OperationAnnotation
+from celery_manager.control.retention import update_retention
+from celery_manager.db.models import AuditLog, OperationAnnotation, TaskRun
 from celery_manager.doctor import doctor
 
 
@@ -184,3 +185,42 @@ def test_annotation_unicode_roundtrip_and_portable_label_bounds(tmp_path):
     assert client.post("/api/operations/annotations", json={**value, "label": "😀" * 128}).status_code == 422
     assert client.post("/api/operations/annotations", json={**value, "revision": "😀" * 128}).status_code == 422
     assert len(client.get("/api/operations/annotations").json()["items"]) == 1
+
+
+def _retention_check(report):
+    return next((check for check in report["checks"] if check["name"] == "retention"), None)
+
+
+def _add_runs(sessions, count):
+    with sessions() as session:
+        session.add_all([TaskRun(task_id=f"r{i}", task_name="demo.task", status="succeeded", args="[]", kwargs="{}")
+                         for i in range(count)])
+        session.commit()
+
+
+def test_doctor_warns_when_task_runs_pass_the_threshold_with_no_retention_rule(tmp_path):
+    config, sessions, _ = configured(tmp_path, doctor_retention_warn_rows=1)
+    _add_runs(sessions, 2)
+    check = _retention_check(doctor(config))
+    assert check is not None and check["state"] == "warn"
+    assert "more than 1 rows" in check["detail"]
+
+
+def test_doctor_retention_warning_is_not_raised_at_exactly_the_threshold(tmp_path):
+    config, sessions, _ = configured(tmp_path, doctor_retention_warn_rows=2)
+    _add_runs(sessions, 2)
+    assert _retention_check(doctor(config)) is None
+
+
+def test_doctor_retention_warning_is_silenced_by_a_retention_rule(tmp_path):
+    config, sessions, _ = configured(tmp_path, doctor_retention_warn_rows=1)
+    _add_runs(sessions, 2)
+    with sessions() as session:
+        update_retention(session, {"default_days": 30}, "alice")
+    assert _retention_check(doctor(config)) is None
+
+
+def test_doctor_retention_check_can_be_turned_off(tmp_path):
+    config, sessions, _ = configured(tmp_path, doctor_retention_warn_rows=None)
+    _add_runs(sessions, 2)
+    assert _retention_check(doctor(config)) is None

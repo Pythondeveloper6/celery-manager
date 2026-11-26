@@ -17,6 +17,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from celery import Celery
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
 from sqlalchemy.orm import sessionmaker
 
 from celery_manager import cli
@@ -247,7 +248,10 @@ def test_auto_migrate_off_is_silent_when_current(tmp_path, caplog):
     init_db(_config(url)).dispose()
     with caplog.at_level(logging.WARNING, logger="celery_manager.db.session"):
         init_db(_config(url, auto_migrate=False))
-    assert caplog.text == ""
+    # Only this logger's silence is the contract. The root logger also carries
+    # asyncio's "Task was destroyed but it is pending" when the garbage
+    # collector reaps an ASGI task an earlier test in the same worker left behind.
+    assert [r for r in caplog.records if r.name.startswith("celery_manager")] == []
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -359,3 +363,126 @@ def test_server_a3_database_is_adopted(server_url):
     engine = init_db(_config(server_url))
     _assert_at_head_with_data(engine)
     engine.dispose()
+
+
+def test_status_source_migration_round_trips(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+
+    def columns():
+        return {c["name"] for c in inspect(engine).get_columns("task_runs")}
+
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0022")
+    assert "status_source" in columns()
+    with engine.begin() as conn:
+        command.downgrade(alembic_config(conn), "0021")
+    assert "status_source" not in columns()
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "head")
+    assert "status_source" in columns()
+    engine.dispose()
+
+
+def test_unicode_payload_migration_alters_only_on_sql_server(tmp_path):
+    import importlib
+    import io
+
+    from alembic.operations import Operations
+    from sqlalchemy.dialects import mssql
+
+    module = importlib.import_module("celery_manager.db.migrations.versions.0023_unicode_payload_columns")
+    out = io.StringIO()
+    context = MigrationContext.configure(dialect_name="mssql", opts={"as_sql": True, "output_buffer": out})
+    with Operations.context(context):
+        module.upgrade()
+    sql = out.getvalue()
+    assert "ALTER COLUMN args NVARCHAR(max) NOT NULL" in sql
+    assert "ALTER COLUMN task_name NVARCHAR(255) NOT NULL" in sql
+    assert sql.index("DROP INDEX ix_task_runs_task_name") < sql.index("ALTER COLUMN task_name") < sql.index("CREATE INDEX ix_task_runs_task_name")
+    for name in ("args", "exception", "task_name", "worker"):
+        assert str(TaskRun.__table__.c[name].type.compile(dialect=mssql.dialect())).startswith("N")  # NTEXT offline
+    assert str(TaskRun.__table__.c.args.type.compile(dialect=sqlite_dialect())) == "TEXT"
+    engine = init_db(_config(_url(tmp_path)))  # other dialects: the revision applies as a no-op
+    assert _version(engine) == head_revision()
+
+
+def test_oidc_session_migration_round_trips(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+    new = {"refresh_token", "role", "roles_checked_at"}
+
+    def columns():
+        return {c["name"] for c in inspect(engine).get_columns("browser_sessions")}
+
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0024")
+    assert new <= columns()
+    with engine.begin() as conn:
+        command.downgrade(alembic_config(conn), "0023")
+    assert not new & columns()
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "head")
+    assert new <= columns()
+    engine.dispose()
+
+
+def test_args_redacted_migration_round_trips(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+
+    def columns():
+        return {c["name"] for c in inspect(engine).get_columns("task_runs")}
+
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0025")
+    assert "args_redacted" in columns()
+    with engine.begin() as conn:
+        command.downgrade(alembic_config(conn), "0024")
+    assert "args_redacted" not in columns()
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "head")
+    assert "args_redacted" in columns()
+    engine.dispose()
+
+
+TASK_RUN_INDEXES = {
+    "ix_task_runs_finished_at": ["finished_at"],
+    "ix_task_runs_started_at": ["started_at"],
+    "ix_task_runs_task_name_finished_at": ["task_name", "finished_at"],
+    "ix_task_runs_status_id": ["status", "id"],
+    "ix_task_runs_queue_started_at": ["queue", "started_at"],
+}
+
+
+def _task_run_indexes(engine) -> dict:
+    found = {i["name"]: i["column_names"] for i in inspect(engine).get_indexes("task_runs")}
+    return {name: found.get(name) for name in TASK_RUN_INDEXES}
+
+
+def test_task_runs_time_indexes_exist_at_head(tmp_path):
+    engine = init_db(_config(_url(tmp_path)))
+    assert _task_run_indexes(engine) == TASK_RUN_INDEXES
+
+
+def test_task_runs_time_indexes_are_added_when_upgrading_from_0027(tmp_path):
+    url = _url(tmp_path)
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0027")
+    assert all(v is None for v in _task_run_indexes(engine).values())
+    engine.dispose()
+
+    engine = init_db(_config(url))
+    assert _version(engine) == head_revision()
+    assert _task_run_indexes(engine) == TASK_RUN_INDEXES
+
+
+def test_task_runs_time_index_built_by_hand_first_is_kept(tmp_path):
+    url = _url(tmp_path)
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0027")
+        conn.exec_driver_sql("CREATE INDEX ix_task_runs_finished_at ON task_runs (finished_at)")
+    engine.dispose()
+
+    engine = init_db(_config(url))
+    assert _version(engine) == head_revision()
+    assert _task_run_indexes(engine) == TASK_RUN_INDEXES

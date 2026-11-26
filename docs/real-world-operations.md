@@ -364,7 +364,7 @@ celery-manager doctor --config myproject.monitoring:config --check-broker --chec
 returns the report as a Python dictionary. It checks storage reachability and
 migration state without initializing or repairing the database, authentication
 configuration, tenant/safeguard configuration, and current-process observer
-telemetry. With a Celery app it also imports task modules and checks registration
+telemetry. A `retention` warning appears when no [retention rule](retention.md) is set and `task_runs` holds more than `doctor_retention_warn_rows` (1,000,000 by default). With a Celery app it also imports task modules and checks registration
 and configured stamping hints. Module import executes the host's normal import
 code; keep that code free of operational side effects.
 

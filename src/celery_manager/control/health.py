@@ -43,6 +43,28 @@ def beat_health(session, *, stale_seconds=120, now=None, owner_id=None):
     return result
 
 
+def listener_health(session, *, stale_seconds=120, now=None):
+    """State of the events listener from its heartbeat row: `stale` when the
+    process stopped writing it or has received no event for `stale_seconds`."""
+    from celery_manager.events.liveness import HEARTBEAT_KEY
+    now = aware(now or datetime.now(timezone.utc))
+    row = session.get(AppSetting, HEARTBEAT_KEY)
+    if row is None:
+        return {"state": "unknown", "reason": "No listener heartbeat recorded: run `celery-manager events`."}
+    try:
+        data = json.loads(row.value)
+        beat = aware(datetime.fromisoformat(data["at"]))
+        last = data.get("last_event_at")
+        last = aware(datetime.fromisoformat(last)) if last else None
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return {"state": "unknown", "reason": "Invalid stored listener heartbeat"}
+    beat_age = max(0, (now - beat).total_seconds())
+    event_age = max(0, (now - last).total_seconds()) if last else None
+    stale = beat_age > stale_seconds or event_age is None or event_age > stale_seconds
+    return {**data, "state": "stale" if stale else "healthy", "heartbeat_age_seconds": beat_age,
+            "last_event_age_seconds": event_age}
+
+
 def attention_runs(session, *, stuck_seconds=3600, worker_stale_seconds=120, now=None, limit=100):
     now = now or datetime.now(timezone.utc)
     workers = {w.hostname: w for w in session.query(WorkerState).all()}

@@ -114,3 +114,21 @@ def test_login_admission_and_revocation_use_shared_server_locks(database):
             assert not active_session(session, sid, "operator", "local")
     finally:
         engine.dispose()
+
+
+def test_non_latin_text_round_trips_byte_for_byte(database):
+    engine = init_db(database)
+    sessions = get_session_factory(engine)
+    text = "Ωμέγα привет 日本語 🚀"
+    try:
+        with sessions() as session:
+            run = lock_task_run(session, "unicode-contract", seed={"task_name": "tâche-" + text, "status": "failed"})
+            run.args, run.kwargs = f'["{text}"]', f'{{"name": "{text}"}}'
+            run.log_output, run.exception = "log " + text, "boom " + text
+            session.commit()
+        with sessions() as session:
+            run = session.query(TaskRun).filter_by(task_id="unicode-contract").one()
+            assert (run.task_name, run.args, run.kwargs, run.log_output, run.exception) == (
+                "tâche-" + text, f'["{text}"]', f'{{"name": "{text}"}}', "log " + text, "boom " + text)
+    finally:
+        engine.dispose()

@@ -20,6 +20,7 @@ from celery_manager.control.maintenance import (
     update_window,
     window_fields,
 )
+from celery_manager.schedulers.service import entries_for
 
 router = APIRouter(prefix="/api/maintenance-windows")
 
@@ -27,7 +28,8 @@ PREVIEW_COUNT = 5
 
 
 def _known_schedules(request: Request) -> set[str]:
-    return set(request.app.state.cm_config.celery_app.conf.beat_schedule or {})
+    with request.app.state.cm_session_factory() as session:
+        return set(entries_for(session, request.app.state.cm_config.celery_app))
 
 
 @router.get("")

@@ -12,7 +12,8 @@ import settings
 from celery import Celery
 from celery.schedules import schedule
 
-app = Celery("demo", broker=settings.BROKER_URL, backend=settings.RESULT_BACKEND, include=["tasks"])
+app = Celery("demo", broker=settings.BROKER_URL, backend=settings.RESULT_BACKEND,
+             include=["tasks"], task_cls="celery_manager.task:TrackedTask")
 app.conf.task_always_eager = settings.EAGER
 # FastAPI runs sync routes in worker threads; make this the app those threads
 # fall back to, otherwise Celery would use its default amqp:// app there.

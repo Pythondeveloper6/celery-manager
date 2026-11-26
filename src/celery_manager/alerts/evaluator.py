@@ -63,7 +63,7 @@ from celery_manager.db.models import (
     QueueDepthSample,
     TaskRun,
 )
-from celery_manager.schedulers.service import entries_for
+from celery_manager.schedulers.service import entries_for, refresh_quietly
 
 logger = logging.getLogger(__name__)
 
@@ -246,12 +246,12 @@ def _check_worker_offline(rule: AlertRule, params: dict, probe: _Probe) -> Obser
 def _check_missed_run(rule: AlertRule, params: dict, probe: _Probe) -> Observation:
     observation = Observation()
     since = probe.now - timedelta(minutes=params["window_minutes"])
-    for name in entries_for(probe.session, probe.celery_app):
+    for name, entry in entries_for(probe.session, probe.celery_app).items():
         if not _matches(rule.target, name):
             continue
         missed = list_missed_runs(
             probe.session, probe.celery_app, name, since=since,
-            grace_seconds=probe.config.missed_run_grace_seconds, now=probe.now,
+            grace_seconds=probe.config.missed_run_grace_seconds, now=probe.now, entry=entry,
         )
         if missed:
             observation.firing[name] = {
@@ -683,6 +683,7 @@ def evaluate_once(
     """
     now = _aware(now) or datetime.now(timezone.utc)
     sent: list[dict] = []
+    refresh_quietly(config, session_factory)
     with session_factory() as session:
         probe = _Probe(
             session, celery_app, config, now,

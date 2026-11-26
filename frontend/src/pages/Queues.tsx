@@ -307,7 +307,11 @@ export function Queues() {
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <h1 className="cm-page-title">Queues</h1>
-          <p className="cm-page-lede">Messages waiting on the broker, per queue, refreshed every few seconds.</p>
+          <p className="cm-page-lede">
+            {listing?.snapshot_at !== undefined
+              ? `From the listener's snapshot taken ${listing.snapshot_at ? new Date(listing.snapshot_at).toLocaleTimeString() : "never (is celery-manager events running?)"}.`
+              : "Messages waiting on the broker, per queue, refreshed every few seconds."}
+          </p>
         </div>
         {visible ? (
           <div className="cm-live-indicator" title={`Refreshes every ${REFRESH_MS / 1000} seconds`}>

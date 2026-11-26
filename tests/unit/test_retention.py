@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import textwrap
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -22,7 +24,7 @@ from celery_manager.control.retention import (
     run_prune,
     update_retention,
 )
-from celery_manager.db.models import AuditLog, TaskRun
+from celery_manager.db.models import AuditLog, ScheduleFiring, TaskRun
 from celery_manager.db.session import get_session_factory, init_db
 from celery_manager.tasks import PRUNE_BEAT_ENTRY, register_prune_task
 
@@ -69,6 +71,18 @@ def test_defaults_delete_nothing(session):
     assert prune_runs(session, now=NOW) == {}
     assert run_prune(session, now=NOW)["runs_deleted"] == 0
     assert remaining(session) == {"old"}
+
+
+def test_prune_removes_old_beat_firings_and_preserves_recent_ones(session):
+    session.add_all([
+        ScheduleFiring(schedule_name="hourly", task_id="old", occurrence_at=days_ago(20), sent_at=days_ago(20)),
+        ScheduleFiring(schedule_name="hourly", task_id="new", occurrence_at=days_ago(2), sent_at=days_ago(2)),
+    ])
+    session.commit()
+    assert run_prune(session, now=NOW, dry_run=True)["firings_deleted"] == 1
+    assert session.query(ScheduleFiring).count() == 2
+    assert run_prune(session, now=NOW)["firings_deleted"] == 1
+    assert [r.task_id for r in session.query(ScheduleFiring)] == ["new"]
 
 
 def test_default_days_deletes_only_older_runs(session):
@@ -360,3 +374,37 @@ def test_api_preview_counts_a_candidate_without_deleting(api):
     assert bad.status_code == 422
     with session_factory() as s:
         assert {"api-old", "api-new"} <= remaining(s)
+
+
+def _write_config_module(tmp_path, monkeypatch, name: str, url: str) -> None:
+    (tmp_path / f"{name}.py").write_text(textwrap.dedent(f"""
+        from celery import Celery
+
+        from celery_manager.config import CeleryManagerConfig
+
+        config = CeleryManagerConfig(celery_app=Celery("t"), db_url={url!r})
+    """))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p not in ("", str(tmp_path))])
+
+
+def test_cli_prune_with_config_uses_the_config_database_and_rules(tmp_path, monkeypatch, capsys):
+    url = _seed_file_db(tmp_path)
+    _write_config_module(tmp_path, monkeypatch, "prune_cfg_mod", url)
+    monkeypatch.setattr("sys.argv", ["celery-manager", "prune", "--config", "prune_cfg_mod:config"])
+    try:
+        with pytest.raises(SystemExit) as exit_info:
+            cli.main()
+    finally:
+        sys.modules.pop("prune_cfg_mod", None)
+    assert exit_info.value.code == 0
+    assert "Deleted 1 run" in capsys.readouterr().out
+    assert _ids(url) == {"new"}
+
+
+def test_cli_prune_needs_either_db_url_or_config(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["celery-manager", "prune"])
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main()
+    assert exit_info.value.code == 2
+    assert "prune needs --db-url or --config" in capsys.readouterr().err

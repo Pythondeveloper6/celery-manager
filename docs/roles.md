@@ -80,7 +80,12 @@ operator or admin for captured logs. See [production policies](production.md#saf
 | Add or remove a worker pool process | `POST /api/workers/{worker}/pool/grow`, `.../shrink` | `operator` |
 | Make a worker start or stop consuming a queue | `POST /api/workers/{worker}/queues/add`, `.../cancel` | `operator` |
 | Set a task rate limit | `POST /api/tasks/rate-limit` | `operator` |
+| Set a task's time limits | `POST /api/tasks/time-limit` | `operator` |
+| Change a worker's autoscale bounds | `POST /api/workers/{worker}/autoscale` | `operator` |
+| Flower-shaped revoke, start, pool grow/shrink | `POST /api/flower/task/revoke/{id}`, `.../task/async-apply/{name}`, `.../worker/pool/grow/{worker}`, `.../shrink/{worker}` | `operator` |
 | Shut down a worker | `POST /api/workers/{worker}/shutdown` | `admin` |
+| Restart a worker's pool | `POST /api/workers/{worker}/pool-restart` | `admin` |
+| Create or revoke an API token | `POST /api/tokens`, `DELETE /api/tokens/{id}` | `admin` |
 | Purge a queue | `POST /api/queues/{name}/purge` | `admin` |
 | See delayed (ETA/countdown) tasks, arguments masked | `GET /api/delayed` | `viewer` |
 | See delayed tasks' argument values | `GET /api/delayed?reveal_args=true` | `operator` |
@@ -139,8 +144,11 @@ messages still waiting in a queue ([Looking inside a queue](queues.md#looking-in
 `queue_browser_show_args=False` leaves those out of the response for every
 role. That's on purpose: a read-only role is
 mostly used for debugging, and the list and detail pages already show this
-data, so blocking export would only make it slower to get. If your task
-arguments hold secrets, don't give that person a dashboard account at all.
+data, so blocking export would only make it slower to get. Sensitive keys are redacted
+when stored, and `args_view_role` and `traceback_view_role` can hide arguments
+and tracebacks from lower roles
+([Redacting arguments](production.md#redacting-arguments-results-and-errors));
+anything your redaction rules miss is still visible to viewers.
 
 ## Managing accounts
 

@@ -1,11 +1,17 @@
 from dataclasses import replace
 
-from .base import ScheduleEntry
+from .base import ScheduleConflict, ScheduleEntry
+
+
+def _same(a, b):
+    # Beat rewrites last_run_at on every firing; that is not an edit.
+    return replace(a, last_run_at=None) == replace(b, last_run_at=None)
 
 
 class RedBeatBackend:
     name = "redbeat"
     writable = True
+    checks_conflicts = True  # update/delete accept `expected=` (the entry as read)
 
     def __init__(self, celery_app):
         from redbeat.schedulers import RedBeatSchedulerEntry, ensure_conf, get_redis
@@ -43,22 +49,33 @@ class RedBeatBackend:
         saved.save()
         return self._convert(saved)
 
+    def _lock(self, name):
+        # One key per entry for create, update and delete (the key name
+        # predates update/delete taking it).
+        return self.redis.lock(self.conf.key_prefix + "cm-create:" + name, timeout=30, blocking_timeout=10)
+
     def create(self, entry):
-        with self.redis.lock(self.conf.key_prefix + "cm-create:" + entry.name, timeout=30, blocking_timeout=10):
+        with self._lock(entry.name):
             if self.get(entry.name) is not None:
                 raise FileExistsError(entry.name)
             return self._save(entry)
 
-    def update(self, name, **changes):
+    def _current(self, name, expected):
         entry = self.get(name)
         if entry is None:
             raise KeyError(name)
-        return self._save(replace(entry, **changes))
+        if expected is not None and not _same(entry, expected):
+            raise ScheduleConflict(name)
+        return entry
 
-    def delete(self, name):
-        if self.get(name) is None:
-            raise KeyError(name)
-        self.Entry.from_key(self.conf.key_prefix + name, app=self.app).delete()
+    def update(self, name, expected=None, **changes):
+        with self._lock(name):
+            return self._save(replace(self._current(name, expected), **changes))
+
+    def delete(self, name, expected=None):
+        with self._lock(name):
+            self._current(name, expected)
+            self.Entry.from_key(self.conf.key_prefix + name, app=self.app).delete()
 
     def beat_scheduler_class(self):
         return "celery_manager.beat:RedBeatScheduler"

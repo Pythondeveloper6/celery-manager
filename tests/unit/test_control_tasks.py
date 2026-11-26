@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from celery import Celery
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
 from celery_manager.control.tasks import (
@@ -258,3 +258,22 @@ def test_list_retries_of_returns_chain_children_oldest_first():
     assert [r.task_id for r in list_retries_of(session, "orig-1")] == ["retry-1", "retry-2"]
     assert list_retries_of(session, "retry-1") == []
     assert list_retries_of(session, "does-not-exist") == []
+
+
+def test_list_task_runs_before_id_returns_only_older_runs():
+    session = _session()
+    t2 = session.query(TaskRun).filter_by(task_id="t2").one()
+    assert [r.task_id for r in list_task_runs(session, before_id=t2.id)] == ["t1"]
+
+
+def test_list_task_runs_defers_the_large_text_columns():
+    session = _session()
+    row = list_task_runs(session)[0]
+    assert {"log_output", "result_repr", "traceback", "exception", "args", "kwargs"} <= set(inspect(row).unloaded)
+
+
+def test_count_task_runs_cap_counts_at_most_one_past_the_cap():
+    session = _session()  # 3 rows
+    assert count_task_runs(session, cap=1) == 2
+    assert count_task_runs(session, cap=3) == 3
+    assert count_task_runs(session, cap=10) == 3

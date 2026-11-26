@@ -28,6 +28,11 @@ RELEASE_TABLES = {"failure_resolutions", "failure_resolution_history", "browser_
 
 
 def exercise_release_upgrade(engine, schema=None):
+    # Reflected, not the models' tables: the models describe the newest
+    # revision, which has columns this 0020 database does not.
+    def table(connection, model):
+        return Table(model.__tablename__, MetaData(), schema=schema, autoload_with=connection)
+
     at = datetime(2026, 10, 29, 12, tzinfo=timezone.utc)
     with engine.begin() as connection:
         command.upgrade(alembic_config(connection), "0014")
@@ -52,11 +57,12 @@ def exercise_release_upgrade(engine, schema=None):
     assert migration_status(engine).current == "0020"
     assert RELEASE_TABLES <= set(inspect(engine).get_table_names(schema=schema))
     with engine.begin() as connection:
-        migrated = connection.execute(select(TaskRun.__table__).where(TaskRun.task_id == "release-old-run")).mappings().one()
+        runs = table(connection, TaskRun)
+        migrated = connection.execute(select(runs).where(runs.c.task_id == "release-old-run")).mappings().one()
         assert migrated["source"] == "celery" and migrated["tenant_id"] is None
         metadata = {"source": "external", "tenant_id": "release-tenant", "context_json": '{"work":"preserve"}',
                     "operation_key": "release-operation", "correlation_id": "release-correlation"}
-        connection.execute(update(TaskRun.__table__).where(TaskRun.task_id == "release-old-run").values(**metadata, updated_at=migrated["updated_at"]))
+        connection.execute(update(runs).where(runs.c.task_id == "release-old-run").values(**metadata, updated_at=migrated["updated_at"]))
         new = [
             (FailureResolution, {"task_id": "release-old-run", "state": "acknowledged", "actor": "operator", "updated_at": at}),
             (FailureResolutionHistory, {"task_id": "release-old-run", "state": "acknowledged", "actor": "operator", "created_at": at}),
@@ -75,16 +81,16 @@ def exercise_release_upgrade(engine, schema=None):
                                    "created_at": at, "actor": "release-operator"}),
         ]
         for model, values in new:
-            connection.execute(model.__table__.insert().values(**values))
-        new_before = {model.__tablename__: connection.execute(select(model.__table__)).mappings().all()
+            connection.execute(table(connection, model).insert().values(**values))
+        new_before = {model.__tablename__: connection.execute(select(table(connection, model))).mappings().all()
                       for model, _ in new}
         # Repeated deployment is a no-op for both old and new data.
         command.upgrade(alembic_config(connection), "0020")
         for model, _ in legacy:
             assert connection.execute(select(legacy_tables[model.__tablename__])).mappings().all() == before[model.__tablename__]
         for model, _ in new:
-            assert connection.execute(select(model.__table__)).mappings().all() == new_before[model.__tablename__]
-        kept = connection.execute(select(TaskRun.__table__).where(TaskRun.task_id == "release-old-run")).mappings().one()
+            assert connection.execute(select(table(connection, model))).mappings().all() == new_before[model.__tablename__]
+        kept = connection.execute(select(runs).where(runs.c.task_id == "release-old-run")).mappings().one()
         assert all(kept[key] == value for key, value in metadata.items())
         # A deliberate rollback removes new feature tables and observation columns.
         # It retains every pre-release run, schedule, credential and audit value.
@@ -98,8 +104,8 @@ def exercise_release_upgrade(engine, schema=None):
         for model, _ in legacy:
             assert connection.execute(select(legacy_tables[model.__tablename__])).mappings().all() == before[model.__tablename__]
         for model, _ in new:
-            assert connection.execute(select(model.__table__)).first() is None
-        reset = connection.execute(select(TaskRun.__table__).where(TaskRun.task_id == "release-old-run")).mappings().one()
+            assert connection.execute(select(table(connection, model))).first() is None
+        reset = connection.execute(select(runs).where(runs.c.task_id == "release-old-run")).mappings().one()
         assert reset["source"] == "celery"
         assert all(reset[key] is None for key in metadata if key != "source")
     # SQLite does not enforce VARCHAR lengths; run this on real servers too.

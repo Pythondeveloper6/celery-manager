@@ -245,6 +245,16 @@ class CeleryManagerConfig:
     log_capture_loggers: tuple[str, ...] = ()
     log_redactor: Callable[[str], str] | None = None
     log_view_role: str = "viewer"
+    # Redaction of stored arguments, results, exceptions and tracebacks; see
+    # celery_manager.redaction. `sensitive_keys` are regexes matched anywhere
+    # in a key; () turns key redaction off. `payload_redactor(kind, task_name,
+    # value)` runs last; kind is args, kwargs, result, exception or traceback.
+    sensitive_keys: tuple[str, ...] = (
+        "password", "passwd", "secret", "token", "authorization", "cookie", "api.?key", "credential", "signature",
+    )
+    payload_redactor: Callable[[str, str, object], object] | None = None
+    args_view_role: str = "viewer"
+    traceback_view_role: str = "viewer"
     store_results: bool = True
     result_max_bytes: int = 64_000
     live_stream: str = "sse"
@@ -254,10 +264,55 @@ class CeleryManagerConfig:
     session_max_age_seconds: int = 604800
     bridge_max_age_seconds: int = 300
     session_bridge_enabled: bool = False
+    # Built-in sign-in with an OIDC provider (authorization code + PKCE). Needs
+    # an OIDCBearerProvider in principal_providers for issuer, audience and
+    # roles; sessions last session_max_age_seconds.
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = field(default=None, repr=False)
+    oidc_scopes: tuple[str, ...] = ("openid", "profile", "offline_access")
+    oidc_redirect_path: str = "/api/auth/oidc/callback"
+    oidc_role_refresh_seconds: int = 900
+    # What the dashboard sends: "cookie" or "bearer" (host keeps the token).
+    auth_mode: str = "cookie"
     db_schema: str | None = None
     engine_options: dict = field(default_factory=dict)
     scheduler_backend: object = None
     schedule_sync_interval_seconds: float = 30.0
+    # Tasks wrapped by celery_manager.task:TrackedTask: fnmatch globs, minus
+    # track_exclude. "task" pause only skips the body; "backend" also disables
+    # the beat entry on a writable scheduler_backend (no timed pauses).
+    track_tasks: str | tuple[str, ...] = "*"
+    track_exclude: str | tuple[str, ...] = ()
+    pause_mode: str = "task"
+    # `doctor` warns when no retention rule is set past this many task_runs
+    # rows (None turns the check off).
+    doctor_retention_warn_rows: int | None = 1_000_000
+    # Writes made inside tasks and requests (decorator, progress, publish
+    # hook). The timeout bounds connect, pool wait and statement time (None:
+    # the driver's own). After `telemetry_breaker_failures` consecutive
+    # failures the process skips them for `telemetry_breaker_seconds`.
+    telemetry_timeout_seconds: float | None = None
+    telemetry_breaker_failures: int = 3
+    telemetry_breaker_seconds: float = 30.0
+    # When the skip/pause/maintenance check cannot be read: "run" the body
+    # (fail open) or "skip" it.
+    control_check_on_failure: str = "run"
+    # "thread" records published tasks from a bounded background queue, so a
+    # publishing request never waits on the monitoring database.
+    publish_hook_mode: str = "sync"
+    # How long a stored revoke is re-sent and honoured when the task's ETA is
+    # unknown (with an ETA: until the ETA plus an hour, if later).
+    revoke_retention_hours: int = 48
+    # "snapshot": the Workers and Queues pages read what `celery-manager
+    # events` stored every `inspect_snapshot_seconds` instead of asking the
+    # broker per request (for a dashboard mounted in a synchronous WSGI host).
+    inspect_source: str = "live"
+    # celery_manager.contrib.http: calls stored per run, and how long kept.
+    external_calls_max_per_run: int = 200
+    external_call_retention_days: int = 30
+    inspect_snapshot_seconds: float = 10.0
+    # How often `cancel_requested()` re-reads the flag per run.
+    cancel_check_interval_seconds: float = 2.0
     cron_parser: object = None
     tenant_resolver: Callable[[Request, object], str | None | Awaitable[str | None]] | None = None
     lock_provider: object = None  # LockProvider; Redis is inferred only for a Redis broker
@@ -271,6 +326,19 @@ class CeleryManagerConfig:
     login_backoff_reset_seconds: int = 3600
 
     worker_heartbeat_retention_days: int = 7
+    # Events listener: longest wait between broker reconnect attempts, and how
+    # many events in a row may fail to be stored before the process gives up.
+    listener_reconnect_max_seconds: float = 30.0
+    listener_max_consecutive_errors: int = 50
+    # A task event whose own timestamp is further than this from the listener's
+    # clock is assumed to come from a wrong worker clock; arrival time is used.
+    event_clock_skew_seconds: float = 300.0
+    # Reconciler (`celery-manager reconcile`, or a thread of `events`): how
+    # often it runs (0 turns the thread off), how long a run must have been
+    # untouched before it is checked, and how many runs one transaction covers.
+    reconcile_interval_seconds: float = 0.0
+    reconcile_after_seconds: float = 120.0
+    reconcile_batch_size: int = 200
     # LLM usage rows (record_llm_usage) are kept this many days; 0 keeps them.
     llm_call_retention_days: int = 90
     # Optional prices in USD per million tokens, used when a call does not
@@ -320,6 +388,21 @@ class CeleryManagerConfig:
         if (isinstance(self.worker_heartbeat_retention_days, bool) or not isinstance(self.worker_heartbeat_retention_days, int)
                 or not 0 <= self.worker_heartbeat_retention_days <= 3650):
             raise ValueError("worker_heartbeat_retention_days must be 0..3650 (0 disables history)")
+        if (isinstance(self.listener_reconnect_max_seconds, bool) or not isinstance(self.listener_reconnect_max_seconds, (int, float))
+                or not 1 <= self.listener_reconnect_max_seconds <= 3600):
+            raise ValueError("listener_reconnect_max_seconds must be 1..3600")
+        if (isinstance(self.listener_max_consecutive_errors, bool) or not isinstance(self.listener_max_consecutive_errors, int)
+                or self.listener_max_consecutive_errors < 1):
+            raise ValueError("listener_max_consecutive_errors must be a positive integer")
+        if (isinstance(self.event_clock_skew_seconds, bool) or not isinstance(self.event_clock_skew_seconds, (int, float))
+                or not 1 <= self.event_clock_skew_seconds <= 86400):
+            raise ValueError("event_clock_skew_seconds must be 1..86400")
+        for name, low in (("reconcile_interval_seconds", 0), ("reconcile_after_seconds", 1)):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= 86400:
+                raise ValueError(f"{name} must be {low}..86400")
+        if isinstance(self.reconcile_batch_size, bool) or not isinstance(self.reconcile_batch_size, int) or not 1 <= self.reconcile_batch_size <= 10000:
+            raise ValueError("reconcile_batch_size must be 1..10000")
         if isinstance(self.llm_call_retention_days, bool) or not isinstance(self.llm_call_retention_days, int) or not 0 <= self.llm_call_retention_days <= 3650:
             raise ValueError("llm_call_retention_days must be 0..3650 (0 keeps all)")
         from celery_manager.llm import validate_prices
@@ -330,6 +413,16 @@ class CeleryManagerConfig:
                 raise ValueError(f"{name} must be a positive integer")
         from celery_manager.auth.roles import validate_role
         validate_role(self.log_view_role)
+        validate_role(self.args_view_role)
+        validate_role(self.traceback_view_role)
+        if isinstance(self.sensitive_keys, str) or not all(isinstance(k, str) for k in self.sensitive_keys):
+            raise ValueError("sensitive_keys must be a sequence of regular expression strings")
+        import re
+        for pattern in self.sensitive_keys:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"sensitive_keys has an invalid pattern {pattern!r}: {exc}") from exc
         if self.live_stream not in ("sse", "poll"):
             raise ValueError("live_stream must be 'sse' or 'poll'")
         for name in ("log_capture_max_bytes", "result_max_bytes"):
@@ -340,6 +433,22 @@ class CeleryManagerConfig:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be positive seconds")
+        if self.auth_mode not in ("cookie", "bearer"):
+            raise ValueError("auth_mode must be 'cookie' or 'bearer'")
+        if isinstance(self.oidc_role_refresh_seconds, bool) or not isinstance(self.oidc_role_refresh_seconds, int) or self.oidc_role_refresh_seconds <= 0:
+            raise ValueError("oidc_role_refresh_seconds must be positive seconds")
+        if self.oidc_client_id and not any(hasattr(p, "validate") and hasattr(p, "discovery") for p in self.principal_providers):
+            raise ValueError("oidc_client_id needs an OIDCBearerProvider in principal_providers")
+        if self.inspect_source not in ("live", "snapshot"):
+            raise ValueError("inspect_source must be 'live' or 'snapshot'")
+        if self.control_check_on_failure not in ("run", "skip"):
+            raise ValueError("control_check_on_failure must be 'run' or 'skip'")
+        if self.publish_hook_mode not in ("sync", "thread"):
+            raise ValueError("publish_hook_mode must be 'sync' or 'thread'")
+        if self.telemetry_timeout_seconds is not None and not self.telemetry_timeout_seconds > 0:
+            raise ValueError("telemetry_timeout_seconds must be positive or None")
+        if self.pause_mode not in ("task", "backend"):
+            raise ValueError("pause_mode must be 'task' or 'backend'")
         if self.schedule_sync_interval_seconds < 0:
             raise ValueError("schedule_sync_interval_seconds cannot be negative")
         if isinstance(self.startable_tasks, str):

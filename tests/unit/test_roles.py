@@ -96,6 +96,15 @@ WRITE_ROUTES = [
     ),
     ("POST", "/api/workers/w1/pool/grow", None, "operator"),
     ("POST", "/api/workers/w1/pool/shrink", None, "operator"),
+    ("POST", "/api/workers/w1/pool-restart", None, "admin"),
+    ("POST", "/api/workers/w1/autoscale", {"max": 4, "min": 1}, "operator"),
+    ("POST", "/api/tasks/time-limit", {"task_name": "demo.echo", "soft": 10, "hard": 20}, "operator"),
+    ("POST", "/api/flower/task/revoke/t1", None, "operator"),
+    ("POST", "/api/flower/task/async-apply/demo.echo", {}, "operator"),
+    ("POST", "/api/flower/worker/pool/grow/w1", None, "operator"),
+    ("POST", "/api/flower/worker/pool/shrink/w1", None, "operator"),
+    ("POST", "/api/tokens", {"name": "deploy-script", "role": "viewer"}, "admin"),
+    ("DELETE", "/api/tokens/1", None, "admin"),
     ("POST", "/api/workers/w1/queues/add", {"queue": "q"}, "operator"),
     ("POST", "/api/workers/w1/queues/cancel", {"queue": "q"}, "operator"),
     (
@@ -180,6 +189,15 @@ ROUTE_ROLES = {
     ("POST", "/api/maintenance-windows/preview"): "viewer",
     ("POST", "/api/workers/{worker}/pool/grow"): "operator",
     ("POST", "/api/workers/{worker}/pool/shrink"): "operator",
+    ("POST", "/api/workers/{worker}/pool-restart"): "admin",
+    ("POST", "/api/workers/{worker}/autoscale"): "operator",
+    ("POST", "/api/tasks/time-limit"): "operator",
+    ("POST", "/api/flower/task/revoke/{task_id}"): "operator",
+    ("POST", "/api/flower/task/async-apply/{task_name}"): "operator",
+    ("POST", "/api/flower/worker/pool/grow/{worker}"): "operator",
+    ("POST", "/api/flower/worker/pool/shrink/{worker}"): "operator",
+    ("POST", "/api/tokens"): "admin",
+    ("DELETE", "/api/tokens/{token_id}"): "admin",
     ("POST", "/api/workers/{worker}/queues/add"): "operator",
     ("POST", "/api/workers/{worker}/queues/cancel"): "operator",
     ("POST", "/api/tasks/rate-limit"): "operator",
@@ -711,3 +729,16 @@ def test_cli_create_user_refuses_short_passwords_and_bad_names(tmp_path, monkeyp
     assert _run_cli(monkeypatch, ["create-user", "bad name\u0007", "--db-url", url, "--password-stdin"],
                     "long-enough\n") == 1
     assert _roles(url) == {}
+
+
+@pytest.mark.parametrize("sig", ["SIGKILL", "sigkill", "SigKill"])
+def test_flower_revoke_sigkill_needs_admin_in_any_case(shared, monkeypatch, sig):
+    from celery_manager.control import tasks as control_tasks
+
+    cancel = MagicMock(return_value={})
+    monkeypatch.setattr(control_tasks, "cancel_task", cancel)
+    url = f"/api/flower/task/revoke/t1?terminate=true&signal={sig}"
+    assert shared["operator"].post(url).status_code == 403
+    cancel.assert_not_called()
+    assert shared["admin"].post(url).status_code == 200
+    assert cancel.call_args.kwargs["signal"] == "SIGKILL"

@@ -98,6 +98,9 @@ export interface ScheduleSummary {
   // `CeleryManagerConfig.schedule_editing`: false means beat won't apply
   // edits, so saving is refused (409) and the editor is shown disabled.
   schedule_editing: boolean;
+  // False for a schedule type the editor can't express (solar, custom classes); `reason` says why.
+  editable?: boolean;
+  reason?: string | null;
 }
 
 // An operator's edit of when a schedule runs. Crontab fields are Celery's
@@ -218,7 +221,7 @@ export interface MissedRuns {
   // How long after its due time a run may still arrive before it counts as missed.
   grace_seconds: number;
   // Runs due in the last 7 days that never arrived, oldest first.
-  missed: { due_at: string }[];
+  missed: { due_at: string; kind: "never_sent" | "never_arrived" }[];
 }
 
 export async function getMissedRuns(name: string): Promise<MissedRuns> {

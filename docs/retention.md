@@ -90,6 +90,11 @@ celery-manager prune --db-url postgresql://...             # do it
 
 `--batch-size` (default 1000) sets how many rows each transaction deletes.
 
+`--config module:attr` loads a `CeleryManagerConfig` instead of `--db-url`, so
+its database and `queue_sample_retention_days` apply. `--db-url` may still
+override the database. Give one of the two: with neither, the command exits
+with an error.
+
 **From Celery beat**, with the optional built-in task:
 
 ```python
@@ -115,3 +120,13 @@ Celery task. A prune that finds nothing writes no row, so an hourly schedule
 does not fill the log. Changing the rules is audited as an `update` on
 `retention`. The **Last prune** line on the Settings page shows the most
 recent real prune.
+
+## Indexes on a large task_runs table
+
+Migration `0028` adds five indexes to `task_runs` (on `finished_at`,
+`started_at`, `task_name` and `finished_at`, `status` and `id`, `queue` and
+`started_at`) with a plain `CREATE INDEX`, which blocks writes to the table
+while it builds. On a very large table, create them online by hand first,
+using the same names: PostgreSQL `CREATE INDEX CONCURRENTLY`, or SQL Server
+`WITH (ONLINE = ON)` where the edition allows. Then run `celery-manager migrate`,
+which skips an index that already exists.

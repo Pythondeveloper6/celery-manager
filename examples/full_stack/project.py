@@ -73,6 +73,18 @@ def import_rows(self, rows=3):
     return rows
 
 
+@app.task(bind=True, name="demo.long_import")
+@celery_manager.track()
+def long_import(self, seconds=120):
+    """Runs for a while and stops cleanly when an operator asks it to."""
+    import time
+    for i in range(seconds):
+        if celery_manager.report_progress(i, seconds, f"second {i}"):
+            celery_manager.raise_if_cancelled()
+        time.sleep(1)
+    return seconds
+
+
 @app.task(bind=True, name="demo.summarize")
 @celery_manager.track()
 def summarize(self):

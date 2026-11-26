@@ -175,7 +175,10 @@ def stack(redis_url, tmp_path_factory):
         s.cli("migrate", "--db-url", db_url)
         s.cli("create-user", "admin", "--role", "admin", "--db-url", db_url, "--password-stdin",
               stdin=ADMIN_PASSWORD + "\n")
-        s.spawn("worker", [_exe("celery"), "-A", "project", "worker", "--pool=threads", "--concurrency=4",
+        # CI runs this stack once per pool (CM_E2E_POOL): prefork, threads, solo, gevent.
+        pool = os.environ.get("CM_E2E_POOL", "threads")
+        concurrency = [] if pool == "solo" else ["--concurrency=4"]
+        s.spawn("worker", [_exe("celery"), "-A", "project", "worker", f"--pool={pool}", *concurrency,
                            "-E", "-Q", "celery", "--loglevel=INFO", "-n", "demo@%h"])
         s.spawn("events", [_exe("celery-manager"), "events", "--config", "project:config"])
         s.spawn("dashboard", [sys.executable, "-m", "uvicorn", "--factory", "project:make_dashboard",

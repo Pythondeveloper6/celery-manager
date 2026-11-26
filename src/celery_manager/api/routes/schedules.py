@@ -29,6 +29,7 @@ from celery_manager.control.schedules import (
     resume_schedule,
     revert_schedule,
     schedule_edit_fields,
+    set_backend_pause,
 )
 from celery_manager.db.models import PeriodicSchedule
 from celery_manager.schedule_specs import ScheduleSpecError
@@ -116,17 +117,24 @@ def missed(name: str, request: Request, username: str = Depends(get_current_user
         "active": tracking_since is not None,
         "tracking_since": utc(tracking_since),
         "grace_seconds": config.missed_run_grace_seconds,
-        "missed": [{"due_at": utc(r["due_at"])} for r in runs],
+        "missed": [{"due_at": utc(r["due_at"]), "kind": r["kind"]} for r in runs],
     }
 
 
 def _schedule_summary(s, config) -> dict:
     edit = schedule_edit_fields(s, config.celery_app, apply_edits=config.schedule_editing)
+    definition = __import__("json").loads(s.definition) if s.definition else None
+    # A backend entry whose schedule type (solar, custom classes) has no spec
+    # form is shown by its own text and cannot be edited here.
+    unsupported = definition is not None and definition.get("schedule") is None
+    editing = config.schedule_editing or config._schedule_service.backend.writable
     return {
         "name": s.name,
         "source": s.source,
         "backend_writable": config._schedule_service.backend.writable,
-        "definition": __import__("json").loads(s.definition) if s.definition else None,
+        "definition": definition,
+        "editable": editing and not unsupported,
+        "reason": "read-only: this schedule type cannot be edited here" if unsupported else None,
         "task_name": s.task_name,
         "schedule_spec": edit["schedule_spec"],
         "enabled": s.enabled,
@@ -143,6 +151,14 @@ def _schedule_summary(s, config) -> dict:
         # whether to offer the editor; see `CeleryManagerConfig.schedule_editing`.
         "schedule_editing": config.schedule_editing or config._schedule_service.backend.writable,
     }
+
+
+def _refresh_after_backend_pause(config, session, row):
+    # The backend entry's `enabled` changed; resync now so the list, skip-next
+    # and missed-run checks don't read the old state for a sync interval.
+    if config.pause_mode == "backend" and config._schedule_service.backend.writable:
+        config._schedule_service.refresh(force=True)
+        session.refresh(row)
 
 
 class PauseScheduleRequest(BaseModel):
@@ -162,13 +178,20 @@ def pause_whole_schedule(
     the original `paused_at`/`paused_by`; a different `until` only moves the
     end time."""
     session_factory = request.app.state.cm_session_factory
+    config = request.app.state.cm_config
+    if payload and payload.until and config.pause_mode == "backend":
+        raise HTTPException(status_code=422, detail="Timed pauses are not supported with pause_mode='backend'.")
     with session_factory() as session:
+        if session.query(PeriodicSchedule.id).filter_by(name=name).first() is None:
+            raise HTTPException(status_code=404, detail="Unknown schedule.")
         try:
+            set_backend_pause(config, name, True)
             row = pause_schedule(session, name, username, until=payload.until if payload else None)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="`until` must be a time in the future.") from exc
         if row is None:
             raise HTTPException(status_code=404, detail="Unknown schedule.")
+        _refresh_after_backend_pause(config, session, row)
         return _schedule_summary(row, request.app.state.cm_config)
 
 
@@ -178,7 +201,16 @@ def resume_whole_schedule(name: str, request: Request, username: str = Depends(r
     runs immediately and missed firings are not caught up. Idempotent."""
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
+        if session.query(PeriodicSchedule.id).filter_by(name=name).first() is None:
+            raise HTTPException(status_code=404, detail="Unknown schedule.")
+        config = request.app.state.cm_config
+        # Only re-enable an entry this pause disabled: resuming a schedule
+        # that is not paused must not turn on an entry disabled elsewhere.
+        if session.query(PeriodicSchedule.paused_at).filter_by(name=name).scalar() is not None:
+            set_backend_pause(config, name, False)
         row = resume_schedule(session, name, username)
+        if row is not None:
+            _refresh_after_backend_pause(config, session, row)
         if row is None:
             raise HTTPException(status_code=404, detail="Unknown schedule.")
         return _schedule_summary(row, request.app.state.cm_config)

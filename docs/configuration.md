@@ -48,6 +48,7 @@ config = CeleryManagerConfig(
 | `alert_interval_seconds` | `float` | `60.0` | How often the alerts evaluator checks every rule (`celery-manager alerts`, or `events --with-alerts`; `--interval` overrides it). |
 | `queue_sample_interval_seconds` | `float` | `60.0` | How often the events listener records every queue's broker depth, for the [depth charts](queues.md#depth-history) and the `queue_growing` alert. `0` turns sampling off. |
 | `queue_sample_retention_days` | `int` | `14` | How long depth samples are kept. The retention prune and the sampler itself (hourly) delete older ones. `0` keeps them forever. |
+| `doctor_retention_warn_rows` | `int \| None` | `1000000` | `doctor` warns when no [retention rule](retention.md) is set and `task_runs` holds more rows than this. `None` turns the check off. |
 | `authenticate_request` | callable or `None` | `None` | Sign people in with your Django, Flask or FastAPI app's users. Takes the Starlette `Request`, returns `ExternalUser(username, role)` or `None` (not signed in to your app). Asked first on every request; `None` falls back to local accounts. `role=None` is a `403`; an unknown role, a wrong return type or an exception is a `500`, never access. Ready-made: `celery_manager.integrations.django.django_authenticator()` and `celery_manager.integrations.flask.flask_authenticator(...)`. See [Sign in with your app's users](integrations.md#sign-in-with-your-apps-users). |
 | `local_login_enabled` | `bool` | `True` | Whether celery-manager's own accounts can sign in. `False` (only with `authenticate_request`) replaces the password form with "Sign in with ...", refuses `POST /api/auth/login` and ignores existing `cm_session` cookies. `create_app()` refuses `False` without an authenticator. |
 | `login_url` | `str` or `None` | `None` | Your app's login page, for the "Sign in with ..." link. `{next}` is replaced with the dashboard's address. A path or an `http(s)` URL; anything else makes `create_app()` refuse to start. |
@@ -277,7 +278,7 @@ it:
   requires an admin and explicit `force=true`. Give `operator` and `admin` only to people you'd
   trust with that, use `viewer` for everyone else, and treat the dashboard
   as an admin surface, ideally reachable only from a private network or VPN.
-  Viewers can see task arguments and tracebacks; `log_view_role` can restrict logs.
+  Viewers can see task arguments and tracebacks; `log_view_role`, `args_view_role` and `traceback_view_role` can restrict logs, arguments and tracebacks.
 - **Upgrading makes every existing account `admin`**, because before roles
   every account could do everything. Demote accounts afterwards with
   `celery-manager set-role`.
@@ -337,10 +338,19 @@ compose with the existing configuration and retention UI.
 | `log_capture_loggers` | `()` | Optional logger-name prefixes; empty accepts all emitted task-context records. |
 | `log_redactor` | `None` | Callable transforming a formatted log record. Failure withholds the raw record. |
 | `log_view_role` | `"viewer"` | Minimum role that can retrieve captured logs. |
+| `sensitive_keys` | password, secret, token, authorization, cookie, API key, credential, signature patterns | Regular expressions for argument keys whose values (and `key=value` text) are stored as `[redacted]`. `()` disables. See [Redacting arguments](production.md#redacting-arguments-results-and-errors). |
+| `payload_redactor` | `None` | Callable `(kind, task_name, value) -> value` for `args`, `kwargs`, `result`, `exception` and `traceback`, run after key redaction. Failure withholds the value. |
+| `args_view_role` | `"viewer"` | Minimum role that sees stored arguments; lower roles get the masked shape. Applies to task detail, Flower-shaped routes, dead letters, export and MCP. |
+| `traceback_view_role` | `"viewer"` | Minimum role that sees stored tracebacks. |
 | `store_results` / `result_max_bytes` | `True` / `64_000` | Store bounded result representations in decorator and listener. |
 | `principal_providers` | `()` | Ordered external providers, before the existing host callable and local-cookie fallback. |
 | `session_max_age_seconds` | `604800` | Local-cookie lifetime; existing password fingerprints and live role lookup still apply. |
 | `session_bridge_enabled` | `False` | Opt into a short external-authenticated dashboard cookie. |
+| `oidc_client_id` / `oidc_client_secret` | `None` | Turn on the built-in OIDC sign-in (needs an `OIDCBearerProvider` in `principal_providers`). |
+| `oidc_scopes` | `("openid", "profile", "offline_access")` | Scopes requested at sign-in. |
+| `oidc_redirect_path` | `/api/auth/oidc/callback` | Callback path, appended to `dashboard_url` or the request address. |
+| `oidc_role_refresh_seconds` | `900` | How often the role is re-read with the refresh token; a failure ends the session. |
+| `auth_mode` | `"cookie"` | `"bearer"` tells the dashboard the host sends a bearer token on every request. |
 | `bridge_max_age_seconds` | `300` | Bridge lifetime; fresh external authentication is required to renew. |
 | `trusted_origins` | `()` | Explicit HTTP(S) origins for credentialed CORS and cross-origin cookie writes. |
 | `frame_ancestors` | `()` | Explicit embedding origins. Empty denies framing; nonempty replaces deny-frame headers with the configured CSP. |
@@ -369,6 +379,12 @@ through its existing persistent rules; it is not replaced by a new config flag.
 | `login_backoff_reset_seconds` | `3600` | Positive integer: inactivity period after which a login budget resets. |
 | `llm_call_retention_days` | `90` | Integer 0–3650: keep [LLM usage](llm-usage.md) rows this many days; `0` keeps them. |
 | `llm_prices` | `{}` | Mapping of model-id prefix to `{"input": ..., "output": ..., "cache_read": ..., "cache_write": ...}` in USD per million tokens. Used to compute `cost_usd` when a call does not report one. `input` and `output` are required. |
+| `listener_reconnect_max_seconds` | `30` | Number 1–3600: longest wait between the events listener's attempts to reconnect to the broker (it backs off from 1 s, doubling). |
+| `listener_max_consecutive_errors` | `50` | Positive integer: the events listener skips an event it cannot store and carries on; after this many failures in a row it exits so the platform restarts it. |
+| `event_clock_skew_seconds` | `300` | Number 1–86400: the events listener stamps `started_at` and `finished_at` from the event's own timestamp. An event whose timestamp is further than this from the listener's clock (a worker with a wrong clock) is stamped with its arrival time instead, and counted as `clock_skew` on `GET /api/health/listener`. |
+| `reconcile_interval_seconds` | `0` | Number 0–86400: seconds between [reconciler](production.md#reconciling-after-a-listener-gap) passes run by `celery-manager events`. `0` turns that thread off; `celery-manager reconcile` then uses 60. |
+| `reconcile_after_seconds` | `120` | Number 1–86400: a `queued`, `started`, `retried` or `lost` run must have been untouched this long before the reconciler checks it. |
+| `reconcile_batch_size` | `200` | Integer 1–10000: runs per transaction in a reconciler pass. |
 | `worker_heartbeat_retention_days` | `7` | Integer 0–3650: retain minute-bucket worker observations for this many days. `0` disables collection and automatic history pruning, preserving existing samples and current WorkerState updates. |
 
 The heartbeat history option supplements task-run retention rules; it does not

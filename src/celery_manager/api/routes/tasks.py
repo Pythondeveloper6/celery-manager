@@ -8,9 +8,12 @@ from pydantic import BaseModel, Field
 from celery_manager.api.deps import Principal, get_current_user, require_operator
 from celery_manager.api.serialization import utc, utc_bound
 from celery_manager.auth.roles import role_allows
+from celery_manager.control.attempts import list_attempts
 from celery_manager.control.latency import wait_seconds
+from celery_manager.control.policy import DispatchDenied
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
+    ArgumentsRedacted,
     BulkCancelTooLarge,
     BulkRetryRejected,
     TaskRunNotFound,
@@ -28,6 +31,8 @@ from celery_manager.control.tasks import (
 
 router = APIRouter(prefix="/api/tasks")
 
+TOTAL_CAP = 10_000
+
 
 @router.get("")
 def list_tasks(
@@ -41,6 +46,7 @@ def list_tasks(
     started_by_me: bool = False,
     limit: int = 50,
     offset: int = 0,
+    before_id: int | None = None,
     username: str = Depends(get_current_user),
 ):
     """One page of task runs, plus the total matching the same filters.
@@ -69,8 +75,10 @@ def list_tasks(
         }
         # The same filter dict feeds both calls, so `total` can never be a
         # count of some other query than the one `items` came from.
-        runs = list_task_runs(session, limit=limit, offset=offset, **filters)
-        total = count_task_runs(session, **filters)
+        runs = list_task_runs(session, limit=limit, offset=offset, before_id=before_id, **filters)
+        # Counting stops past TOTAL_CAP: an exact count of millions of rows
+        # is a full scan for a number nobody pages through.
+        total = count_task_runs(session, cap=TOTAL_CAP, **filters)
         return {
             "items": [
                 {
@@ -93,7 +101,9 @@ def list_tasks(
                 }
                 for r in runs
             ],
-            "total": total,
+            "total": min(total, TOTAL_CAP),
+            "total_capped": total > TOTAL_CAP,
+            "next_before_id": runs[-1].id if len(runs) == limit else None,
             "limit": limit,
             "offset": offset,
         }
@@ -134,17 +144,24 @@ def get_task(task_id: str, request: Request, principal: Principal):
         scoped = current_tenant() is not None
         def visible_reference(value):
             return value if not scoped or (value and get_task_run(session, value) is not None) else None
+        config = request.app.state.cm_config
+        from celery_manager.redaction import view_payload
+        shown_args, shown_kwargs, shown_traceback, args_restricted, traceback_restricted = view_payload(
+            config, principal.role, run.args, run.kwargs, run.traceback)
         return {
             "task_id": run.task_id,
             "source": run.source, "tenant_id": run.tenant_id, "operation_key": run.operation_key,
             "correlation_id": run.correlation_id, "context_json": run.context_json,
             "task_name": run.task_name,
             "status": run.status,
-            "args": run.args,
-            "kwargs": run.kwargs,
+            "args": shown_args,
+            "kwargs": shown_kwargs,
+            "args_redacted": run.args_redacted,
+            "args_restricted": args_restricted,
             "exception": run.exception,
             "skip_reason": run.skip_reason,
-            "traceback": run.traceback,
+            "traceback": shown_traceback,
+            "traceback_restricted": traceback_restricted,
             "log_output": run.log_output if role_allows(principal.role, request.app.state.cm_config.log_view_role) else None,
             "log_output_truncated": run.log_output_truncated,
             "logs_restricted": not role_allows(principal.role, request.app.state.cm_config.log_view_role),
@@ -160,6 +177,7 @@ def get_task(task_id: str, request: Request, principal: Principal):
             # (extending TaskSummary) claim fields the response never sent.
             "queue": run.queue,
             "worker": run.worker,
+            "status_source": run.status_source,
             "eta": utc(run.eta),
             "sent_at": utc(run.sent_at),
             "received_at": utc(run.received_at),
@@ -182,7 +200,31 @@ def get_task(task_id: str, request: Request, principal: Principal):
             "parent_id": visible_reference(run.parent_id),
             "root_id": visible_reference(run.root_id),
             "group_id": None if scoped else run.group_id,
+            "retry_count": run.retry_count or 0,
+            "cancel_requested_at": utc(run.cancel_requested_at),
+            "cancel_requested_by": run.cancel_requested_by,
+            # One entry per attempt (Celery retries reuse the task id).
+            "attempts": [
+                {"attempt": a.attempt, "status": a.status, "worker": a.worker,
+                 "started_at": utc(a.started_at), "finished_at": utc(a.finished_at),
+                 "runtime_seconds": a.runtime_seconds, "exception": a.exception,
+                 "traceback": None if traceback_restricted else a.traceback}
+                for a in list_attempts(session, task_id)
+            ],
+            # Time spent in outbound calls, per target (celery_manager.contrib.http).
+            "external_calls": _external_summary(session, task_id),
         }
+
+
+def _external_summary(session, task_id):
+    from sqlalchemy import case, func
+
+    from celery_manager.db.external import ExternalCall
+    rows = (session.query(ExternalCall.target, func.count(ExternalCall.id), func.sum(ExternalCall.duration_ms),
+                          func.sum(case((ExternalCall.error.isnot(None) | (ExternalCall.status >= 400), 1), else_=0)))
+            .filter(ExternalCall.task_id == task_id).group_by(ExternalCall.target).all())
+    return [{"target": target, "calls": calls, "total_ms": round(total or 0, 1), "errors": int(errors or 0)}
+            for target, calls, total, errors in sorted(rows, key=lambda r: -(r[2] or 0))]
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -219,15 +261,29 @@ def start(payload: StartRequest, request: Request, principal: Principal, usernam
 
 
 @router.post("/{task_id}/cancel")
-def cancel(task_id: str, request: Request, principal: Principal, terminate: bool = False, force: bool = False, username: str = Depends(require_operator)):
+def cancel(task_id: str, request: Request, principal: Principal, terminate: bool = False, force: bool = False,
+           mode: str | None = None, signal: str | None = None, username: str = Depends(require_operator)):
+    """`mode`: `cooperative` (flag only), `revoke` (default) or `terminate`
+    (`signal`: SIGTERM, SIGUSR1 or, for admins, SIGKILL). `terminate=true`
+    is the older spelling of `mode=terminate`."""
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         if force and principal.role != "admin":
             raise HTTPException(403, "Force cancellation requires the admin role")
+        if signal == "SIGKILL" and principal.role != "admin":
+            raise HTTPException(403, "SIGKILL requires the admin role")
         if not force and get_task_run(session, task_id) is None:
             raise HTTPException(404, "Unknown task ID; an admin can force cancellation")
-        cancel_task(celery_app, task_id, terminate=terminate, session=session, username=username)
+        try:
+            cancel_task(celery_app, task_id, terminate=terminate, session=session, username=username,
+                        mode=mode, signal=signal)
+        except TaskRunNotFound as exc:
+            raise HTTPException(404, "Unknown task ID") from exc
+        except DispatchDenied:
+            raise
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     return {"ok": True}
 
 
@@ -269,6 +325,8 @@ def retry(
             )
         except TaskRunNotFound:
             raise HTTPException(status_code=404, detail="not found")
+        except ArgumentsRedacted as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
     return {"new_task_id": new_id}
 
 
@@ -303,6 +361,8 @@ def retry_bulk(payload: BulkRetryRequest, request: Request, principal: Principal
             raise HTTPException(status_code=404, detail=str(exc))
         except BulkRetryRejected as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        except ArgumentsRedacted as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
     if payload.dry_run:
         return {"dry_run": True, "would_retry": ids, "count": len(ids)}
     return {"new_task_ids": ids}
