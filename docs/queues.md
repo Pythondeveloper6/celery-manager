@@ -121,7 +121,7 @@ queue, depth)`, indexed by `(queue, sampled_at)`.
   (`celery-manager prune`, the `prune` Celery task) and, at most once an hour,
   by the sampler itself, so a deployment that never schedules the prune still
   stays bounded. A prune's summary reports `samples_deleted`.
-  `celery-manager prune` has no config, so it uses the 14-day default.
+  `celery-manager prune` uses the 14-day default unless you pass `--config`.
 - **The chart.** `GET /api/queues/{name}/history?hours=24` returns the window
   cut into at most 240 buckets (never narrower than a minute), each holding
   the *highest* depth sampled in it so a spike is not averaged away. Gaps in

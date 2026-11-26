@@ -441,3 +441,48 @@ def test_args_redacted_migration_round_trips(tmp_path):
         command.upgrade(alembic_config(conn), "head")
     assert "args_redacted" in columns()
     engine.dispose()
+
+
+TASK_RUN_INDEXES = {
+    "ix_task_runs_finished_at": ["finished_at"],
+    "ix_task_runs_started_at": ["started_at"],
+    "ix_task_runs_task_name_finished_at": ["task_name", "finished_at"],
+    "ix_task_runs_status_id": ["status", "id"],
+    "ix_task_runs_queue_started_at": ["queue", "started_at"],
+}
+
+
+def _task_run_indexes(engine) -> dict:
+    found = {i["name"]: i["column_names"] for i in inspect(engine).get_indexes("task_runs")}
+    return {name: found.get(name) for name in TASK_RUN_INDEXES}
+
+
+def test_task_runs_time_indexes_exist_at_head(tmp_path):
+    engine = init_db(_config(_url(tmp_path)))
+    assert _task_run_indexes(engine) == TASK_RUN_INDEXES
+
+
+def test_task_runs_time_indexes_are_added_when_upgrading_from_0027(tmp_path):
+    url = _url(tmp_path)
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0027")
+    assert all(v is None for v in _task_run_indexes(engine).values())
+    engine.dispose()
+
+    engine = init_db(_config(url))
+    assert _version(engine) == head_revision()
+    assert _task_run_indexes(engine) == TASK_RUN_INDEXES
+
+
+def test_task_runs_time_index_built_by_hand_first_is_kept(tmp_path):
+    url = _url(tmp_path)
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        command.upgrade(alembic_config(conn), "0027")
+        conn.exec_driver_sql("CREATE INDEX ix_task_runs_finished_at ON task_runs (finished_at)")
+    engine.dispose()
+
+    engine = init_db(_config(url))
+    assert _version(engine) == head_revision()
+    assert _task_run_indexes(engine) == TASK_RUN_INDEXES

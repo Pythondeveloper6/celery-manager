@@ -27,6 +27,15 @@ def _utcnow() -> datetime:
 
 class TaskRun(Base):
     __tablename__ = "task_runs"
+    # Time-range reads (metrics windows, Insights, date filters, retention)
+    # and the newest-first list per status (migration 0028).
+    __table_args__ = (
+        Index("ix_task_runs_finished_at", "finished_at"),
+        Index("ix_task_runs_started_at", "started_at"),
+        Index("ix_task_runs_task_name_finished_at", "task_name", "finished_at"),
+        Index("ix_task_runs_status_id", "status", "id"),
+        Index("ix_task_runs_queue_started_at", "queue", "started_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)

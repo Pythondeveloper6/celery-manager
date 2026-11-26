@@ -464,3 +464,58 @@ def test_date_bounds_with_a_non_utc_offset_name_the_same_instant():
     # And the window is the real one: new-2 started at 06:00Z, before the
     # bound, so only the two later runs qualify.
     assert sorted(t["task_id"] for t in as_utc["items"]) == ["new-3", "new-3-retry"]
+
+
+def test_list_tasks_before_id_pages_by_key_without_overlap():
+    client, sessions = _client_with_history()
+    with sessions() as session:
+        ids = dict(session.query(TaskRun.task_id, TaskRun.id).all())
+    first = client.get("/api/tasks", params={"limit": 2}).json()
+    assert [t["task_id"] for t in first["items"]] == ["new-3-retry", "new-3"]
+    assert first["next_before_id"] == ids["new-3"]
+
+    second = client.get("/api/tasks", params={"limit": 2, "before_id": first["next_before_id"]}).json()
+    assert [t["task_id"] for t in second["items"]] == ["new-2", "old-1"]
+    assert second["next_before_id"] == ids["old-1"]
+
+    last = client.get("/api/tasks", params={"limit": 2, "before_id": second["next_before_id"]}).json()
+    assert last["items"] == []
+    assert last["next_before_id"] is None
+    assert first["total"] == second["total"] == last["total"] == 4
+
+
+def test_list_tasks_next_before_id_is_null_when_the_page_is_not_full():
+    client, _ = _client_with_history()
+    body = client.get("/api/tasks", params={"limit": 50}).json()
+    assert len(body["items"]) == 4
+    assert body["next_before_id"] is None
+    assert body["total_capped"] is False
+
+
+def test_list_tasks_total_is_capped_and_says_so(monkeypatch):
+    client, _ = _client_with_history()  # 4 rows
+    monkeypatch.setattr("celery_manager.api.routes.tasks.TOTAL_CAP", 2)
+    body = client.get("/api/tasks").json()
+    assert body["total"] == 2
+    assert body["total_capped"] is True
+
+
+def test_list_tasks_total_exactly_at_the_cap_is_not_flagged(monkeypatch):
+    client, _ = _client_with_history()
+    monkeypatch.setattr("celery_manager.api.routes.tasks.TOTAL_CAP", 3)
+    body = client.get("/api/tasks", params={"q": "echo"}).json()  # 3 matching rows
+    assert body["total"] == 3
+    assert body["total_capped"] is False
+
+    monkeypatch.setattr("celery_manager.api.routes.tasks.TOTAL_CAP", 2)
+    body = client.get("/api/tasks", params={"q": "echo"}).json()
+    assert body["total"] == 2
+    assert body["total_capped"] is True
+
+
+def test_list_tasks_two_rows_under_a_cap_of_two_are_not_flagged(monkeypatch):
+    client, _ = _client_with_history()
+    monkeypatch.setattr("celery_manager.api.routes.tasks.TOTAL_CAP", 2)
+    body = client.get("/api/tasks", params={"date_from": "2026-08-16T00:00:00Z"}).json()  # 2 rows
+    assert body["total"] == 2
+    assert body["total_capped"] is False

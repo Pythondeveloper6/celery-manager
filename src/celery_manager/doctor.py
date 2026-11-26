@@ -34,6 +34,26 @@ def _bounded(config, name, fn, timeout):
     return current[1][0] if current[1] else (False, "check_aborted")
 
 
+def _retention_warning(engine, limit):
+    """A warning when no retention rule is set and task_runs holds more than
+    `limit` rows (counted no further than that)."""
+    from sqlalchemy import func, select
+    from sqlalchemy.orm import Session
+
+    from celery_manager.control.retention import get_retention
+    from celery_manager.db.models import TaskRun
+    if not limit:
+        return None
+    with Session(engine) as session:
+        rules = get_retention(session)
+        if rules.default_days or rules.failed_days or any(rules.tasks.values()):
+            return None
+        rows = session.execute(select(func.count()).select_from(select(TaskRun.id).limit(limit + 1).subquery())).scalar()
+    if rows > limit:
+        return f"No retention rule is set and task_runs holds more than {limit:,} rows; set retention and run celery-manager prune"
+    return None
+
+
 def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
     """Return bounded, redacted check results; outbound checks require opt-in."""
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
@@ -78,19 +98,24 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
                     collation = connection.execute(text("SELECT CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS NVARCHAR(128))")).scalar()
                 if not str(collation).upper().endswith("_UTF8"):
                     warning = f"Database collation {collation} is not UTF-8 and Unicode payload columns are not migrated; run the explicit migrate command"
-            return state.up_to_date, warning
+            retention = None
+            if state.up_to_date:
+                retention = _retention_warning(engine, config.doctor_retention_warn_rows)
+            return state.up_to_date, (warning, retention)
         finally:
             if record is None:
                 engine.dispose()
     ok, current = _bounded(config, "storage", storage, timeout)
-    warning = None
+    warning = retention = None
     if ok:
-        current, warning = current
+        current, (warning, retention) = current
     add("storage_and_migrations", "pass" if ok and current else "fail",
         "Storage reachable and migrations current" if ok and current else
         "Storage reachable; run the explicit migrate command" if ok else "Storage check failed: " + current)
     if warning:
         add("unicode_storage", "warn", warning)
+    if retention:
+        add("retention", "warn", retention)
     external = config.authenticate_request is not None or bool(config.principal_providers)
     safe_key = bool(config.secret_key and config.secret_key.strip() and config.secret_key != "change-me")
     add("authentication", "pass" if safe_key and (external or config.local_login_enabled) else "fail",

@@ -284,6 +284,9 @@ class CeleryManagerConfig:
     track_tasks: str | tuple[str, ...] = "*"
     track_exclude: str | tuple[str, ...] = ()
     pause_mode: str = "task"
+    # `doctor` warns when no retention rule is set past this many task_runs
+    # rows (None turns the check off).
+    doctor_retention_warn_rows: int | None = 1_000_000
     cron_parser: object = None
     tenant_resolver: Callable[[Request, object], str | None | Awaitable[str | None]] | None = None
     lock_provider: object = None  # LockProvider; Redis is inferred only for a Redis broker

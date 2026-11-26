@@ -7,6 +7,7 @@ from datetime import datetime
 
 from celery import Celery
 from sqlalchemy import or_
+from sqlalchemy.orm import defer
 
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
@@ -168,8 +169,13 @@ def list_task_runs(
     initiator: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    before_id: int | None = None,
 ) -> list[TaskRun]:
     """One page of task runs, newest first, under the given filters.
+
+    `before_id` pages by key (runs with a smaller id), which stays fast deep
+    into history where a large `offset` does not. The large text columns are
+    deferred: a list never shows them, and accessing one still loads it.
 
     Ordered by the surrogate `id` rather than `started_at`: `started_at` is
     nullable (a queued run has none), so ordering by it would scatter queued
@@ -179,6 +185,10 @@ def list_task_runs(
         session.query(TaskRun),
         status=status, task_name=task_name, q=q, date_from=date_from, date_to=date_to, initiator=initiator,
     )
+    if before_id is not None:
+        query = query.filter(TaskRun.id < before_id)
+    query = query.options(defer(TaskRun.log_output), defer(TaskRun.result_repr), defer(TaskRun.traceback),
+                          defer(TaskRun.exception), defer(TaskRun.args), defer(TaskRun.kwargs))
     return query.order_by(TaskRun.id.desc()).offset(offset).limit(limit).all()
 
 
@@ -191,8 +201,11 @@ def count_task_runs(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     initiator: str | None = None,
+    cap: int | None = None,
 ) -> int:
-    """How many runs match these filters, ignoring limit/offset.
+    """How many runs match these filters, ignoring limit/offset. With
+    `cap`, counts at most `cap + 1` rows, so a result above `cap` means "more
+    than cap" and a huge table is not scanned for an exact number.
 
     Exists so the dashboard can honestly say "showing 50 of 1,284" and know
     whether a next page exists. Takes exactly the filter arguments
@@ -205,6 +218,8 @@ def count_task_runs(
     )
     # count() over the filtered entity; SQLAlchemy wraps this in a
     # SELECT count(*) subquery, so no rows are loaded into memory.
+    if cap is not None:
+        return query.with_entities(TaskRun.id).limit(cap + 1).count()
     return query.count()
 
 

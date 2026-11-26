@@ -348,6 +348,7 @@ export function TaskList() {
   const canOperate = isOperator && !options.monitoring_only;
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalCapped, setTotalCapped] = useState(false);
 
   // The filters live in the URL (see lib/useTaskFilters): `searchInput` is
   // what the user sees, `search` the debounced value that reaches the API.
@@ -479,6 +480,7 @@ export function TaskList() {
       if (requestId !== requestIdRef.current) return;
       setTasks(page.items);
       setTotal(page.total);
+      setTotalCapped(!!page.total_capped);
       setError(null);
     } catch (err) {
       if (requestId !== requestIdRef.current) return;
@@ -760,6 +762,7 @@ export function TaskList() {
   const historyMode = mode === "history";
   const loadedCount = tasks.length;
   const remainingCount = Math.max(0, total - loadedCount);
+  const totalText = `${total.toLocaleString()}${totalCapped ? "+" : ""}`;
   // Selection serves two bulk actions: retry on the Failed tab, cancel on
   // the tabs whose runs can still be stopped.
   const cancellableTab = status === "queued" || status === "started" || status === "retried";
@@ -1099,13 +1102,13 @@ export function TaskList() {
                 rather than letting a group count imply a total. */}
             {groupBy !== "none" && historyMode && (
               <li>
-                Groups cover the {loadedCount.toLocaleString()} runs on this page, not all {total.toLocaleString()}{" "}
+                Groups cover the {loadedCount.toLocaleString()} runs on this page, not all {totalText}{" "}
                 matches.
               </li>
             )}
             {groupBy !== "none" && !historyMode && remainingCount > 0 && (
               <li>
-                Groups cover the {loadedCount.toLocaleString()} runs loaded here, not all {total.toLocaleString()}{" "}
+                Groups cover the {loadedCount.toLocaleString()} runs loaded here, not all {totalText}{" "}
                 matches.
               </li>
             )}
@@ -1245,10 +1248,10 @@ export function TaskList() {
               <div className="cm-tasks-foot">
                 <span className="cm-tasks-count">
                   {historyMode
-                    ? `Runs ${rangeFrom.toLocaleString()}–${rangeTo.toLocaleString()} of ${total.toLocaleString()}`
+                    ? `Runs ${rangeFrom.toLocaleString()}–${rangeTo.toLocaleString()} of ${totalText}`
                     : remainingCount > 0
-                      ? `Showing ${loadedCount.toLocaleString()} of ${total.toLocaleString()} runs`
-                      : `Showing all ${total.toLocaleString()} run${total === 1 ? "" : "s"}`}
+                      ? `Showing ${loadedCount.toLocaleString()} of ${totalText} runs`
+                      : `Showing all ${totalText} run${total === 1 ? "" : "s"}`}
                 </span>
 
                 {historyMode ? (
@@ -1280,7 +1283,7 @@ export function TaskList() {
                   <div className="cm-tasks-more">
                     {total > MAX_PAGE_SIZE && (
                       <button type="button" className="cm-link-btn" onClick={() => enterHistory(0)}>
-                        Browse all {total.toLocaleString()} runs by page
+                        Browse all {totalText} runs by page
                       </button>
                     )}
                     <button

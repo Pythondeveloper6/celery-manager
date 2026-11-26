@@ -40,6 +40,14 @@ All notable changes to celery-manager are recorded here. The format follows
   and judges a schedule that never fired from when it was first seen.
   `pause_mode = "backend"` also disables the beat entry on a writable scheduler
   backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Lighter reads on a large history.** Five `task_runs` indexes for time
+  ranges (migration `0028`; an index built by hand beforehand is kept). The
+  task list no longer loads logs, results, tracebacks or arguments, counts at
+  most 10,000 matches (`total_capped`), and pages by key with `before_id` /
+  `next_before_id`. The Insights overview no longer reads exceptions and
+  tracebacks. `celery-manager prune --config` applies every retention setting,
+  and `doctor` warns when no retention rule is set past
+  `doctor_retention_warn_rows` (default 1,000,000) runs.
 - **Redis-backed schedules outside the API process.** A disabled entry has no
   missed runs, and a re-enabled one is judged from when it was re-enabled
   (`periodic_schedules.enabled_changed_at`, migration `0027`). Entries that exist

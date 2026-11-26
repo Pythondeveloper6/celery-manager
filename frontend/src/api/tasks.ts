@@ -64,6 +64,9 @@ export interface TaskDetail extends TaskSummary {
 export interface TaskPage {
   items: TaskSummary[];
   total: number;
+  // True when more than `total` runs match: the server stops counting there.
+  total_capped?: boolean;
+  next_before_id?: number | null;
   limit: number;
   offset: number;
 }

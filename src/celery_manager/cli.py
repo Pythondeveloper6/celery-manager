@@ -139,15 +139,24 @@ def list_users_command(db_url: str, *, db_schema=None) -> int:
         engine.dispose()
 
 
-def prune_command(db_url: str, *, dry_run: bool = False, batch_size: int = 1000, db_schema=None) -> int:
-    """`celery-manager prune`. Returns the process exit code."""
+def prune_command(db_url: str | None, *, dry_run: bool = False, batch_size: int = 1000, db_schema=None,
+                  config: CeleryManagerConfig | None = None) -> int:
+    """`celery-manager prune`. Returns the process exit code. With `config`
+    its retention settings (LLM calls, heartbeats, depth samples) apply."""
     from celery_manager.control.retention import run_prune
 
-    engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
+    if config is not None:
+        engine = init_db(config)
+        session_factory = get_session_factory(engine)
+        session_factory.configure(info={"cm_config": config})
+        extra = {"sample_retention_days": config.queue_sample_retention_days}
+    else:
+        engine, session_factory = _user_session_factory(db_url, db_schema=db_schema)
+        extra = {}
     try:
         with session_factory() as session:
             try:
-                summary = run_prune(session, username="cli", batch_size=batch_size, dry_run=dry_run)
+                summary = run_prune(session, username="cli", batch_size=batch_size, dry_run=dry_run, **extra)
             except ValueError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1
@@ -310,8 +319,9 @@ def build_parser() -> argparse.ArgumentParser:
     prune_parser = subparsers.add_parser(
         "prune", help="delete runs older than the retention rules (a no-op until rules are set)"
     )
-    prune_parser.add_argument("--db-url", required=True)
+    prune_parser.add_argument("--db-url")
     prune_parser.add_argument("--db-schema")
+    prune_parser.add_argument("--config", help="import path of a CeleryManagerConfig whose retention settings apply")
     prune_parser.add_argument("--dry-run", action="store_true", help="only report what would be deleted")
     prune_parser.add_argument("--batch-size", type=int, default=1000, help="rows per transaction (default 1000)")
 
@@ -504,7 +514,11 @@ def main(argv: list[str] | None = None) -> None:
                                         beat_schema=args.beat_schema))
 
     if args.command == "prune":
-        sys.exit(prune_command(args.db_url, dry_run=args.dry_run, batch_size=args.batch_size, db_schema=args.db_schema))
+        if not args.config and not args.db_url:
+            parser.error("prune needs --db-url or --config")
+        config = _load_config(args.config, None, args.db_url) if args.config else None
+        sys.exit(prune_command(args.db_url, dry_run=args.dry_run, batch_size=args.batch_size, db_schema=args.db_schema,
+                               config=config))
 
     if args.command == "create-user":
         sys.exit(create_user_command(args.db_url, args.username, args.role, password_stdin=args.password_stdin, db_schema=args.db_schema))

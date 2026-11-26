@@ -99,10 +99,10 @@ def _window(range_key: str, now: datetime | None) -> tuple[datetime, datetime, t
 
 def _load_rows(session, since: datetime, until: datetime, task_name: str | None, cap: int, failed_only: bool = False):
     ts = _ts_column()
-    query = session.query(
-        TaskRun.task_id, TaskRun.task_name, TaskRun.status, ts.label("ts"),
-        TaskRun.runtime_seconds, TaskRun.exception, TaskRun.traceback,
-    ).filter(ts >= since, ts <= until)
+    columns = [TaskRun.task_id, TaskRun.task_name, TaskRun.status, ts.label("ts"), TaskRun.runtime_seconds]
+    if failed_only:  # only the failures view groups by exception and traceback
+        columns += [TaskRun.exception, TaskRun.traceback]
+    query = session.query(*columns).filter(ts >= since, ts <= until)
     if task_name is not None:
         query = query.filter(TaskRun.task_name == task_name)
     if failed_only:

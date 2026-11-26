@@ -29,6 +29,8 @@ from celery_manager.control.tasks import (
 
 router = APIRouter(prefix="/api/tasks")
 
+TOTAL_CAP = 10_000
+
 
 @router.get("")
 def list_tasks(
@@ -42,6 +44,7 @@ def list_tasks(
     started_by_me: bool = False,
     limit: int = 50,
     offset: int = 0,
+    before_id: int | None = None,
     username: str = Depends(get_current_user),
 ):
     """One page of task runs, plus the total matching the same filters.
@@ -70,8 +73,10 @@ def list_tasks(
         }
         # The same filter dict feeds both calls, so `total` can never be a
         # count of some other query than the one `items` came from.
-        runs = list_task_runs(session, limit=limit, offset=offset, **filters)
-        total = count_task_runs(session, **filters)
+        runs = list_task_runs(session, limit=limit, offset=offset, before_id=before_id, **filters)
+        # Counting stops past TOTAL_CAP: an exact count of millions of rows
+        # is a full scan for a number nobody pages through.
+        total = count_task_runs(session, cap=TOTAL_CAP, **filters)
         return {
             "items": [
                 {
@@ -94,7 +99,9 @@ def list_tasks(
                 }
                 for r in runs
             ],
-            "total": total,
+            "total": min(total, TOTAL_CAP),
+            "total_capped": total > TOTAL_CAP,
+            "next_before_id": runs[-1].id if len(runs) == limit else None,
             "limit": limit,
             "offset": offset,
         }
