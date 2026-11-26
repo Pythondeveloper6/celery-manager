@@ -729,3 +729,16 @@ def test_cli_create_user_refuses_short_passwords_and_bad_names(tmp_path, monkeyp
     assert _run_cli(monkeypatch, ["create-user", "bad name\u0007", "--db-url", url, "--password-stdin"],
                     "long-enough\n") == 1
     assert _roles(url) == {}
+
+
+@pytest.mark.parametrize("sig", ["SIGKILL", "sigkill", "SigKill"])
+def test_flower_revoke_sigkill_needs_admin_in_any_case(shared, monkeypatch, sig):
+    from celery_manager.control import tasks as control_tasks
+
+    cancel = MagicMock(return_value={})
+    monkeypatch.setattr(control_tasks, "cancel_task", cancel)
+    url = f"/api/flower/task/revoke/t1?terminate=true&signal={sig}"
+    assert shared["operator"].post(url).status_code == 403
+    cancel.assert_not_called()
+    assert shared["admin"].post(url).status_code == 200
+    assert cancel.call_args.kwargs["signal"] == "SIGKILL"

@@ -30,6 +30,7 @@ All notable changes to celery-manager are recorded here. The format follows
   old enabled state until the next sync.
 
 ### Security
+- **SIGKILL stays admin-only on the Flower-shaped revoke route.** `POST /api/flower/task/revoke/{id}` compared the signal before upper-casing it, so an operator (or operator API token) could send `signal=sigkill` and hard-kill a task. The signal is now normalised before the role check.
 - **Redaction of arguments, results, exceptions and tracebacks.** Values under
   `sensitive_keys` (default: password, secret, token, authorization, cookie,
   API key, credential, signature), bearer credentials, `key=value` text and

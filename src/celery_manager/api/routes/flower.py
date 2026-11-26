@@ -175,12 +175,13 @@ def queues_length(request: Request, username: str = Depends(get_current_user)):
 def revoke(task_id: str, request: Request, principal: Principal, terminate: bool = False,
            signal: str = "SIGTERM", username: str = Depends(require_operator)):
     from celery_manager.control.tasks import cancel_task
+    signal = signal.upper()  # normalise before the role check, or "sigkill" slips past it
     if signal == "SIGKILL" and principal.role != "admin":
         raise HTTPException(403, "SIGKILL requires the admin role")
     with request.app.state.cm_session_factory() as session:
         try:
             cancel_task(request.app.state.cm_config.celery_app, task_id, session=session, username=username,
-                        mode="terminate" if terminate else "revoke", signal=signal.upper() if terminate else None)
+                        mode="terminate" if terminate else "revoke", signal=signal if terminate else None)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
     return {"message": f"Revoked '{task_id}'"}
