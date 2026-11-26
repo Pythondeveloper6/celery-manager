@@ -273,6 +273,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     alerts_parser.add_argument("--once", action="store_true", help="check every rule once and exit")
 
+    serve_parser = subparsers.add_parser("serve", help="serve the dashboard and API on their own (needs uvicorn)")
+    serve_parser.add_argument("--config", required=True, help="import path of a CeleryManagerConfig, e.g. myproject.cm:config")
+    serve_parser.add_argument("--host", default="127.0.0.1")
+    serve_parser.add_argument("--port", type=int, default=8000)
+    serve_parser.add_argument("--root-path", default="", help="URL prefix when served behind a proxy path")
+
     reconcile_parser = subparsers.add_parser(
         "reconcile", help="repair runs left open while the events listener was down"
     )
@@ -542,6 +548,16 @@ def main(argv: list[str] | None = None) -> None:
             parser.error("reconcile requires Celery")
         sys.exit(reconcile_command(config, args.once))
 
+    if args.command == "serve":
+        try:
+            import uvicorn
+        except ImportError:
+            parser.error("serve needs uvicorn: pip install 'celery-manager[standalone]'")
+        from celery_manager.api.app import create_app
+        config = _load_config(args.config, None, None)
+        uvicorn.run(create_app(config), host=args.host, port=args.port, root_path=args.root_path)
+        return
+
     if args.command == "events":
         config = _load_config(args.config, args.celery_app, args.db_url)
         if config.celery_app is None:
@@ -565,6 +581,9 @@ def main(argv: list[str] | None = None) -> None:
         from celery_manager.reconcile import start_in_background as start_reconciler
 
         start_reconciler(config, session_factory)  # a no-op when reconcile_interval_seconds is 0
+        from celery_manager.control.snapshots import start_in_background as start_snapshots
+
+        start_snapshots(config, session_factory)  # a no-op unless inspect_source == "snapshot"
         EventListener(config, session_factory).run(
             enable_events=args.enable_events, health_file=args.health_file, health_port=args.health_port)
 

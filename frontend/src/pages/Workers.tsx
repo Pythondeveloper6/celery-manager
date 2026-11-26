@@ -569,7 +569,11 @@ export function Workers() {
       <header className="cm-page-header">
         <div className="cm-page-header-titles">
           <h1 className="cm-page-title">Workers</h1>
-          <p className="cm-page-lede">Live state of every worker that answers the broker. Refreshes every 10 seconds.</p>
+          <p className="cm-page-lede">
+            {snapshot?.snapshot
+              ? `From the listener's snapshot taken ${snapshot.inspected_at ? new Date(snapshot.inspected_at).toLocaleTimeString() : "never (is celery-manager events running?)"}.`
+              : "Live state of every worker that answers the broker. Refreshes every 10 seconds."}
+          </p>
         </div>
         <div className="cm-workers-toolbar">
           {!visible ? (

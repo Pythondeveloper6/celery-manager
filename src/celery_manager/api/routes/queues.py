@@ -54,7 +54,13 @@ def get_queues(request: Request, workers: bool = True, username: str = Depends(g
     config = request.app.state.cm_config
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
-        listing = list_queues(config.celery_app, session, include_workers=workers)
+        if config.inspect_source == "snapshot":
+            from celery_manager.control.snapshots import read
+            listing, at = read(session, "queues")
+            listing = {**(listing or {"queues": [], "recorded_queued_unassigned": 0, "broker": {"error": "No snapshot yet; is celery-manager events running?"}}),
+                       "snapshot_at": at.isoformat() if at else None}
+        else:
+            listing = list_queues(config.celery_app, session, include_workers=workers)
         # Queue wait over the last 15 minutes (the same window as the
         # metrics), `null` for a queue with no timed run in it.
         stats = wait_stats(session)

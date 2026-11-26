@@ -8,7 +8,7 @@ links to.
 
 | Process | Command | Count |
 |---|---|---|
-| Dashboard and API | `uvicorn your_module:app` (or mounted in your ASGI/WSGI app) | one or more |
+| Dashboard and API | `celery-manager serve --config module:attr` (needs `celery-manager[standalone]`), `uvicorn your_module:app`, or mounted in your ASGI/WSGI app | one or more |
 | Celery worker | `celery -A your_module worker -E` | as many as you need |
 | Beat | `celery -A your_module beat -S celery_manager.beat:Scheduler` | exactly one |
 | Events listener | `celery-manager events --celery-app your_module:app --db-url ...` | one |
@@ -43,6 +43,21 @@ A complete Compose file with all of these, PostgreSQL and Redis is in
 To run every process on one machine with a single command (no Docker
 Compose, just a Redis), see
 [`examples/full_stack/`](https://github.com/Pythondeveloper6/celery-manager/tree/main/examples/full_stack).
+
+### Mounted in a synchronous WSGI host
+
+Each Workers or Queues refresh asks the broker and holds a request worker
+while it waits. Set `inspect_source = "snapshot"`: the `celery-manager events`
+process then stores the workers' replies and the queue listing every
+`inspect_snapshot_seconds` (default 10), the pages read only the database and
+show the snapshot's time, and no dashboard `GET` opens a broker connection.
+Actions (shutdown, pool resize, purge) still go to the broker. The other
+supported layout is a standalone `celery-manager serve` behind the same host
+name, signed in through the OIDC flow.
+
+`GET /livez` answers 200 without touching anything; `GET /readyz` answers 200
+when the database replies within one second and 503 otherwise. Neither needs
+credentials.
 
 ## Checklist
 

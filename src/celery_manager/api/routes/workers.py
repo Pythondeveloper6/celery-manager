@@ -43,6 +43,12 @@ def list_workers(request: Request, username: str = Depends(get_current_user)):
     necessarily that none exist (see docs/workers.md)."""
     celery_app = request.app.state.cm_config.celery_app
     timeout = _timeout(request)
+    if request.app.state.cm_config.inspect_source == "snapshot":
+        from celery_manager.control.snapshots import read
+        with request.app.state.cm_session_factory() as session:
+            workers, at = read(session, "workers")
+        return {"workers": workers or [], "timeout_seconds": timeout,
+                "inspected_at": at.isoformat() if at else None, "snapshot": True}
     try:
         workers = inspect_workers(celery_app, timeout)
     except WorkerControlError as exc:

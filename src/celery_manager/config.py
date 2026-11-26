@@ -303,6 +303,11 @@ class CeleryManagerConfig:
     # How long a stored revoke is re-sent and honoured when the task's ETA is
     # unknown (with an ETA: until the ETA plus an hour, if later).
     revoke_retention_hours: int = 48
+    # "snapshot": the Workers and Queues pages read what `celery-manager
+    # events` stored every `inspect_snapshot_seconds` instead of asking the
+    # broker per request (for a dashboard mounted in a synchronous WSGI host).
+    inspect_source: str = "live"
+    inspect_snapshot_seconds: float = 10.0
     # How often `cancel_requested()` re-reads the flag per run.
     cancel_check_interval_seconds: float = 2.0
     cron_parser: object = None
@@ -431,6 +436,8 @@ class CeleryManagerConfig:
             raise ValueError("oidc_role_refresh_seconds must be positive seconds")
         if self.oidc_client_id and not any(hasattr(p, "validate") and hasattr(p, "discovery") for p in self.principal_providers):
             raise ValueError("oidc_client_id needs an OIDCBearerProvider in principal_providers")
+        if self.inspect_source not in ("live", "snapshot"):
+            raise ValueError("inspect_source must be 'live' or 'snapshot'")
         if self.control_check_on_failure not in ("run", "skip"):
             raise ValueError("control_check_on_failure must be 'run' or 'skip'")
         if self.publish_hook_mode not in ("sync", "thread"):

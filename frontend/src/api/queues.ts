@@ -53,6 +53,8 @@ export interface QueueListing {
   recorded_queued_unassigned: number;
   wait_window_seconds: number;
   rabbitmq?: RabbitListingMeta;
+  // Set when served from a stored snapshot (`inspect_source = "snapshot"`).
+  snapshot_at?: string | null;
 }
 
 export interface PurgeResult {

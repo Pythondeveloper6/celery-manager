@@ -40,6 +40,13 @@ All notable changes to celery-manager are recorded here. The format follows
   and judges a schedule that never fired from when it was first seen.
   `pause_mode = "backend"` also disables the beat entry on a writable scheduler
   backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Dashboard reads without the broker.** `inspect_source = "snapshot"` makes
+  `celery-manager events` store worker replies and the queue listing every
+  `inspect_snapshot_seconds` (10); the Workers and Queues pages then read only
+  the database and show the snapshot's time. `celery-manager serve --config
+  module:attr --host --port --root-path` serves the dashboard on its own.
+  Unauthenticated `GET /livez` and `GET /readyz` (database within one second)
+  for container probes.
 - **Cooperative cancel.** `POST /api/tasks/{id}/cancel?mode=cooperative`
   flags a running run; the task stops itself through `cancel_requested()`,
   `raise_if_cancelled()` (raises `TaskCancelled`) or the new boolean return of
