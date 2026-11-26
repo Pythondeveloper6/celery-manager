@@ -123,11 +123,18 @@ def missed(name: str, request: Request, username: str = Depends(get_current_user
 
 def _schedule_summary(s, config) -> dict:
     edit = schedule_edit_fields(s, config.celery_app, apply_edits=config.schedule_editing)
+    definition = __import__("json").loads(s.definition) if s.definition else None
+    # A backend entry whose schedule type (solar, custom classes) has no spec
+    # form is shown by its own text and cannot be edited here.
+    unsupported = definition is not None and definition.get("schedule") is None
+    editing = config.schedule_editing or config._schedule_service.backend.writable
     return {
         "name": s.name,
         "source": s.source,
         "backend_writable": config._schedule_service.backend.writable,
-        "definition": __import__("json").loads(s.definition) if s.definition else None,
+        "definition": definition,
+        "editable": editing and not unsupported,
+        "reason": "read-only: this schedule type cannot be edited here" if unsupported else None,
         "task_name": s.task_name,
         "schedule_spec": edit["schedule_spec"],
         "enabled": s.enabled,

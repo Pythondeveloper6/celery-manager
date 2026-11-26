@@ -165,6 +165,9 @@ class PeriodicSchedule(Base):
     # When the backend sync first saw this schedule (migration 0026): where
     # missed-run detection starts for a schedule that has never fired.
     first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the sync last saw `enabled` turn on (migration 0027): missed-run
+    # detection restarts here, so a disabled stretch is never reported.
+    enabled_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ScheduleOverride(Base):

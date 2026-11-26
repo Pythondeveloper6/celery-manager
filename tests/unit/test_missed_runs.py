@@ -180,6 +180,26 @@ def test_sent_firing_without_worker_run_is_never_arrived(session):
     assert ("never_sent", _hour(10)) not in [(item["kind"], item["due_at"]) for item in missed]
 
 
+def test_disabled_schedule_has_no_missed_runs(session):
+    _run(session, HOURLY, _hour(8))
+    _run(session, HOURLY, _hour(9))  # 10:00 and 11:00 never arrived, but it is disabled
+    app = _app()
+    app.conf.beat_schedule[HOURLY]["enabled"] = False
+    assert list_missed_runs(session, app, HOURLY, now=NOW) == []
+    entry = {"task": "demo.echo", "schedule": crontab(minute=0), "enabled": False}
+    assert list_missed_runs(session, _app(), HOURLY, now=NOW, entry=entry) == []
+
+
+def test_reenabled_schedule_ignores_misses_before_it_was_enabled(session):
+    _run(session, HOURLY, _hour(8))
+    _run(session, HOURLY, _hour(9))  # 10:00 missed while disabled
+    _run(session, HOURLY, _hour(12))
+    session.add(PeriodicSchedule(name=HOURLY, task_name="demo.echo", schedule_spec="crontab",
+                                 enabled_changed_at=datetime(2026, 10, 28, 10, 30, tzinfo=timezone.utc)))
+    session.commit()
+    assert _due(list_missed_runs(session, _app(), HOURLY, now=NOW)) == [_hour(11)]
+
+
 # --- REST ------------------------------------------------------------------
 
 

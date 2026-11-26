@@ -32,6 +32,24 @@ All notable changes to celery-manager are recorded here. The format follows
   task detail, the Flower-shaped API, dead letters, export and the MCP tools.
 
 ### Added
+- **Track every task without a decorator**: `Celery(..., task_cls="celery_manager.task:TrackedTask")`
+  runs each task through the `@track()` wrapper, limited by `track_tasks` and
+  `track_exclude` globs; a task that also has `@track(...)` keeps its options.
+  The stamping beat records each send in `schedule_firings` (migration `0026`),
+  so missed-run detection reports `never_sent` and `never_arrived` separately
+  and judges a schedule that never fired from when it was first seen.
+  `pause_mode = "backend"` also disables the beat entry on a writable scheduler
+  backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Redis-backed schedules outside the API process.** A disabled entry has no
+  missed runs, and a re-enabled one is judged from when it was re-enabled
+  (`periodic_schedules.enabled_changed_at`, migration `0027`). Entries that exist
+  only in the scheduler backend get a `celery_manager_schedule_missed_runs_24h`
+  sample and can be named in a maintenance window. The alerts and metrics
+  processes keep a cached schedule snapshot, so one evaluation lists the
+  backend once. RedBeat edits and deletes take the same Redis lock as creates
+  and answer `409` when the entry changed since it was read. Schedule list
+  items carry `editable` and `reason` for schedule types the editor cannot
+  express.
 - `payload_redactor(kind, task_name, value)` for custom redaction (a failing
   one withholds the value), `@track(redact_args=True, redact_kwargs=(...))` for
   per-task rules, and `task_runs.args_redacted` (migration `0025`). Retrying or

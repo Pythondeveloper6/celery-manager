@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from datetime import datetime, timezone
@@ -9,6 +10,8 @@ from datetime import datetime, timezone
 from celery_manager.db.models import PeriodicSchedule
 from celery_manager.schedule_specs import spec_from_schedule
 from celery_manager.schedulers.base import StaticBeatBackend
+
+logger = logging.getLogger("celery_manager")
 
 
 def backend_for(config):
@@ -67,6 +70,8 @@ def sync_from_backend(session, backend, entries=None):
         })
         row.task_name, row.schedule_spec = entry.task, str(entry.schedule)
         row.args, row.kwargs = json.dumps(entry.args, default=repr), json.dumps(entry.kwargs, default=repr)
+        if entry.enabled and not row.enabled:
+            row.enabled_changed_at = datetime.now(timezone.utc)
         row.enabled, row.source = entry.enabled, backend.name
         row.definition = json.dumps(definition(entry), default=str, sort_keys=True)
         if row.first_seen_at is None:
@@ -95,6 +100,27 @@ class ScheduleService:
                 sync_from_backend(session, self.backend, entries)
             self.entries = {entry.name: entry.as_beat_entry() for entry in entries}
             self.checked_at = time.monotonic()
+
+
+def schedule_service(config, session_factory):
+    """The process's cached `ScheduleService`, created on first use, so the
+    alerts and metrics processes read the backend once per sync interval
+    instead of once per schedule."""
+    service = getattr(config, "_schedule_service", None)
+    if service is None:
+        service = config._schedule_service = ScheduleService(config, session_factory)
+    return service
+
+
+def refresh_quietly(config, session_factory):
+    """Refresh the cached schedules for a long-running process; a backend
+    outage keeps the last snapshot instead of failing the caller."""
+    if config.celery_app is None or config.scheduler_backend is None:
+        return
+    try:
+        schedule_service(config, session_factory).refresh()
+    except Exception:
+        logger.warning("celery-manager: schedule backend refresh failed", exc_info=True)
 
 
 def entries_for(session, celery_app):

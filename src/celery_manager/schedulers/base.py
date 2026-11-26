@@ -8,6 +8,10 @@ from typing import Protocol
 from celery.schedules import maybe_schedule
 
 
+class ScheduleConflict(Exception):
+    """The stored entry changed since the caller read it."""
+
+
 @dataclass(frozen=True)
 class ScheduleEntry:
     name: str

@@ -46,6 +46,7 @@ from celery_manager.control.rabbitmq import (
 from celery_manager.control.rabbitmq import queue_stats as rabbitmq_queue_stats
 from celery_manager.control.tasks import list_registered_tasks
 from celery_manager.db.models import TaskRun
+from celery_manager.schedulers.service import entries_for, refresh_quietly
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +320,7 @@ def _listener_families(session, now: datetime) -> list[Family]:
 def _missed_family(session, celery_app, grace_seconds: int, now: datetime) -> Family:
     counts = missed_run_counts(session, celery_app, now - MISSED_WINDOW, grace_seconds=grace_seconds, now=now)
     family = Family("celery_manager_schedule_missed_runs_24h", "Scheduled firings that never arrived in the last 24 hours, per beat schedule.")
-    names = sorted(celery_app.conf.beat_schedule or {})[:MAX_SCHEDULE_LABELS]
+    names = sorted(entries_for(session, celery_app))[:MAX_SCHEDULE_LABELS]
     family.samples = [({"schedule": n}, counts.get(n, 0)) for n in names]
     return family
 
@@ -395,6 +396,7 @@ def compute_snapshot(config, session_factory, now: datetime | None = None) -> li
         up.samples.append(({"collector": collector}, 1))
         return result
 
+    refresh_quietly(config, session_factory)
     with session_factory() as session:
         runs = attempt("runs", lambda: _run_families(session, celery_app, now))
         families.extend(runs or [])

@@ -519,6 +519,8 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
             session.add(row)
         row.task_name = entry["task"]
         row.schedule_spec = str(_entry_schedule(entry))
+        if row.enabled is False:
+            row.enabled_changed_at = datetime.now(timezone.utc)
         row.enabled = True
         if row.first_seen_at is None:
             row.first_seen_at = datetime.now(timezone.utc)

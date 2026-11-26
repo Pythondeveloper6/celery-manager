@@ -26,7 +26,7 @@ from celery_manager.schedule_specs import (
     describe_spec,
     validate_spec,
 )
-from celery_manager.schedulers.base import ScheduleEntry
+from celery_manager.schedulers.base import ScheduleConflict, ScheduleEntry
 from celery_manager.schedulers.service import definition
 
 require_viewer = require_role("viewer")
@@ -136,7 +136,13 @@ def update(name: str, payload: UpdateSchedule, request: Request, username: str =
     try:
         if "schedule" in changes:
             _, changes["schedule"] = parse_schedule(changes["schedule"], config)
+        if getattr(backend, "checks_conflicts", False):
+            changes["expected"] = before
         saved = backend.update(name, **changes)
+    except ScheduleConflict as exc:
+        raise HTTPException(409, "The schedule changed since it was read; reload and try again") from exc
+    except KeyError as exc:
+        raise HTTPException(404, "Unknown schedule") from exc
     except (ValueError, TypeError, ScheduleSpecError) as exc:
         raise HTTPException(422, str(exc)) from exc
     change(config, request.app.state.cm_session_factory, username, "update", before, saved, name)
@@ -150,7 +156,15 @@ def delete(name: str, request: Request, username: str = Depends(require_admin)):
     before = backend.get(name)
     if before is None:
         raise HTTPException(404, "Unknown schedule")
-    backend.delete(name)
+    try:
+        if getattr(backend, "checks_conflicts", False):
+            backend.delete(name, expected=before)
+        else:
+            backend.delete(name)
+    except ScheduleConflict as exc:
+        raise HTTPException(409, "The schedule changed since it was read; reload and try again") from exc
+    except KeyError as exc:
+        raise HTTPException(404, "Unknown schedule") from exc
     change(config, request.app.state.cm_session_factory, username, "delete", before, None, name)
     return {"ok": True}
 

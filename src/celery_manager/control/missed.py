@@ -115,6 +115,7 @@ def list_missed_runs(
     now: datetime | None = None,
     max_results: int = DEFAULT_MAX_RESULTS,
     apply_edits: bool = True,
+    entry: dict | None = None,
 ) -> list[dict]:
     """Firings of `schedule_name` that were due in `[since, until]` and never
     arrived, oldest first, as `{"due_at": datetime, "kind": "never_sent" |
@@ -124,11 +125,14 @@ def list_missed_runs(
     stamped occurrence; `until` defaults to `now` and is clamped to
     `now - grace_seconds`. Returns `[]` for a schedule that is not in the
     host app's `beat_schedule` or has no stamped run yet. Pure read.
-    `apply_edits` is as for `control.schedules.effective_schedule`.
+    `apply_edits` is as for `control.schedules.effective_schedule`. A
+    disabled entry has no missed runs, and a re-enabled one is judged from
+    when it was re-enabled. Pass `entry` when the caller already has it.
     """
     now = as_aware_utc(now) if now is not None else datetime.now(timezone.utc)
-    entry = entries_for(session, celery_app).get(schedule_name)
     if entry is None:
+        entry = entries_for(session, celery_app).get(schedule_name)
+    if entry is None or not entry.get("enabled", True):
         return []
     first = first_stamped_occurrence(session, schedule_name)
     if first is None:
@@ -137,16 +141,16 @@ def list_missed_runs(
     since = as_aware_utc(since) if since is not None else now - DEFAULT_LOOKBACK
     since = max(since, first)
     override, edited_at = None, None
-    if apply_edits:
-        row = (
-            session.query(PeriodicSchedule.schedule_override, PeriodicSchedule.edited_at)
-            .filter_by(name=schedule_name)
-            .one_or_none()
-        )
-        if row is not None and row.schedule_override:
-            override, edited_at = row.schedule_override, row.edited_at
-    if edited_at is not None:
-        since = max(since, as_aware_utc(edited_at))
+    row = (
+        session.query(PeriodicSchedule.schedule_override, PeriodicSchedule.edited_at, PeriodicSchedule.enabled_changed_at)
+        .filter_by(name=schedule_name)
+        .one_or_none()
+    )
+    if apply_edits and row is not None and row.schedule_override:
+        override, edited_at = row.schedule_override, row.edited_at
+    for changed in (edited_at, row.enabled_changed_at if row is not None else None):
+        if changed is not None:
+            since = max(since, as_aware_utc(changed))
     upper = now - timedelta(seconds=grace_seconds)
     if until is not None:
         upper = min(upper, as_aware_utc(until))
@@ -181,10 +185,10 @@ def missed_run_counts(
     omitted). Same rules as `list_missed_runs`; pure read. Counts are capped
     at `DEFAULT_MAX_RESULTS` per schedule."""
     counts: dict[str, int] = {}
-    for name in entries_for(session, celery_app):
+    for name, entry in entries_for(session, celery_app).items():
         missed = list_missed_runs(
             session, celery_app, name, since=since, grace_seconds=grace_seconds, now=now,
-            apply_edits=apply_edits,
+            apply_edits=apply_edits, entry=entry,
         )
         if missed:
             counts[name] = len(missed)
