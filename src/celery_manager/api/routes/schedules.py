@@ -153,6 +153,14 @@ def _schedule_summary(s, config) -> dict:
     }
 
 
+def _refresh_after_backend_pause(config, session, row):
+    # The backend entry's `enabled` changed; resync now so the list, skip-next
+    # and missed-run checks don't read the old state for a sync interval.
+    if config.pause_mode == "backend" and config._schedule_service.backend.writable:
+        config._schedule_service.refresh(force=True)
+        session.refresh(row)
+
+
 class PauseScheduleRequest(BaseModel):
     # Optional auto-resume time. Naive = UTC. Must be in the future (422 otherwise).
     until: datetime | None = None
@@ -183,6 +191,7 @@ def pause_whole_schedule(
             raise HTTPException(status_code=422, detail="`until` must be a time in the future.") from exc
         if row is None:
             raise HTTPException(status_code=404, detail="Unknown schedule.")
+        _refresh_after_backend_pause(config, session, row)
         return _schedule_summary(row, request.app.state.cm_config)
 
 
@@ -194,8 +203,14 @@ def resume_whole_schedule(name: str, request: Request, username: str = Depends(r
     with session_factory() as session:
         if session.query(PeriodicSchedule.id).filter_by(name=name).first() is None:
             raise HTTPException(status_code=404, detail="Unknown schedule.")
-        set_backend_pause(request.app.state.cm_config, name, False)
+        config = request.app.state.cm_config
+        # Only re-enable an entry this pause disabled: resuming a schedule
+        # that is not paused must not turn on an entry disabled elsewhere.
+        if session.query(PeriodicSchedule.paused_at).filter_by(name=name).scalar() is not None:
+            set_backend_pause(config, name, False)
         row = resume_schedule(session, name, username)
+        if row is not None:
+            _refresh_after_backend_pause(config, session, row)
         if row is None:
             raise HTTPException(status_code=404, detail="Unknown schedule.")
         return _schedule_summary(row, request.app.state.cm_config)

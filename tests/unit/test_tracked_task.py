@@ -78,3 +78,40 @@ def test_backend_pause_uses_resolved_writable_backend():
                              _schedule_service=SimpleNamespace(backend=backend))
     set_backend_pause(config, "hourly", True)
     assert backend.enabled is False
+
+
+def test_beat_stamped_run_is_filed_under_the_entry_and_skipped_while_paused():
+    from datetime import datetime, timezone
+
+    from celery_manager.control.schedules import pause_schedule, resume_schedule
+    from celery_manager.db.models import PeriodicSchedule
+    from celery_manager.occurrences import OCCURRENCE_HEADER, SCHEDULE_HEADER
+
+    app = Celery("tracked-pause", broker="memory://", backend="cache+memory://",
+                 task_cls="celery_manager.task:TrackedTask")
+    app.conf.task_always_eager = True
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    configure(sessions, config=CeleryManagerConfig(celery_app=app, db_url="sqlite:///:memory:"))
+    ran = []
+
+    @app.task(name="shop.tasks.digest")
+    def digest():
+        ran.append(1)
+
+    with sessions() as session:
+        session.add(PeriodicSchedule(name="nightly-digest", task_name="shop.tasks.digest", schedule_spec="1d"))
+        session.commit()
+        pause_schedule(session, "nightly-digest", "operator")
+    occurrence = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    headers = {SCHEDULE_HEADER: "nightly-digest", OCCURRENCE_HEADER: occurrence}
+    digest.apply(task_id="paused-1", headers=headers)
+    with sessions() as session:
+        resume_schedule(session, "nightly-digest", "operator")
+    digest.apply(task_id="resumed-1", headers=headers)
+
+    assert ran == [1]
+    with sessions() as session:
+        rows = {r.task_id: (r.status, r.schedule_name) for r in session.query(TaskRun)}
+    assert rows == {"paused-1": ("skipped", "nightly-digest"), "resumed-1": ("succeeded", "nightly-digest")}

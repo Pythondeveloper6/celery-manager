@@ -635,6 +635,11 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
             # entry name is what overrides and pauses are keyed by, so it
             # wins over `schedule_name` for those checks.
             beat_occurrence = _beat_occurrence(task_self)
+            if beat_occurrence and schedule_name is None and not extracted:
+                # No explicit name (TrackedTask, bare @track()): file the run
+                # under the beat entry that sent it, not the task name, or
+                # missed-run detection never sees it arrive.
+                effective_schedule_name = beat_occurrence.schedule_name
             control_schedule_name = beat_occurrence.schedule_name if beat_occurrence else effective_schedule_name
             occurrence_fields = {
                 "occurrence_at": beat_occurrence.occurrence if beat_occurrence else None,
