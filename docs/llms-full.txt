@@ -247,9 +247,9 @@ Two pieces do most of the work, so it helps to know them first:
 - **The events listener** (`celery-manager events`) watches Celery and
   records every task run. Most of what you see in the dashboard comes from
   it, with no change to your tasks.
-- **The `@track` decorator** is optional, per task. Add it when you want
-  log capture, live progress, or the ability to skip and pause scheduled
-  runs. Without it, a scheduled task always runs.
+- **Task tracking** enables log capture, live progress, and schedule controls.
+  Set `task_cls="celery_manager.task:TrackedTask"` on the Celery app to cover
+  every task, or use `@track` for individual tasks and per-task options.
 
 ## See what your tasks are doing
 
@@ -264,12 +264,12 @@ they came from.
 In the dashboard: click any run. [Read more](dashboard.md#task-detail)
 
 **Log capture.** Log lines your task writes while it runs are saved with
-that run and shown on its page. Needs `@track`.
+that run and shown on its page. Needs task tracking.
 [Read more](decorator.md#what-log-capture-actually-captures)
 
 **Live progress.** Call `report_progress(current, total, message)` inside a
 long task and watch a progress bar, elapsed time and an estimated finish
-while it runs. Needs `@track`.
+while it runs. Needs task tracking.
 [Read more](progress.md)
 
 **Workflows.** When a run is part of a chain, group or chord, its page shows
@@ -306,10 +306,13 @@ you confirm. [Read more](queues.md#bulk-cancel)
 
 ## Control periodic tasks (beat schedules)
 
-All of these need `@track` on the task. celery-manager doesn't change your
-beat schedule: beat still sends the task, and `@track` makes it skip. Run
-beat with `-S celery_manager.beat:Scheduler` so each firing carries its
-scheduled time and a skip applies only to that firing.
+All of these need task tracking, either through `TrackedTask` or `@track`.
+Beat still sends the task; the worker skips its body when a control applies.
+Run beat with `-S celery_manager.beat:Scheduler` so each firing carries its
+scheduled time. Set beat's `celery_manager_db_url` to record firings, including
+schedules that have never produced a worker run. With a writable scheduler
+backend, `pause_mode="backend"` also disables the beat entry while paused;
+this mode does not support timed pauses.
 
 **Skip one upcoming run.** Open a schedule to see its next runs, and skip or
 cancel just one of them. The rest of the schedule carries on as normal.
@@ -337,8 +340,8 @@ there is nothing to resume afterwards.
 In the dashboard: **Schedules**, under the schedule list.
 [Read more](schedules.md#maintenance-windows)
 
-**Missed runs.** A scheduled run that was due but never arrived (beat was
-down, the message was lost) is listed on the schedule's page and counted on
+**Missed runs.** A scheduled run that beat never sent, or sent without a worker
+run arriving, is listed with its reason on the schedule's page and counted on
 the schedule list, instead of going unnoticed.
 In the dashboard: **Schedules**, then a schedule's name.
 [Read more](decorator.md#missed-run-detection)
@@ -3101,7 +3104,15 @@ history row. It is advisory observation, not scheduling or leader election.
 
 <!-- docs/decorator.md -->
 
-# The `@track` decorator
+# Task tracking and the `@track` decorator
+
+To track every task without adding a decorator to each module, create the
+Celery app with `task_cls="celery_manager.task:TrackedTask"` and call
+`celery_manager.setup(config)` in each worker process. Set `track_tasks` or
+`track_exclude` in `CeleryManagerConfig` to include or exclude task names
+using glob patterns. A task that also uses `@track(...)` keeps its per-task
+options and is wrapped once. Run `celery-manager doctor` to see scheduled
+tasks that have neither tracking path.
 
 Apply `celery_manager.decorator.track()` above `@app.task` to opt a task
 into three things:
@@ -3159,7 +3170,7 @@ dashboard's periodic schedules (i.e. the key under `beat_schedule` in your
 Celery app's config). If omitted, it defaults to the task's registered
 name — fine as long as you only have one schedule per task.
 
-Tasks *without* `@track` are still visible in the dashboard (the events
+Tasks without `@track` or `TrackedTask` are still visible in the dashboard (the events
 listener picks up every task automatically) but don't support
 per-occurrence pause/cancel or full log capture — only the traceback
 Celery already provides on failure. ([`report_progress()`](progress.md) is
@@ -3378,7 +3389,9 @@ matched against the runs that actually happen.
 Beat then adds headers to every message it sends: `cm_schedule` (the entry
 name) and `cm_occurrence` (the scheduled time of this firing, computed from
 the schedule, the same value the dashboard lists), `cm_sent_at`, and
-`cm_interval` for interval schedules. Beat needs no database access for this.
+`cm_interval` for interval schedules. Set
+`app.conf.celery_manager_db_url` to the dashboard database URL in beat to
+record each send and enable detection of schedules that never fired.
 
 On every call, the wrapper reads those headers and looks for an unconsumed
 `ScheduleOverride` row for that entry and that occurrence:
@@ -3406,14 +3419,16 @@ fallback switches off by itself.
 ### Missed-run detection
 
 The same stamps let the dashboard notice a run that was due but never
-arrived (beat was down, the message was lost, no worker took it). The
+sent or was sent without a worker run arriving. The
 schedule page lists them under **Missed runs**, and the schedule list shows
 a badge with the last 24 hours' count. Rules:
 
-- Judging starts at the schedule's **first stamped run**. Before that a
-  missing run cannot be told from an unstamped one, so until beat runs
-  `celery_manager.beat:Scheduler` (and the task uses `@track`) the page says
-  detection is not active yet.
+- Judging starts at the schedule's first stamped run or beat firing. If beat
+  records to the dashboard database, a schedule with no firing is judged
+  from when the backend sync first saw it, after one period plus grace.
+- A beat firing without a matching worker run is marked **sent, never
+  arrived** when this schedule has worker tracking. A missing beat firing is
+  marked **never sent**.
 - A run **arrived** if any `task_runs` row has its `occurrence_at`, whatever
   its status: skipped (including runs skipped by a whole-schedule pause),
   revoked and failed runs all reached the worker.
