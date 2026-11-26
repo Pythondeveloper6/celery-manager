@@ -80,7 +80,12 @@ operator or admin for captured logs. See [production policies](production.md#saf
 | Add or remove a worker pool process | `POST /api/workers/{worker}/pool/grow`, `.../shrink` | `operator` |
 | Make a worker start or stop consuming a queue | `POST /api/workers/{worker}/queues/add`, `.../cancel` | `operator` |
 | Set a task rate limit | `POST /api/tasks/rate-limit` | `operator` |
+| Set a task's time limits | `POST /api/tasks/time-limit` | `operator` |
+| Change a worker's autoscale bounds | `POST /api/workers/{worker}/autoscale` | `operator` |
+| Flower-shaped revoke, start, pool grow/shrink | `POST /api/flower/task/revoke/{id}`, `.../task/async-apply/{name}`, `.../worker/pool/grow/{worker}`, `.../shrink/{worker}` | `operator` |
 | Shut down a worker | `POST /api/workers/{worker}/shutdown` | `admin` |
+| Restart a worker's pool | `POST /api/workers/{worker}/pool-restart` | `admin` |
+| Create or revoke an API token | `POST /api/tokens`, `DELETE /api/tokens/{id}` | `admin` |
 | Purge a queue | `POST /api/queues/{name}/purge` | `admin` |
 | See delayed (ETA/countdown) tasks, arguments masked | `GET /api/delayed` | `viewer` |
 | See delayed tasks' argument values | `GET /api/delayed?reveal_args=true` | `operator` |
