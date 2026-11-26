@@ -3,6 +3,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -95,6 +96,25 @@ def test_gives_up_after_consecutive_failures(sessions, monkeypatch):
         EventListener(cfg, sessions).run(enable_events=False)
     with sessions() as session:
         assert json.loads(session.get(AppSetting, HEARTBEAT_KEY).value)["events_failed"] == 3
+
+
+def test_concurrent_heartbeat_writers_share_one_durable_row(sessions):
+    from celery_manager.events.liveness import write_heartbeat
+
+    stats = ListenerStats()
+    start = threading.Barrier(12)
+
+    def write(_):
+        start.wait(timeout=5)
+        write_heartbeat(sessions, stats)
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        list(pool.map(write, range(12)))
+
+    with sessions() as session:
+        rows = session.query(AppSetting).filter_by(key=HEARTBEAT_KEY).all()
+        assert len(rows) == 1
+        assert json.loads(rows[0].value)["instance_id"] == stats.instance_id
 
 
 def _beat(session, now, **fields):

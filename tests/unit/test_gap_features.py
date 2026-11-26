@@ -319,6 +319,59 @@ def test_workers_read_serves_snapshot_without_inspecting(monkeypatch):
     assert body["snapshot"] is True
 
 
+def test_collect_once_stores_worker_and_queue_snapshots(monkeypatch):
+    from celery_manager.control import queues, workers
+
+    app, session_factory = _app(inspect_source="snapshot")
+    monkeypatch.setattr(workers, "inspect_workers", lambda *args: [{"hostname": "w1@host"}])
+    monkeypatch.setattr(queues, "list_queues", lambda *args: {"queues": [{"name": "celery", "messages": 4}]})
+
+    snapshots.collect_once(app.state.cm_config, session_factory)
+
+    with session_factory() as session:
+        worker_value, worker_at = snapshots.read(session, "workers")
+        queue_value, queue_at = snapshots.read(session, "queues")
+    assert worker_value == [{"hostname": "w1@host"}] and worker_at is not None
+    assert queue_value == {"queues": [{"name": "celery", "messages": 4}]} and queue_at is not None
+
+
+def test_collect_once_keeps_last_snapshot_when_source_fails(monkeypatch):
+    from celery_manager.control import queues, workers
+
+    app, session_factory = _app(inspect_source="snapshot")
+    old_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    with session_factory() as session:
+        snapshots._store(session, "workers", [{"hostname": "last@host"}], old_at)
+        snapshots._store(session, "queues", {"queues": []}, old_at)
+
+    def unavailable(*args):
+        raise RuntimeError("worker inspection unavailable")
+
+    monkeypatch.setattr(workers, "inspect_workers", unavailable)
+    monkeypatch.setattr(queues, "list_queues", lambda *args: {"queues": [{"name": "celery"}]})
+    snapshots.collect_once(app.state.cm_config, session_factory)
+
+    with session_factory() as session:
+        worker_value, worker_at = snapshots.read(session, "workers")
+        queue_value, queue_at = snapshots.read(session, "queues")
+    assert worker_value == [{"hostname": "last@host"}] and worker_at == old_at
+    assert queue_value == {"queues": [{"name": "celery"}]} and queue_at > old_at
+
+
+def test_snapshot_background_worker_is_a_noop_or_stops_cleanly(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    called = threading.Event()
+    config = SimpleNamespace(inspect_source="snapshot", celery_app=object(), inspect_snapshot_seconds=60)
+    monkeypatch.setattr(snapshots, "collect_once", lambda *_: called.set())
+    assert snapshots.start_in_background(SimpleNamespace(inspect_source="live", celery_app=object()), None) is None
+    assert snapshots.start_in_background(SimpleNamespace(inspect_source="snapshot", celery_app=None), None) is None
+    stop = snapshots.start_in_background(config, None)
+    assert called.wait(2)
+    stop.set()
+
+
 def test_livez_and_readyz_need_no_credentials():
     app, _ = _app()
     client = TestClient(app, base_url="https://testserver")

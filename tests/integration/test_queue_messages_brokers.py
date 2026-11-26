@@ -93,7 +93,10 @@ def test_redis_browse_move_delete_then_a_worker_runs_only_the_right_tasks():
         ]
         first = page["messages"][0]
         assert first["task_name"] == "cm.peek.record"
-        assert first["args"] == "('plain-1',)" and "s3" in first["kwargs"]
+        assert first["args"] == "('plain-1',)"
+        # Queue browsing applies the same secret redaction as the dashboard;
+        # never expose a task's sensitive kwargs in an operator response.
+        assert first["kwargs"] == "{'secret': '[redacted]'}"
         assert [m["position"] for m in page["messages"]] == list(range(6))
         assert page["messages"][2]["run"] == {"status": "queued"}
 

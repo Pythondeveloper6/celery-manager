@@ -6,6 +6,20 @@ All notable changes to celery-manager are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Zoned crontab projections now calculate elapsed time across daylight-saving
+  transitions from UTC instants while retaining Celery's calendar schedule
+  calculation, so the displayed next occurrence matches the scheduled local
+  wall time.
+- The events listener serializes concurrent first heartbeat writes and retries
+  a competing insert, preventing a startup race from being counted as a task
+  event failure.
+- Deployment annotation labels and revisions validate their portable UTF-16
+  storage bound at the API boundary, including strings containing emoji.
+- The minimum Pydantic version is 2.1.1. Older 2.0 releases accumulated JSON
+  schema hooks as the dashboard app was rebuilt, eventually breaking OpenAPI
+  generation.
+
 ## [0.3.0b2] — 2026-11-26
 
 ### Changed

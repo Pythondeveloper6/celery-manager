@@ -41,13 +41,11 @@ dependencies = [
     # celery_manager.db.migrate.
     "alembic>=1.13,<2.0",
     "fastapi>=0.110,<1.0",
-    # Declared explicitly even though FastAPI already pulls it in: the route
-    # modules `import pydantic` directly, and the `>=2` floor is load-bearing
-    # rather than cosmetic. FastAPI still supports pydantic v1, so without
-    # this an install could resolve to v1 and then fail at import time on
-    # `ConfigDict` / `model_dump(exclude_unset=...)` in
-    # api/routes/settings.py.
-    "pydantic>=2.0,<3.0",
+    # Declared explicitly even though FastAPI already pulls it in: route
+    # modules import Pydantic directly. Pydantic 2.0.x accumulates JSON-schema
+    # hooks when this app is built repeatedly, eventually recursing in OpenAPI.
+    # FastAPI 0.110 excludes 2.1.0, so 2.1.1 is the first compatible fixed floor.
+    "pydantic>=2.1.1,<3.0",
     "bcrypt>=4.1",
     "itsdangerous>=2.1",
 ]
