@@ -8569,6 +8569,22 @@ replacement.
   2022 in the **Storage** job, through `tests.release_gate`, which fails if
   any selected check skipped.
 
+## Tested combinations
+
+What CI runs end to end with real worker, events and dashboard processes
+(`.github/workflows/ci.yml`, jobs **e2e** and **lowest-versions**):
+
+| Pool | Python | Celery | Broker | Database |
+|---|---|---|---|---|
+| prefork, threads, solo | 3.12 | newest 5.x | Redis 7 | SQLite |
+| gevent (allowed to fail) | 3.12 | newest 5.x | Redis 7 | SQLite |
+| prefork | 3.10 | lowest allowed (5.3) | Redis 7 | SQLite |
+
+The storage contract and upgrade tests run separately against PostgreSQL 16,
+MySQL 8.4 and SQL Server 2022 (**Storage** job), and the brokers job against
+Redis 7 and RabbitMQ 3. Keep this table in step with the CI file when a job
+changes.
+
 ## Towards 1.0
 
 The `Development Status` classifier moved to Beta with `0.3.0b1` and moves

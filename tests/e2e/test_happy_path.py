@@ -194,3 +194,23 @@ def test_packaging_facts():
                           capture_output=True, text=True)
     assert done.returncode == 0, done.stdout + done.stderr
     assert Path(_exe("celery-manager")).name
+
+
+def test_cooperative_cancel_ends_as_cancelled(client, start_task, wait_run):
+    tid = start_task("demo.long_import", [120])
+    wait_run(tid, "started")
+    r = client.post(f"/api/tasks/{tid}/cancel", params={"mode": "cooperative"})
+    assert r.status_code == 200, r.text
+    run = wait_run(tid, "cancelled", timeout=20)
+    assert run["cancel_requested_by"] == "admin"
+    assert run["attempts"] and run["attempts"][-1]["status"] == "cancelled"
+
+
+@pytest.mark.skipif(__import__("os").environ.get("CM_E2E_POOL", "threads") != "prefork",
+                    reason="terminating a child process needs the prefork pool")
+def test_terminate_kills_the_child_and_records_revoked(client, start_task, wait_run):
+    tid = start_task("demo.long_import", [120])
+    wait_run(tid, "started")
+    r = client.post(f"/api/tasks/{tid}/cancel", params={"mode": "terminate", "signal": "SIGTERM"})
+    assert r.status_code == 200, r.text
+    run = wait_run(tid, "revoked", timeout=30)

@@ -40,6 +40,11 @@ All notable changes to celery-manager are recorded here. The format follows
   and judges a schedule that never fired from when it was first seen.
   `pause_mode = "backend"` also disables the beat entry on a writable scheduler
   backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Wider CI matrix.** The end-to-end stack runs on the prefork, threads and
+  solo pools (gevent allowed to fail), with prefork-only checks for
+  terminate, and a lowest-versions job runs the unit and end-to-end tiers on
+  Python 3.10 with Celery 5.3 and the lowest allowed SQLAlchemy. The tested
+  combinations are listed in `docs/stability.md`.
 - **Closer to Flower.** Audited worker controls for pool restart, autoscale
   bounds and runtime task time limits. Flower-shaped `queues/length`,
   `task/revoke`, `task/async-apply` and `worker/pool/grow|shrink` under
