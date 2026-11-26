@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 from celery_manager.api.deps import Principal, get_current_user, require_operator
 from celery_manager.api.serialization import utc, utc_bound
 from celery_manager.auth.roles import role_allows
+from celery_manager.control.attempts import list_attempts
 from celery_manager.control.latency import wait_seconds
+from celery_manager.control.policy import DispatchDenied
 from celery_manager.control.tasks import (
     MAX_PAGE_SIZE,
     ArgumentsRedacted,
@@ -26,9 +28,6 @@ from celery_manager.control.tasks import (
     retry_task,
     start_task,
 )
-
-from celery_manager.control.attempts import list_attempts  # noqa: E402
-from celery_manager.control.policy import DispatchDenied  # noqa: E402
 
 router = APIRouter(prefix="/api/tasks")
 

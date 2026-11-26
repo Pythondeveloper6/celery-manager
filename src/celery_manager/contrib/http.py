@@ -66,7 +66,7 @@ def record_call(url, method, status, started, error=None, size=None, kind="http"
         with guarded(config), sessions() as session:
             session.add(row)
             session.commit()
-    except Exception:  # noqa: BLE001 - telemetry must never fail the call
+    except Exception:
         logger.debug("celery-manager: external call not recorded", exc_info=True)
 
 

@@ -15,8 +15,8 @@ from celery_manager.control.workers import (
     restart_pool,
     set_autoscale,
     set_consumer,
-    set_time_limit,
     set_rate_limit,
+    set_time_limit,
     shutdown_worker,
 )
 

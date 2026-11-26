@@ -1,6 +1,5 @@
 """Optimistic conflict checks for RedBeat edits, enabled-state stamping in the
 schedule sync, and the quiet refresh used by long-running processes."""
-from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 

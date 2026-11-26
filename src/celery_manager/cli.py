@@ -581,7 +581,9 @@ def main(argv: list[str] | None = None) -> None:
         from celery_manager.reconcile import start_in_background as start_reconciler
 
         start_reconciler(config, session_factory)  # a no-op when reconcile_interval_seconds is 0
-        from celery_manager.control.snapshots import start_in_background as start_snapshots
+        from celery_manager.control.snapshots import (
+            start_in_background as start_snapshots,
+        )
 
         start_snapshots(config, session_factory)  # a no-op unless inspect_source == "snapshot"
         EventListener(config, session_factory).run(

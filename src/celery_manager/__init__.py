@@ -53,12 +53,16 @@ _LAZY = {
 
 if TYPE_CHECKING:
     from celery_manager import control
+    from celery_manager.cancel import (
+        TaskCancelled,
+        cancel_requested,
+        raise_if_cancelled,
+    )
     from celery_manager.config import CeleryManagerConfig
     from celery_manager.decorator import track
     from celery_manager.links import task_url
     from celery_manager.llm import record_llm_usage
     from celery_manager.observation import RunObserver, current_run
-    from celery_manager.cancel import TaskCancelled, cancel_requested, raise_if_cancelled
     from celery_manager.progress import report_progress
     from celery_manager.publish import install_publish_hook
     from celery_manager.runtime import setup

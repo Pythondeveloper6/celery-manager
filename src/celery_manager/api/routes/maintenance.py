@@ -8,7 +8,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from celery_manager.api.deps import get_current_user, require_operator, require_role
 from celery_manager.api.serialization import utc
-from celery_manager.schedulers.service import entries_for
 from celery_manager.control.maintenance import (
     DuplicateWindowName,
     MaintenanceWindowError,
@@ -21,6 +20,7 @@ from celery_manager.control.maintenance import (
     update_window,
     window_fields,
 )
+from celery_manager.schedulers.service import entries_for
 
 router = APIRouter(prefix="/api/maintenance-windows")
 

@@ -159,7 +159,7 @@ def workers(request: Request, status: bool = False, username: str = Depends(get_
 # operations, roles and dispatch policy, so a script only changes its base URL
 # and credential.
 
-from celery_manager.api.deps import require_operator  # noqa: E402
+from celery_manager.api.deps import require_operator
 
 
 @router.get("/queues/length")

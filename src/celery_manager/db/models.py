@@ -408,17 +408,17 @@ class WorkerState(Base):
     processed: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 # Register separately defined workflow tables on the same metadata.
+from celery_manager.db.api_tokens import ApiToken  # noqa: F401
 from celery_manager.db.auth_state import BrowserSession, LoginBackoff  # noqa: F401
+from celery_manager.db.external import ExternalCall  # noqa: F401
 from celery_manager.db.failures import FailureResolution, FailureResolutionHistory  # noqa: F401
+from celery_manager.db.firings import ScheduleFiring  # noqa: F401
 from celery_manager.db.health_data import (  # noqa: F401
     ExpectedSchedulerCommand,
     HealthObservation,
     SchedulerInstance,
 )
-from celery_manager.db.firings import ScheduleFiring  # noqa: F401
-from celery_manager.db.run_control import RevokedTask, TaskRunAttempt  # noqa: F401
-from celery_manager.db.external import ExternalCall  # noqa: F401
-from celery_manager.db.api_tokens import ApiToken  # noqa: F401
 from celery_manager.db.llm import LlmCall  # noqa: F401
 from celery_manager.db.operations import OperationAnnotation  # noqa: F401
+from celery_manager.db.run_control import RevokedTask, TaskRunAttempt  # noqa: F401
 from celery_manager.db.worker_history import WorkerHeartbeatSample  # noqa: F401

@@ -213,4 +213,4 @@ def test_terminate_kills_the_child_and_records_revoked(client, start_task, wait_
     wait_run(tid, "started")
     r = client.post(f"/api/tasks/{tid}/cancel", params={"mode": "terminate", "signal": "SIGTERM"})
     assert r.status_code == 200, r.text
-    run = wait_run(tid, "revoked", timeout=30)
+    wait_run(tid, "revoked", timeout=30)
