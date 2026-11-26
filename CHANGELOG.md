@@ -40,6 +40,12 @@ All notable changes to celery-manager are recorded here. The format follows
   and judges a schedule that never fired from when it was first seen.
   `pause_mode = "backend"` also disables the beat entry on a writable scheduler
   backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Closer to Flower.** Audited worker controls for pool restart, autoscale
+  bounds and runtime task time limits. Flower-shaped `queues/length`,
+  `task/revoke`, `task/async-apply` and `worker/pool/grow|shrink` under
+  `/api/flower/`, through the same roles, dispatch policy and audit log.
+  Scoped API tokens for scripts (`/api/tokens`, admin only; hashed, with role,
+  owner, expiry and last use; migration `0031`), audited as `token:<name>`.
 - **Outbound calls without hand-written code.** `celery_manager.contrib.http.instrument()`
   records requests and httpx calls made inside tracked runs (target, method,
   status, duration, error class, size; never paths, query strings, headers or

@@ -187,6 +187,39 @@ def resize_pool(celery_app: Celery, session, username: str, worker: str, delta: 
     return result
 
 
+def restart_pool(celery_app: Celery, session, username: str, worker: str, timeout: float) -> dict:
+    """Replace the worker's pool processes (a leaking pool) without stopping
+    the worker. Celery refuses unless the worker runs with
+    `worker_pool_restarts = True`; that refusal is the reply's error."""
+    replies = _broadcast(celery_app.control.pool_restart, destination=[worker], reply=True, timeout=timeout, limit=1)
+    result = _summarise_replies(replies)
+    record_audit(session, username, "worker_pool_restart", "worker", worker, result)
+    return result
+
+
+def set_autoscale(celery_app: Celery, session, username: str, worker: str, maximum: int, minimum: int, timeout: float) -> dict:
+    """Change the autoscaler bounds of a worker started with `--autoscale`."""
+    if minimum < 0 or maximum < 1 or minimum > maximum:
+        raise ValueError("autoscale needs 0 <= min <= max and max >= 1")
+    replies = _broadcast(celery_app.control.autoscale, maximum, minimum, destination=[worker], reply=True,
+                         timeout=timeout, limit=1)
+    result = _summarise_replies(replies)
+    record_audit(session, username, "worker_autoscale", "worker", worker, {"max": maximum, "min": minimum, **result})
+    return result
+
+
+def set_time_limit(celery_app: Celery, session, username: str, task_name: str, soft: float | None,
+                   hard: float | None, timeout: float) -> dict:
+    """Change `task_name`'s soft and hard time limits on running workers
+    (in memory only, like rate limits)."""
+    if (soft is not None and soft <= 0) or (hard is not None and hard <= 0) or (soft and hard and soft > hard):
+        raise ValueError("time limits must be positive seconds, with soft <= hard")
+    replies = _broadcast(celery_app.control.time_limit, task_name, soft=soft, hard=hard, reply=True, timeout=timeout)
+    result = _summarise_replies(replies)
+    record_audit(session, username, "task_time_limit", "task", task_name, {"soft": soft, "hard": hard, **result})
+    return result
+
+
 def set_consumer(celery_app: Celery, session, username: str, worker: str, queue: str, consume: bool, timeout: float) -> dict:
     """Start (`consume=True`) or stop consuming from `queue` on one worker.
     Like every remote control command this lasts until the worker restarts;

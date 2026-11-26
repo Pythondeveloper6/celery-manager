@@ -54,6 +54,19 @@ def get_current_principal(
     if cached is not None:
         return cached
     config = request.app.state.cm_config
+    # A scoped API token (scripts): checked before the host and any OIDC
+    # provider, which would reject its non-JWT bearer value.
+    bearer = request.headers.get("authorization", "")
+    if bearer[:7].lower() == "bearer " and bearer[7:].strip().startswith("cmk_"):
+        from celery_manager.auth.api_tokens import authenticate
+        if config.tenant_resolver is not None:
+            # A token carries no tenant; never let it read across tenants.
+            raise HTTPException(status_code=403, detail="API tokens are not available with tenant scoping")
+        with request.app.state.cm_session_factory() as db_session:
+            token = authenticate(db_session, bearer[7:].strip())
+        if token is None:
+            raise HTTPException(status_code=401, detail="invalid or expired API token")
+        return CurrentUser(username=f"token:{token.name}", role=token.role, source="token")
     # The host app first. Its answer is authoritative whenever it has one:
     # someone signed in to the host is that person here too, whatever stale
     # cm_session cookie the browser still holds, and a host user refused

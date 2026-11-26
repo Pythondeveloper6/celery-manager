@@ -306,6 +306,8 @@ def create_app(config: CeleryManagerConfig):
     app.include_router(alert_routes.router)
     from celery_manager.api.routes.flower import router as flower_router
     app.include_router(flower_router)
+    from celery_manager.api.routes.tokens import router as token_router
+    app.include_router(token_router)
 
     if config.live_stream == "sse":
         @app.get("/api/stream")

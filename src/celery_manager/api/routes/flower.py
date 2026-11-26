@@ -6,8 +6,9 @@ keep working when pointed at `<celery-manager>/api/flower/...` instead,
 with celery-manager's authentication in front (a session cookie or the host's
 bearer token, never Flower's basic auth).
 
-Only reads are offered. Flower's control endpoints (revoke, rate limit, pool
-resize, ...) are not: use celery-manager's audited `/api/v1` routes for those.
+Flower's most used writes are mirrored too (queue lengths, revoke,
+async-apply, pool grow and shrink); they go through celery-manager's roles,
+dispatch policy and audit log. Other Flower control endpoints are not offered.
 Data comes from celery-manager's stored history, so tasks older than retention
 are absent and `received`/`started` are the recorded timestamps.
 """
@@ -151,3 +152,73 @@ def workers(request: Request, status: bool = False, username: str = Depends(get_
             return {row.hostname: row.state == "online" for row in rows}
         return {row.hostname: {"status": row.state == "online", "state": row.state, "active": row.active,
                                "processed": row.processed, "last_seen": _epoch(row.last_seen_at)} for row in rows}
+
+
+# --- Flower-shaped writes ----------------------------------------------------
+# Same paths and reply shapes as Flower, mapped onto celery-manager's audited
+# operations, roles and dispatch policy, so a script only changes its base URL
+# and credential.
+
+from celery_manager.api.deps import require_operator  # noqa: E402
+
+
+@router.get("/queues/length")
+def queues_length(request: Request, username: str = Depends(get_current_user)):
+    from celery_manager.control.queues import list_queues
+    config = request.app.state.cm_config
+    with request.app.state.cm_session_factory() as session:
+        listing = list_queues(config.celery_app, session, include_workers=False)
+    return {"active_queues": [{"name": q["name"], "messages": q.get("depth") or 0} for q in listing["queues"]]}
+
+
+@router.post("/task/revoke/{task_id}")
+def revoke(task_id: str, request: Request, principal: Principal, terminate: bool = False,
+           signal: str = "SIGTERM", username: str = Depends(require_operator)):
+    from celery_manager.control.tasks import cancel_task
+    if signal == "SIGKILL" and principal.role != "admin":
+        raise HTTPException(403, "SIGKILL requires the admin role")
+    with request.app.state.cm_session_factory() as session:
+        try:
+            cancel_task(request.app.state.cm_config.celery_app, task_id, session=session, username=username,
+                        mode="terminate" if terminate else "revoke", signal=signal.upper() if terminate else None)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    return {"message": f"Revoked '{task_id}'"}
+
+
+@router.post("/task/async-apply/{task_name}")
+def async_apply(task_name: str, request: Request, principal: Principal, payload: dict | None = None,
+                username: str = Depends(require_operator)):
+    from celery_manager.control.tasks import start_task
+    payload = payload or {}
+    args, kwargs = payload.get("args") or [], payload.get("kwargs") or {}
+    if not isinstance(args, list) or not isinstance(kwargs, dict):
+        raise HTTPException(400, "args must be a list and kwargs an object")
+    with request.app.state.cm_session_factory() as session:
+        session.info["cm_principal"] = principal
+        task_id = start_task(request.app.state.cm_config.celery_app, task_name, args, kwargs,
+                             session=session, username=username, countdown=payload.get("countdown"))
+    return {"task-id": task_id, "state": "PENDING"}
+
+
+def _flower_pool(request: Request, worker: str, delta: int, username: str):
+    from celery_manager.control.workers import WorkerControlError, resize_pool
+    with request.app.state.cm_session_factory() as session:
+        try:
+            resize_pool(request.app.state.cm_config.celery_app, session, username, worker, delta,
+                        request.app.state.cm_config.inspect_timeout_seconds)
+        except WorkerControlError as exc:
+            raise HTTPException(503, str(exc)) from exc
+    return {"message": f"{'Growing' if delta > 0 else 'Shrinking'} '{worker}' worker's pool by {abs(delta)}"}
+
+
+@router.post("/worker/pool/grow/{worker}")
+def flower_pool_grow(worker: str, request: Request, n: int = Query(1, ge=1, le=100),
+                     username: str = Depends(require_operator)):
+    return _flower_pool(request, worker, n, username)
+
+
+@router.post("/worker/pool/shrink/{worker}")
+def flower_pool_shrink(worker: str, request: Request, n: int = Query(1, ge=1, le=100),
+                       username: str = Depends(require_operator)):
+    return _flower_pool(request, worker, -n, username)
