@@ -278,6 +278,12 @@ class CeleryManagerConfig:
     engine_options: dict = field(default_factory=dict)
     scheduler_backend: object = None
     schedule_sync_interval_seconds: float = 30.0
+    # Tasks wrapped by celery_manager.task:TrackedTask: fnmatch globs, minus
+    # track_exclude. "task" pause only skips the body; "backend" also disables
+    # the beat entry on a writable scheduler_backend (no timed pauses).
+    track_tasks: str | tuple[str, ...] = "*"
+    track_exclude: str | tuple[str, ...] = ()
+    pause_mode: str = "task"
     cron_parser: object = None
     tenant_resolver: Callable[[Request, object], str | None | Awaitable[str | None]] | None = None
     lock_provider: object = None  # LockProvider; Redis is inferred only for a Redis broker
@@ -404,6 +410,8 @@ class CeleryManagerConfig:
             raise ValueError("oidc_role_refresh_seconds must be positive seconds")
         if self.oidc_client_id and not any(hasattr(p, "validate") and hasattr(p, "discovery") for p in self.principal_providers):
             raise ValueError("oidc_client_id needs an OIDCBearerProvider in principal_providers")
+        if self.pause_mode not in ("task", "backend"):
+            raise ValueError("pause_mode must be 'task' or 'backend'")
         if self.schedule_sync_interval_seconds < 0:
             raise ValueError("schedule_sync_interval_seconds cannot be negative")
         if isinstance(self.startable_tasks, str):

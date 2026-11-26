@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from datetime import datetime, timezone
 
 from celery_manager.db.models import PeriodicSchedule
 from celery_manager.schedule_specs import spec_from_schedule
@@ -68,6 +69,8 @@ def sync_from_backend(session, backend, entries=None):
         row.args, row.kwargs = json.dumps(entry.args, default=repr), json.dumps(entry.kwargs, default=repr)
         row.enabled, row.source = entry.enabled, backend.name
         row.definition = json.dumps(definition(entry), default=str, sort_keys=True)
+        if row.first_seen_at is None:
+            row.first_seen_at = datetime.now(timezone.utc)
     for row in session.query(PeriodicSchedule).all():
         if row.name not in names:
             row.enabled = False

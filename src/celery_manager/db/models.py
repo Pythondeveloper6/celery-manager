@@ -162,6 +162,9 @@ class PeriodicSchedule(Base):
     schedule_override: Mapped[str | None] = mapped_column(payload_text(), nullable=True)
     edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the backend sync first saw this schedule (migration 0026): where
+    # missed-run detection starts for a schedule that has never fired.
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ScheduleOverride(Base):
@@ -396,6 +399,7 @@ from celery_manager.db.health_data import (  # noqa: F401
     HealthObservation,
     SchedulerInstance,
 )
+from celery_manager.db.firings import ScheduleFiring  # noqa: F401
 from celery_manager.db.llm import LlmCall  # noqa: F401
 from celery_manager.db.operations import OperationAnnotation  # noqa: F401
 from celery_manager.db.worker_history import WorkerHeartbeatSample  # noqa: F401

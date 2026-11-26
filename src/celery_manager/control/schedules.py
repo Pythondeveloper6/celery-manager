@@ -460,6 +460,15 @@ def pause_schedule(
     return row
 
 
+def set_backend_pause(config, schedule_name: str, paused: bool) -> None:
+    """With `pause_mode="backend"` and a writable scheduler backend, stop
+    (or resume) the beat entry itself, so a task without tracking is not
+    sent either. Otherwise a no-op. Raises if the backend refuses."""
+    backend = config._schedule_service.backend
+    if config.pause_mode == "backend" and backend is not None and backend.writable and backend.get(schedule_name):
+        backend.update(schedule_name, enabled=not paused)
+
+
 def resume_schedule(session, schedule_name: str, username: str) -> PeriodicSchedule | None:
     """Undo `pause_schedule`. Returns None for an unknown schedule.
 
@@ -511,6 +520,8 @@ def sync_periodic_schedules(session, celery_app) -> list[PeriodicSchedule]:
         row.task_name = entry["task"]
         row.schedule_spec = str(_entry_schedule(entry))
         row.enabled = True
+        if row.first_seen_at is None:
+            row.first_seen_at = datetime.now(timezone.utc)
         # `paused_at`/`paused_by` are deliberately not touched: they are an
         # operator decision (`pause_schedule`), not part of the beat config,
         # and resetting them here silently un-paused every schedule on each

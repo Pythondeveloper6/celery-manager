@@ -14,10 +14,11 @@ from celery_manager.beat_health import (
     _NoRedirect,
     _send_ping,
     owner_key,
+    record_firing,
     record_tick,
 )
 from celery_manager.control.health import beat_health
-from celery_manager.db.models import AppSetting, Base
+from celery_manager.db.models import AppSetting, Base, ScheduleFiring
 
 
 def scheduler():
@@ -137,3 +138,17 @@ def test_beat_owner_retirement_is_admin_only_and_audited():
 def test_owner_key_fits_every_supported_database_column():
     assert len(owner_key("a" * 500)) <= AppSetting.__table__.c.key.type.length
     assert owner_key("orders") != owner_key("billing")
+
+
+def test_beat_firing_is_recorded_after_send():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    beat = scheduler()
+    beat._cm_health_sessions = sessions
+    beat.app.conf.celery_manager_db_url = "configured"
+    at = datetime.now(timezone.utc).isoformat()
+    record_firing(beat, {"cm_schedule": "hourly", "cm_occurrence": at, "cm_sent_at": at}, "task-1")
+    with sessions() as session:
+        row = session.query(ScheduleFiring).one()
+        assert row.schedule_name == "hourly" and row.task_id == "task-1"

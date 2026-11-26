@@ -22,7 +22,7 @@ from celery_manager.control.retention import (
     run_prune,
     update_retention,
 )
-from celery_manager.db.models import AuditLog, TaskRun
+from celery_manager.db.models import AuditLog, ScheduleFiring, TaskRun
 from celery_manager.db.session import get_session_factory, init_db
 from celery_manager.tasks import PRUNE_BEAT_ENTRY, register_prune_task
 
@@ -69,6 +69,18 @@ def test_defaults_delete_nothing(session):
     assert prune_runs(session, now=NOW) == {}
     assert run_prune(session, now=NOW)["runs_deleted"] == 0
     assert remaining(session) == {"old"}
+
+
+def test_prune_removes_old_beat_firings_and_preserves_recent_ones(session):
+    session.add_all([
+        ScheduleFiring(schedule_name="hourly", task_id="old", occurrence_at=days_ago(20), sent_at=days_ago(20)),
+        ScheduleFiring(schedule_name="hourly", task_id="new", occurrence_at=days_ago(2), sent_at=days_ago(2)),
+    ])
+    session.commit()
+    assert run_prune(session, now=NOW, dry_run=True)["firings_deleted"] == 1
+    assert session.query(ScheduleFiring).count() == 2
+    assert run_prune(session, now=NOW)["firings_deleted"] == 1
+    assert [r.task_id for r in session.query(ScheduleFiring)] == ["new"]
 
 
 def test_default_days_deletes_only_older_runs(session):

@@ -841,6 +841,7 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                     )
                     return result
 
+        wrapper._cm_tracked = True
         wrapper._cm_redaction = (bool(redact_args), frozenset(redact_kwargs))
         controlled = wrapper
         if singleton is not None and singleton is not False:

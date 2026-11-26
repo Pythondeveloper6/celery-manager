@@ -125,6 +125,16 @@ def doctor(config, *, check_broker=False, check_workers=False, timeout=5):
         scheduler = str(app.conf.get("beat_scheduler") or "")
         add("scheduler_stamping", "pass" if scheduler.startswith("celery_manager.beat") else "info",
             "Configured stamping scheduler" if scheduler.startswith("celery_manager.beat") else "Verify the actual beat launch command uses the stamping scheduler")
+        from celery_manager.task import TrackedTask, is_covered
+        uncovered = sorted({entry["task"] for entry in (app.conf.beat_schedule or {}).values()
+                            if entry.get("task") and not (
+                                (task := app.tasks.get(entry["task"])) and (
+                                    getattr(task.run, "_cm_tracked", False)
+                                    or isinstance(task, TrackedTask) and is_covered(task.name, config)
+                                )
+                            )})
+        add("untracked_scheduled_tasks", "warn" if uncovered else "pass",
+            ", ".join(uncovered) if uncovered else "Every scheduled task is tracked")
         if check_broker:
             def broker():
                 with app.connection_for_read(connect_timeout=timeout) as connection:

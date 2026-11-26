@@ -8,9 +8,8 @@ from celery_app import app
 import celery_manager
 from celery_manager import report_progress
 
-# This module is imported by the Celery WORKER, which is where @track tasks
-# actually run, so the worker process has to be wired too. Without this call
-# the decorators silently no-op (no pause/skip, no log capture, no progress).
+# This module is imported by the Celery worker. TrackedTask and @track need
+# setup() here for pause/skip, log capture and progress.
 # The worker never serves HTTP, so it needs no secret key.
 celery_manager.setup(settings.make_config(app))
 
@@ -26,7 +25,6 @@ def send_welcome_email(self, user_email: str):
 
 
 @app.task(bind=True)
-@celery_manager.track()
 def import_customers(self, row_count: int = 60):
     """Slow on purpose: gives the dashboard a live progress bar to show."""
     logger.info("importing %s customer rows", row_count)

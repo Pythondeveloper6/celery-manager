@@ -14,7 +14,13 @@ from celery_manager.api.app import create_app
 from celery_manager.auth.users import create_user
 from celery_manager.config import CeleryManagerConfig
 from celery_manager.control.missed import list_missed_runs, missed_run_counts
-from celery_manager.db.models import Base, TaskRun
+from celery_manager.db.models import (
+    AppSetting,
+    Base,
+    PeriodicSchedule,
+    ScheduleFiring,
+    TaskRun,
+)
 
 HOURLY = "hourly"
 EVERY_10M = "every-10m"
@@ -153,6 +159,27 @@ def test_detection_is_read_only(session):
     assert not session.new and not session.dirty
 
 
+def test_first_seen_schedule_reports_never_sent_after_one_period(session):
+    session.add(AppSetting(key="beat_last_tick", value="{}"))
+    session.add(PeriodicSchedule(name=EVERY_10M, task_name="demo.echo", schedule_spec="600 seconds",
+                                 first_seen_at=NOW - 3 * STEP))
+    session.commit()
+    missed = list_missed_runs(session, _app(), EVERY_10M, now=NOW, grace_seconds=60)
+    assert [(item["due_at"], item["kind"]) for item in missed] == [
+        (NOW - 2 * STEP, "never_sent"), (NOW - STEP, "never_sent")
+    ]
+
+
+def test_sent_firing_without_worker_run_is_never_arrived(session):
+    _run(session, HOURLY, _hour(9))
+    session.add(ScheduleFiring(schedule_name=HOURLY, occurrence_at=_hour(10),
+                               sent_at=_hour(10), task_id="missing-run"))
+    session.commit()
+    missed = list_missed_runs(session, _app(), HOURLY, now=NOW)
+    assert ("never_arrived", _hour(10)) in [(item["kind"], item["due_at"]) for item in missed]
+    assert ("never_sent", _hour(10)) not in [(item["kind"], item["due_at"]) for item in missed]
+
+
 # --- REST ------------------------------------------------------------------
 
 
@@ -184,10 +211,26 @@ def test_missed_endpoint_shape_and_list_count():
     assert body["tracking_since"].endswith("+00:00")
     assert body["grace_seconds"] == 300
     assert [m["due_at"] for m in body["missed"]] == [(now - timedelta(hours=h)).isoformat() for h in (4, 3, 2)]
+    assert {m["kind"] for m in body["missed"]} == {"never_sent"}
 
     items = {i["name"]: i for i in client.get("/api/schedules").json()}
     assert items[HOURLY]["missed_count"] == 3
     assert items[EVERY_10M]["missed_count"] == 0
+
+
+def test_missed_endpoint_activates_from_first_seen_with_beat_heartbeat():
+    client, factory = _client()
+    now = datetime.now(timezone.utc)
+    with factory() as session:
+        session.add(AppSetting(key="beat_last_tick", value="{}"))
+        session.query(PeriodicSchedule).filter_by(name=EVERY_10M).update({
+            "first_seen_at": now - 3 * STEP
+        })
+        session.commit()
+    body = client.get(f"/api/schedules/{EVERY_10M}/missed").json()
+    assert body["active"] is True
+    assert body["tracking_since"] is not None
+    assert body["missed"]
 
 
 def test_missed_endpoint_404_for_unknown_schedule():

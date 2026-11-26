@@ -37,6 +37,14 @@ def test_pause_occurrence_endpoint_creates_override():
     assert response.json()["action"] == "skip"
 
 
+def test_unknown_schedule_does_not_change_backend():
+    client = _client_and_session()
+    with patch("celery_manager.api.routes.schedules.set_backend_pause") as update:
+        assert client.post("/api/schedules/missing/pause").status_code == 404
+        assert client.post("/api/schedules/missing/resume").status_code == 404
+    update.assert_not_called()
+
+
 def test_pause_occurrence_endpoint_writes_an_audit_row():
     """I2: pausing/cancelling a future occurrence is the product's headline
     operator action and had no audit trail at all — only retry did."""

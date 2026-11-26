@@ -244,8 +244,7 @@ from celery_manager.api.app import create_app
 app, _ = create_app(config)   # then: uvicorn your_module:app
 ```
 
-**2. The Celery worker process** — where `@track`-decorated tasks actually
-run:
+**2. The Celery worker process** — where tracked tasks actually run:
 
 ```python
 import celery_manager
@@ -258,6 +257,12 @@ def send_report(self):
     ...
 ```
 
+To track all tasks without a decorator on each one, create your Celery app
+with `task_cls="celery_manager.task:TrackedTask"`. Keep `@track(...)` only
+where you need per-task options; it takes precedence and runs once. Use
+`track_tasks` and `track_exclude` in `CeleryManagerConfig` to select task
+names with glob patterns.
+
 For per-occurrence skips, run beat with celery-manager's scheduler. It tags
 each firing with its scheduled time, so a skip hits exactly that run, however
 late it starts, and never a manual `.delay()`:
@@ -265,6 +270,10 @@ late it starts, and never a manual `.delay()`:
 ```bash
 celery -A your_module beat -S celery_manager.beat:Scheduler
 ```
+
+Set `your_celery_app.conf.celery_manager_db_url` to the dashboard database URL
+in the beat process to record each firing. This lets the dashboard distinguish
+"never sent" from "sent, never arrived" and detect schedules that never fired.
 
 Then run the events listener alongside your worker and beat, so the dashboard
 sees every task rather than only the decorated ones:

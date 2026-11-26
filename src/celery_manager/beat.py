@@ -27,7 +27,9 @@ The `@track` decorator uses them to apply a skip or cancel to exactly the
 firing it was saved for, however late the task starts. Messages without them
 (``.delay()``, ``apply_async``, dashboard retries) never consume an override.
 
-The beat process does not need celery-manager's database or `setup()`.
+The beat process does not need `setup()`. Set
+`app.conf.celery_manager_db_url` to the dashboard database URL to record
+each firing for missed-run detection; without it, headers still work.
 
 Schedule edits from the dashboard need one more thing: beat must read them.
 `DatabaseScheduler` is `Scheduler` plus that::
@@ -152,9 +154,12 @@ class StampOccurrencesMixin:
             return super().apply_async(
                 entry, producer=producer, advance=False, **kwargs
             )
-        return super().apply_async(
+        result = super().apply_async(
             _StampedEntry(entry, headers), producer=producer, advance=False, **kwargs
         )
+        from celery_manager.beat_health import record_firing
+        record_firing(self, headers, getattr(result, "id", None))
+        return result
 
 
 class Scheduler(StampOccurrencesMixin, PersistentScheduler):

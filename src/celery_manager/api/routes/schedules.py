@@ -29,6 +29,7 @@ from celery_manager.control.schedules import (
     resume_schedule,
     revert_schedule,
     schedule_edit_fields,
+    set_backend_pause,
 )
 from celery_manager.db.models import PeriodicSchedule
 from celery_manager.schedule_specs import ScheduleSpecError
@@ -116,7 +117,7 @@ def missed(name: str, request: Request, username: str = Depends(get_current_user
         "active": tracking_since is not None,
         "tracking_since": utc(tracking_since),
         "grace_seconds": config.missed_run_grace_seconds,
-        "missed": [{"due_at": utc(r["due_at"])} for r in runs],
+        "missed": [{"due_at": utc(r["due_at"]), "kind": r["kind"]} for r in runs],
     }
 
 
@@ -162,8 +163,14 @@ def pause_whole_schedule(
     the original `paused_at`/`paused_by`; a different `until` only moves the
     end time."""
     session_factory = request.app.state.cm_session_factory
+    config = request.app.state.cm_config
+    if payload and payload.until and config.pause_mode == "backend":
+        raise HTTPException(status_code=422, detail="Timed pauses are not supported with pause_mode='backend'.")
     with session_factory() as session:
+        if session.query(PeriodicSchedule.id).filter_by(name=name).first() is None:
+            raise HTTPException(status_code=404, detail="Unknown schedule.")
         try:
+            set_backend_pause(config, name, True)
             row = pause_schedule(session, name, username, until=payload.until if payload else None)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="`until` must be a time in the future.") from exc
@@ -178,6 +185,9 @@ def resume_whole_schedule(name: str, request: Request, username: str = Depends(r
     runs immediately and missed firings are not caught up. Idempotent."""
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
+        if session.query(PeriodicSchedule.id).filter_by(name=name).first() is None:
+            raise HTTPException(status_code=404, detail="Unknown schedule.")
+        set_backend_pause(request.app.state.cm_config, name, False)
         row = resume_schedule(session, name, username)
         if row is None:
             raise HTTPException(status_code=404, detail="Unknown schedule.")

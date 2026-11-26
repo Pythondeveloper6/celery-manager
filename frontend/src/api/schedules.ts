@@ -218,7 +218,7 @@ export interface MissedRuns {
   // How long after its due time a run may still arrive before it counts as missed.
   grace_seconds: number;
   // Runs due in the last 7 days that never arrived, oldest first.
-  missed: { due_at: string }[];
+  missed: { due_at: string; kind: "never_sent" | "never_arrived" }[];
 }
 
 export async function getMissedRuns(name: string): Promise<MissedRuns> {

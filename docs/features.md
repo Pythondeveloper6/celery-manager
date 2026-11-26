@@ -8,9 +8,9 @@ Two pieces do most of the work, so it helps to know them first:
 - **The events listener** (`celery-manager events`) watches Celery and
   records every task run. Most of what you see in the dashboard comes from
   it, with no change to your tasks.
-- **The `@track` decorator** is optional, per task. Add it when you want
-  log capture, live progress, or the ability to skip and pause scheduled
-  runs. Without it, a scheduled task always runs.
+- **Task tracking** enables log capture, live progress, and schedule controls.
+  Set `task_cls="celery_manager.task:TrackedTask"` on the Celery app to cover
+  every task, or use `@track` for individual tasks and per-task options.
 
 ## See what your tasks are doing
 
@@ -25,12 +25,12 @@ they came from.
 In the dashboard: click any run. [Read more](dashboard.md#task-detail)
 
 **Log capture.** Log lines your task writes while it runs are saved with
-that run and shown on its page. Needs `@track`.
+that run and shown on its page. Needs task tracking.
 [Read more](decorator.md#what-log-capture-actually-captures)
 
 **Live progress.** Call `report_progress(current, total, message)` inside a
 long task and watch a progress bar, elapsed time and an estimated finish
-while it runs. Needs `@track`.
+while it runs. Needs task tracking.
 [Read more](progress.md)
 
 **Workflows.** When a run is part of a chain, group or chord, its page shows
@@ -67,10 +67,13 @@ you confirm. [Read more](queues.md#bulk-cancel)
 
 ## Control periodic tasks (beat schedules)
 
-All of these need `@track` on the task. celery-manager doesn't change your
-beat schedule: beat still sends the task, and `@track` makes it skip. Run
-beat with `-S celery_manager.beat:Scheduler` so each firing carries its
-scheduled time and a skip applies only to that firing.
+All of these need task tracking, either through `TrackedTask` or `@track`.
+Beat still sends the task; the worker skips its body when a control applies.
+Run beat with `-S celery_manager.beat:Scheduler` so each firing carries its
+scheduled time. Set beat's `celery_manager_db_url` to record firings, including
+schedules that have never produced a worker run. With a writable scheduler
+backend, `pause_mode="backend"` also disables the beat entry while paused;
+this mode does not support timed pauses.
 
 **Skip one upcoming run.** Open a schedule to see its next runs, and skip or
 cancel just one of them. The rest of the schedule carries on as normal.
@@ -98,8 +101,8 @@ there is nothing to resume afterwards.
 In the dashboard: **Schedules**, under the schedule list.
 [Read more](schedules.md#maintenance-windows)
 
-**Missed runs.** A scheduled run that was due but never arrived (beat was
-down, the message was lost) is listed on the schedule's page and counted on
+**Missed runs.** A scheduled run that beat never sent, or sent without a worker
+run arriving, is listed with its reason on the schedule's page and counted on
 the schedule list, instead of going unnoticed.
 In the dashboard: **Schedules**, then a schedule's name.
 [Read more](decorator.md#missed-run-detection)
