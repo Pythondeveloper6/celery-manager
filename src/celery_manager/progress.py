@@ -193,8 +193,10 @@ def _coerce_message(value) -> str | None:
     return message[:MAX_MESSAGE_CHARS]
 
 
-def report_progress(current, total=None, message: str | None = None) -> None:
+def report_progress(current, total=None, message: str | None = None) -> bool:
     """Record progress for the currently running task. Never raises.
+    Returns True once an operator requested a cooperative cancel of this run
+    (see `celery_manager.cancel`), so a loop can stop: `if report_progress(i, n): break`.
 
     Call it from inside your own task body::
 
@@ -232,6 +234,8 @@ def report_progress(current, total=None, message: str | None = None) -> None:
             "celery-manager: report_progress() failed; the task's own outcome "
             "is unaffected and no progress was recorded."
         )
+    from celery_manager.cancel import cancel_requested
+    return cancel_requested()
 
 
 def _report_progress(current, total, message) -> None:

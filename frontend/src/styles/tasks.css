@@ -98,7 +98,8 @@
   --cm-bar-color: var(--cm-color-status-skipped);
 }
 
-.cm-strip-bar[data-status="revoked"] {
+.cm-strip-bar[data-status="revoked"],
+.cm-strip-bar[data-status="cancelled"] {
   --cm-bar-color: var(--cm-color-status-revoked);
 }
 
@@ -187,7 +188,8 @@
   --cm-tab-color: var(--cm-color-status-skipped);
 }
 
-.cm-status-tab[data-status="revoked"] {
+.cm-status-tab[data-status="revoked"],
+.cm-status-tab[data-status="cancelled"] {
   --cm-tab-color: var(--cm-color-status-revoked);
 }
 

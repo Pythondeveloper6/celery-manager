@@ -40,6 +40,24 @@ All notable changes to celery-manager are recorded here. The format follows
   and judges a schedule that never fired from when it was first seen.
   `pause_mode = "backend"` also disables the beat entry on a writable scheduler
   backend. `celery-manager doctor` lists scheduled tasks that are not tracked.
+- **Cooperative cancel.** `POST /api/tasks/{id}/cancel?mode=cooperative`
+  flags a running run; the task stops itself through `cancel_requested()`,
+  `raise_if_cancelled()` (raises `TaskCancelled`) or the new boolean return of
+  `report_progress()`, so its `finally` blocks run. Such a run is recorded as
+  `cancelled`, not failed. `mode=terminate` takes `signal` (`SIGTERM`,
+  `SIGUSR1`, or `SIGKILL` for admins). The dashboard has an "Ask to stop"
+  button. Migration `0029` adds `task_runs.cancel_requested_at` and
+  `cancel_requested_by`.
+- **Revokes survive a worker restart.** Every single, bulk and delayed cancel
+  is stored in `revoked_tasks` until the task's ETA plus an hour, or
+  `revoke_retention_hours` (48). The events listener re-sends live revokes to
+  each worker that comes online, and a tracked task checks the table before
+  its body runs. Expired rows are pruned.
+- **Attempt history.** Each attempt of a retried run is kept in
+  `task_run_attempts` (status, worker, times, redacted exception and
+  traceback), written by the decorator and the events listener. `retry_count`
+  is now filled in, so the export and the Flower-shaped `retries` field are
+  correct, and the run page lists the attempts.
 - **A slow monitoring database no longer slows tasks and requests.** Writes
   made by the decorator, progress and the publish hook go through a
   per-process circuit breaker: after `telemetry_breaker_failures` (3)

@@ -14,7 +14,7 @@ import { formatDuration } from "../lib/taskProgress";
    collapsible data table, so nothing is conveyed by colour or shape alone. */
 
 // Stack order, bottom to top: the outcome people care about sits at the base.
-const STACK_ORDER = ["succeeded", "failed", "retried", "revoked", "skipped", "started", "queued"];
+const STACK_ORDER = ["succeeded", "failed", "retried", "revoked", "cancelled", "skipped", "started", "queued"];
 
 const HEIGHT = 200;
 const MARGIN = { top: 8, right: 8, bottom: 24, left: 52 };

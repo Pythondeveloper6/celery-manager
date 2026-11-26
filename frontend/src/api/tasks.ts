@@ -29,6 +29,17 @@ export interface TaskSummary {
   progress_updated_at: string | null;
 }
 
+export interface TaskAttempt {
+  attempt: number;
+  status: string;
+  worker: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  runtime_seconds: number | null;
+  exception: string | null;
+  traceback: string | null;
+}
+
 export interface TaskDetail extends TaskSummary {
   args: string;
   kwargs: string;
@@ -59,6 +70,13 @@ export interface TaskDetail extends TaskSummary {
   parent_id: string | null;
   root_id: string | null;
   group_id: string | null;
+  retry_count: number;
+  // Set when an operator asked the running task to stop itself; it stops at
+  // its next check, so this is a request, not yet an outcome.
+  cancel_requested_at: string | null;
+  cancel_requested_by: string | null;
+  // Every attempt of this run (Celery retries reuse the task id), first first.
+  attempts: TaskAttempt[];
 }
 
 export interface TaskPage {
@@ -184,6 +202,16 @@ export async function startTask(request: StartTaskRequest): Promise<{ task_id: s
   });
   if (!response.ok) throw new Error(await errorMessage(response, "Couldn't start the task."));
   return response.json();
+}
+
+// `cooperative` only flags the run: the task stops itself at its next check.
+export async function requestCooperativeCancel(taskId: string): Promise<void> {
+  const response = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}/cancel?mode=cooperative`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (response.status === 403) throw new Error(await forbiddenMessage(response));
+  if (!response.ok) throw new Error("Couldn't ask the task to stop.");
 }
 
 // `terminate=false` is a plain revoke: a queued task is skipped once a worker

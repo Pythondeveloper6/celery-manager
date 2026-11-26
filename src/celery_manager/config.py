@@ -300,6 +300,11 @@ class CeleryManagerConfig:
     # "thread" records published tasks from a bounded background queue, so a
     # publishing request never waits on the monitoring database.
     publish_hook_mode: str = "sync"
+    # How long a stored revoke is re-sent and honoured when the task's ETA is
+    # unknown (with an ETA: until the ETA plus an hour, if later).
+    revoke_retention_hours: int = 48
+    # How often `cancel_requested()` re-reads the flag per run.
+    cancel_check_interval_seconds: float = 2.0
     cron_parser: object = None
     tenant_resolver: Callable[[Request, object], str | None | Awaitable[str | None]] | None = None
     lock_provider: object = None  # LockProvider; Redis is inferred only for a Redis broker

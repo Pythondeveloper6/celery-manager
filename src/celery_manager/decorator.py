@@ -9,9 +9,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from celery import Task
-from celery.exceptions import Retry
+from celery.exceptions import Ignore, Retry
 
+from celery_manager import cancel as cancel_module
 from celery_manager import progress as progress_module
+from celery_manager.cancel import TaskCancelled
 from celery_manager.logcapture import capture_logs
 from celery_manager.occurrences import (
     CALENDAR_MATCH_WINDOW,
@@ -474,6 +476,21 @@ def _persist_run(task_id: str, create_defaults: dict | None = None, clear: tuple
         )
 
 
+def _persist_attempt(task_id: str, attempt: int, task_name: str, run_args, run_kwargs, **fields) -> None:
+    """Record one attempt's outcome (see control.attempts); never raises."""
+    from celery_manager.telemetry import Skipped, guarded
+    try:
+        from celery_manager.control.attempts import upsert_attempt
+        with guarded(_settings()), _sessions()() as session:
+            upsert_attempt(session, task_id, attempt, config=_settings(), task_name=task_name,
+                           args=run_args, kwargs=run_kwargs, **fields)
+            session.commit()
+    except Skipped:
+        return
+    except Exception:  # deliberate: storage must never affect the task's outcome
+        logger.exception("celery-manager: could not record attempt %s of %s", attempt, task_id)
+
+
 def _describe_exception(exc: BaseException) -> tuple[str, str]:
     """`(message, traceback)` for a task that raised, without ever raising.
 
@@ -656,9 +673,15 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
             # celery-manager was only meant to observe.
             skipped = False
             skip_reason: str | None = None
+            revoked = False
             from celery_manager.telemetry import Skipped, guarded
             try:
                 with guarded(_settings()), _sessions()() as session:
+                    # A stored revoke: the worker may have restarted and
+                    # forgotten it (control.revokes).
+                    if task_id:
+                        from celery_manager.control.revokes import is_revoked
+                        revoked = is_revoked(session, task_id)
                     override = _find_matching_override(session, control_schedule_name, beat_occurrence)
                     if override is not None and override.action in ("skip", "cancel"):
                         # Commit the "this occurrence is consumed" decision on
@@ -697,6 +720,15 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                 if getattr(_settings(), "control_check_on_failure", "run") == "skip":
                     skipped, skip_reason = True, "control check unavailable"
 
+            if revoked:
+                now = datetime.now(timezone.utc)
+                _persist_run(task_id, task_name=task_name, status="revoked", args=run_args, kwargs=run_kwargs,
+                             schedule_name=effective_schedule_name, finished_at=now,
+                             create_defaults={"task_name": task_name, "status": "revoked"})
+                # Ignore: Celery records no outcome, so no success event
+                # replaces `revoked`.
+                raise Ignore()
+
             if skipped:
                 now = datetime.now(timezone.utc)
                 _persist_run(
@@ -716,6 +748,15 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
 
             started_at = datetime.now(timezone.utc)
             effective_task_id = task_id or f"run-{started_at.isoformat()}"
+            request = getattr(task_self, "request", None)
+            attempt = getattr(request, "retries", 0) or 0
+            worker = getattr(request, "hostname", None)
+
+            def attempt_done(status, finished=None, exception=None, traceback=None):
+                _persist_attempt(effective_task_id, attempt, task_name, run_args, run_kwargs, status=status,
+                                 worker=worker, started_at=started_at, finished_at=finished,
+                                 runtime_seconds=(finished - started_at).total_seconds() if finished else None,
+                                 exception=exception, traceback=traceback)
 
             # Announce the run *before* calling the body. Until this existed
             # the decorator only ever wrote when a task finished, so a
@@ -770,6 +811,7 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                 **occurrence_fields,
                 initiator=_initiator(task_self),
                 **_workflow_lineage(task_self),
+                retry_count=attempt,
                 clear=(
                     "exception", "traceback", "finished_at", "runtime_seconds",
                     "progress_current", "progress_total", "progress_message",
@@ -809,7 +851,21 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                         log_output=buffer.getvalue(),
                         log_output_truncated=buffer.truncated,
                     )
+                    cause = getattr(exc, "exc", None)
+                    described = _describe_exception(cause) if isinstance(cause, BaseException) else (str(exc), None)
+                    attempt_done("retried", datetime.now(timezone.utc), described[0], described[1])
                     raise
+                except TaskCancelled:
+                    finished_at = datetime.now(timezone.utc)
+                    _persist_run(
+                        effective_task_id, task_name=task_name, status="cancelled",
+                        schedule_name=effective_schedule_name, started_at=started_at, finished_at=finished_at,
+                        runtime_seconds=(finished_at - started_at).total_seconds(),
+                        log_output=buffer.getvalue(), log_output_truncated=buffer.truncated,
+                    )
+                    attempt_done("cancelled", finished_at)
+                    cancel_module.forget(effective_task_id)
+                    raise Ignore() from None
                 except Exception as exc:
                     finished_at = datetime.now(timezone.utc)
                     message, formatted = _describe_exception(exc)
@@ -828,6 +884,7 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                         log_output=buffer.getvalue(),
                         log_output_truncated=buffer.truncated,
                     )
+                    attempt_done("failed", finished_at, message, formatted)
                     raise
                 else:
                     finished_at = datetime.now(timezone.utc)
@@ -847,6 +904,7 @@ def track(schedule_name: str | None = None, *, schedule_from=None, consume_kwarg
                         log_output=buffer.getvalue(),
                         log_output_truncated=buffer.truncated,
                     )
+                    attempt_done("succeeded", finished_at)
                     return result
 
         wrapper._cm_tracked = True
@@ -895,7 +953,7 @@ def _singleton_wrapper(wrapped, original, key_spec, ttl, on_conflict, consume_kw
                 return None
             with maintain_lease(provider, lease, ttl):
                 return wrapped(*args, **kwargs)
-        except Retry:
+        except (Retry, Ignore):
             raise
         except Exception as exc:
             # Explicit singleton enforcement is fail-closed, unlike ordinary

@@ -3,7 +3,8 @@ from __future__ import annotations
 import ast
 import inspect
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 
 from celery import Celery
 from sqlalchemy import or_
@@ -12,6 +13,8 @@ from sqlalchemy.orm import defer
 from celery_manager.control.audit import record as record_audit
 from celery_manager.db.models import TaskRun
 from celery_manager.db.runs import commit_with_deadlock_retry, lock_task_run
+
+logger = logging.getLogger(__name__)
 
 # Maximum rows a list endpoint will hand back in one response, and the ceiling
 # each route clamps a caller-supplied `limit` to (`GET /api/tasks` and
@@ -407,12 +410,38 @@ def cancel_task(
     terminate: bool = False,
     session=None,
     username: str | None = None,
+    mode: str | None = None,
+    signal: str | None = None,
 ) -> None:
-    """Revoke a queued task, or terminate it if already running (terminate=True).
+    """Cancel a run. `mode`:
 
+    - `cooperative`: only flag the run; the task stops itself when it next
+      calls `cancel_requested()`, `raise_if_cancelled()` or `report_progress()`.
+    - `revoke` (default): a queued task never starts.
+    - `terminate`: also signal a running one (`signal`: SIGTERM by default,
+      SIGUSR1 for Celery's soft time limit, SIGKILL).
+
+    Revokes are stored (`revoked_tasks`) so a restarted worker is told again.
     Pass `session` and `username` to record the action in the audit log; see
     `start_task` above for why they're optional.
     """
+    mode = mode or ("terminate" if terminate else "revoke")
+    if mode not in CANCEL_MODES:
+        raise ValueError(f"mode must be one of {', '.join(CANCEL_MODES)}")
+    if signal is not None and (mode != "terminate" or signal not in TERMINATE_SIGNALS):
+        raise ValueError(f"signal applies to terminate and must be one of {', '.join(TERMINATE_SIGNALS)}")
+    if mode == "cooperative":
+        run = get_task_run(session, task_id) if session is not None else None
+        if run is None:
+            raise TaskRunNotFound(f"no task run found for {task_id}")
+        _require_celery_origin(run)
+        run.cancel_requested_at = datetime.now(timezone.utc)
+        run.cancel_requested_by = username
+        session.commit()
+        if username is not None:
+            record_audit(session, username, "cancel", "task", task_id, {"mode": mode})
+        return
+    terminate = mode == "terminate"
     if session is not None:
         _require_celery_origin(get_task_run(session, task_id))
     elif task_id.startswith("external:"):
@@ -421,9 +450,31 @@ def cancel_task(
     if celery_app is None:
         from celery_manager.control.policy import DispatchDenied
         raise DispatchDenied("No Celery executor is configured.", 409)
-    celery_app.control.revoke(task_id, terminate=terminate)
+    celery_app.control.revoke(task_id, terminate=terminate, **({"signal": signal} if signal else {}))
+    if session is not None:
+        _remember(session, [task_id], terminate, username)
     if session is not None and username is not None:
-        record_audit(session, username, "cancel", "task", task_id, {"terminate": terminate})
+        details = {"terminate": terminate}
+        if signal:
+            details["signal"] = signal
+        record_audit(session, username, "cancel", "task", task_id, details)
+
+
+CANCEL_MODES = ("cooperative", "revoke", "terminate")
+TERMINATE_SIGNALS = ("SIGTERM", "SIGUSR1", "SIGKILL")
+
+
+def _remember(session, task_ids, terminate, username):
+    """Store the revokes; a storage failure never undoes the broadcast."""
+    from celery_manager.control.revokes import remember_revokes
+    config = session.info.get("cm_config")
+    try:
+        remember_revokes(session, task_ids, terminate=terminate, username=username,
+                         retention_hours=getattr(config, "revoke_retention_hours", 48))
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("celery-manager: revokes could not be stored; a restarted worker may run them")
 
 
 class ArgumentsRedacted(ValueError):
@@ -658,6 +709,7 @@ def bulk_cancel(
 
     for start in range(0, len(targets), _REVOKE_CHUNK):
         celery_app.control.revoke(targets[start:start + _REVOKE_CHUNK], terminate=terminate)
+    _remember(session, targets, terminate, username)
 
     record_audit(session, username, "cancel_bulk", "task", "filter" if task_ids is None else "selection", {
         "terminate": terminate,

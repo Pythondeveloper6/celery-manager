@@ -72,6 +72,10 @@ class TaskRun(Base):
     result_truncated: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     initiator: Mapped[str | None] = mapped_column(label_text(255), nullable=True, index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    # A cooperative cancel (migration 0029): the task reads it through
+    # `cancel_requested()` / `report_progress()` and stops on its own.
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_by: Mapped[str | None] = mapped_column(label_text(255), nullable=True)
     schedule_name: Mapped[str | None] = mapped_column(label_text(255), nullable=True, index=True)
 
     # Retry lineage. Set by `retry_task` on the *new* run it dispatches, so a
@@ -412,6 +416,7 @@ from celery_manager.db.health_data import (  # noqa: F401
     SchedulerInstance,
 )
 from celery_manager.db.firings import ScheduleFiring  # noqa: F401
+from celery_manager.db.run_control import RevokedTask, TaskRunAttempt  # noqa: F401
 from celery_manager.db.llm import LlmCall  # noqa: F401
 from celery_manager.db.operations import OperationAnnotation  # noqa: F401
 from celery_manager.db.worker_history import WorkerHeartbeatSample  # noqa: F401

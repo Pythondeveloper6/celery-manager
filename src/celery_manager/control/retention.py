@@ -360,9 +360,21 @@ def run_prune(
         firings_deleted = (session.query(func.count(ScheduleFiring.id)).filter(old_firings).scalar() or 0) if dry_run else _delete_in_batches(
             session, ScheduleFiring, old_firings, batch_size
         )
+    # Attempts follow their run; revokes expire on their own.
+    from sqlalchemy import exists
+
+    from celery_manager.control.revokes import prune_revokes
+    from celery_manager.db.run_control import TaskRunAttempt
+    orphaned = ~exists().where(TaskRun.task_id == TaskRunAttempt.task_id)
+    attempts_deleted = (session.query(func.count(TaskRunAttempt.id)).filter(orphaned).scalar() or 0) if dry_run else _delete_in_batches(
+        session, TaskRunAttempt, orphaned, batch_size
+    )
+    revokes_deleted = prune_revokes(session, now=now, dry_run=dry_run)
     summary = {
         "dry_run": dry_run,
         "at": now.isoformat(),
+        "attempts_deleted": attempts_deleted,
+        "revokes_deleted": revokes_deleted,
         "runs_deleted": sum(by_task.values()),
         "audit_deleted": audit_deleted,
         "samples_deleted": samples_deleted,

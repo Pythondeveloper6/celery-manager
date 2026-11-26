@@ -1071,7 +1071,8 @@ kbd {
   --cm-status-color: var(--cm-color-status-skipped);
 }
 
-.cm-status[data-status="revoked"] {
+.cm-status[data-status="revoked"],
+.cm-status[data-status="cancelled"] {
   --cm-status-color: var(--cm-color-status-revoked);
 }
 

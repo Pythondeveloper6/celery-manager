@@ -27,6 +27,9 @@ from celery_manager.control.tasks import (
     start_task,
 )
 
+from celery_manager.control.attempts import list_attempts  # noqa: E402
+from celery_manager.control.policy import DispatchDenied  # noqa: E402
+
 router = APIRouter(prefix="/api/tasks")
 
 TOTAL_CAP = 10_000
@@ -198,6 +201,17 @@ def get_task(task_id: str, request: Request, principal: Principal):
             "parent_id": visible_reference(run.parent_id),
             "root_id": visible_reference(run.root_id),
             "group_id": None if scoped else run.group_id,
+            "retry_count": run.retry_count or 0,
+            "cancel_requested_at": utc(run.cancel_requested_at),
+            "cancel_requested_by": run.cancel_requested_by,
+            # One entry per attempt (Celery retries reuse the task id).
+            "attempts": [
+                {"attempt": a.attempt, "status": a.status, "worker": a.worker,
+                 "started_at": utc(a.started_at), "finished_at": utc(a.finished_at),
+                 "runtime_seconds": a.runtime_seconds, "exception": a.exception,
+                 "traceback": None if traceback_restricted else a.traceback}
+                for a in list_attempts(session, task_id)
+            ],
         }
 
 
@@ -235,15 +249,29 @@ def start(payload: StartRequest, request: Request, principal: Principal, usernam
 
 
 @router.post("/{task_id}/cancel")
-def cancel(task_id: str, request: Request, principal: Principal, terminate: bool = False, force: bool = False, username: str = Depends(require_operator)):
+def cancel(task_id: str, request: Request, principal: Principal, terminate: bool = False, force: bool = False,
+           mode: str | None = None, signal: str | None = None, username: str = Depends(require_operator)):
+    """`mode`: `cooperative` (flag only), `revoke` (default) or `terminate`
+    (`signal`: SIGTERM, SIGUSR1 or, for admins, SIGKILL). `terminate=true`
+    is the older spelling of `mode=terminate`."""
     celery_app = request.app.state.cm_config.celery_app
     session_factory = request.app.state.cm_session_factory
     with session_factory() as session:
         if force and principal.role != "admin":
             raise HTTPException(403, "Force cancellation requires the admin role")
+        if signal == "SIGKILL" and principal.role != "admin":
+            raise HTTPException(403, "SIGKILL requires the admin role")
         if not force and get_task_run(session, task_id) is None:
             raise HTTPException(404, "Unknown task ID; an admin can force cancellation")
-        cancel_task(celery_app, task_id, terminate=terminate, session=session, username=username)
+        try:
+            cancel_task(celery_app, task_id, terminate=terminate, session=session, username=username,
+                        mode=mode, signal=signal)
+        except TaskRunNotFound as exc:
+            raise HTTPException(404, "Unknown task ID") from exc
+        except DispatchDenied:
+            raise
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     return {"ok": True}
 
 

@@ -8,6 +8,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   cancelTask,
   getTask,
+  requestCooperativeCancel,
   TaskNotRecorded,
   retryTask,
   subscribeToUpdates,
@@ -32,7 +33,7 @@ import {
 } from "../lib/taskProgress";
 
 // Statuses where more is still going to happen, so the page keeps listening.
-// Anything else — succeeded, failed, skipped, revoked, or a status string
+// Anything else — succeeded, failed, skipped, revoked, cancelled, or a status string
 // this build doesn't recognise — is treated as terminal and stops listening.
 // Erring towards "stop" matters more than erring towards "keep watching": a
 // stuck listener on a finished run is a bug nobody notices, while a stopped
@@ -167,7 +168,7 @@ export function TaskDetail() {
   const [retryNotice, setRetryNotice] = useState<{ newTaskId: string } | null>(null);
   // "cancel" | "terminate" while a request is in flight; confirmTerminate is
   // the inline second step that guards the destructive option.
-  const [cancelBusy, setCancelBusy] = useState<"cancel" | "terminate" | null>(null);
+  const [cancelBusy, setCancelBusy] = useState<"cancel" | "terminate" | "stop" | null>(null);
   const [confirmTerminate, setConfirmTerminate] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelNotice, setCancelNotice] = useState<string | null>(null);
@@ -355,6 +356,22 @@ export function TaskDetail() {
     }
   }
 
+  async function handleStop() {
+    if (!task) return;
+    setCancelBusy("stop");
+    setCancelError(null);
+    setCancelNotice(null);
+    try {
+      await requestCooperativeCancel(task.task_id);
+      setCancelNotice("Stop requested. The task ends itself at its next check, so its cleanup still runs.");
+      await refreshTask(task.task_id);
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Couldn't ask the task to stop.");
+    } finally {
+      setCancelBusy(null);
+    }
+  }
+
   const canCancel = task !== null && CANCELLABLE_STATUSES.has(task.status);
   const canTerminate = task !== null && task.status === "started";
 
@@ -458,6 +475,18 @@ export function TaskDetail() {
                         {cancelBusy === "cancel" ? "Cancelling…" : "Cancel"}
                       </button>
                     )}
+                    {canTerminate && !task.cancel_requested_at && (
+                      <button
+                        type="button"
+                        className="cm-btn cm-btn-outline"
+                        onClick={handleStop}
+                        disabled={cancelBusy !== null}
+                        aria-busy={cancelBusy === "stop"}
+                        title="The task stops itself at its next check (report_progress or cancel_requested)"
+                      >
+                        {cancelBusy === "stop" ? "Asking…" : "Ask to stop"}
+                      </button>
+                    )}
                     {canTerminate && (
                       <button
                         type="button"
@@ -515,6 +544,12 @@ export function TaskDetail() {
               {cancelNotice}
             </p>
           )}
+          {task.cancel_requested_at && running && (
+            <p className="cm-notice" role="status">
+              Stop requested by {task.cancel_requested_by ?? "an operator"} at {formatTimestamp(task.cancel_requested_at)};
+              the task stops at its next check.
+            </p>
+          )}
           {cancelError && (
             <p className="cm-error" role="alert">
               {cancelError}
@@ -552,6 +587,30 @@ export function TaskDetail() {
                   </h2>
                   <p className="cm-failure-message">{task.exception}</p>
                   {task.traceback && <pre className="cm-code">{task.traceback}</pre>}
+                </section>
+              )}
+
+              {task.attempts.length > 1 && (
+                <section className="cm-card cm-detail-section" aria-labelledby="cm-attempts-heading">
+                  <h2 className="cm-card-title" id="cm-attempts-heading">
+                    Attempts ({task.attempts.length})
+                  </h2>
+                  <ol className="cm-attempts">
+                    {task.attempts.map((a) => (
+                      <li key={a.attempt}>
+                        <span>#{a.attempt + 1}</span> <StatusBadge status={a.status} />
+                        {a.worker && <span> on {a.worker}</span>}
+                        {a.runtime_seconds !== null && <span> · {formatDuration(a.runtime_seconds)}</span>}
+                        {a.exception && <p className="cm-failure-message">{a.exception}</p>}
+                        {a.traceback && (
+                          <details>
+                            <summary>Traceback</summary>
+                            <pre className="cm-code">{a.traceback}</pre>
+                          </details>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
                 </section>
               )}
 

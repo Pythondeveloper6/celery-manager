@@ -43,7 +43,7 @@ _DECORATOR_OWNED_STATUSES = frozenset({"skipped"})
 # state wins". The observed failure: a `task-sent` processed after the worker
 # had already started (or finished) the run flipped it back to `queued`, and
 # nothing later ever corrected it.
-_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "revoked"})
+_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "revoked", "cancelled"})
 
 
 def _accepts_status(current: str | None, incoming: str) -> bool:
@@ -292,6 +292,20 @@ def upsert_task_run(session, event: dict, config=None, stats=None) -> None:
             setattr(run, key, value)
     if event.get("traceback") is not None:
         run.traceback = event["traceback"]
+    # Attempt history (Celery reuses the task id across retries).
+    retries = event.get("retries")
+    if event_type == "task-received" and isinstance(retries, int) and not isinstance(retries, bool):
+        run.retry_count = max(run.retry_count or 0, retries)
+    if event_type in ("task-retried", "task-succeeded", "task-failed"):
+        from celery_manager.control.attempts import upsert_attempt
+        attempt = run.retry_count or 0
+        upsert_attempt(session, task_id, attempt, config=config, task_name=run.task_name,
+                       args=run.args, kwargs=run.kwargs, status=status,
+                       worker=event.get("hostname"), finished_at=_lifecycle_time(event, config, None),
+                       runtime_seconds=event.get("runtime") if isinstance(event.get("runtime"), (int, float)) else None,
+                       exception=event.get("exception"), traceback=event.get("traceback"))
+        if event_type == "task-retried":
+            run.retry_count = attempt + 1
     from celery_manager.redaction import redact_run
     redact_run(config, run)
 
@@ -348,6 +362,16 @@ class EventListener:
                 if time.monotonic() - last_heartbeat[0] > 120:
                     log.warning("celery-manager: no worker heartbeat received in two minutes")
 
+        def resend(hostname):
+            # A restarted worker forgot its revokes; a failure here only
+            # loses the re-send, never the event.
+            try:
+                from celery_manager.control.revokes import resend_revokes
+                with self._session_factory() as session:
+                    resend_revokes(self._config.celery_app, session, hostname)
+            except Exception:
+                log.warning("celery-manager: could not re-send revokes to %s", hostname, exc_info=True)
+
         def on_event(event):
             if event.get("type") in ("worker-online", "worker-heartbeat"):
                 last_heartbeat[0] = time.monotonic()
@@ -361,6 +385,8 @@ class EventListener:
                         upsert_task_run(session, event, self._config, stats)
 
                     commit_with_deadlock_retry(session, write)
+                if event.get("type") == "worker-online" and event.get("hostname") and self._config.celery_app is not None:
+                    resend(event["hostname"])
             except Exception:
                 # Never log the event body: it carries task arguments.
                 stats.failed += 1

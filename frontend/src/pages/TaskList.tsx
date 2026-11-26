@@ -76,7 +76,7 @@ const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
 // waiting or being retried, then what broke, and only then the settled and
 // administrative states. That is the order someone reads the board in during
 // an incident.
-const STATUS_ORDER = ["started", "queued", "retried", "failed", "succeeded", "skipped", "revoked"];
+const STATUS_ORDER = ["started", "queued", "retried", "failed", "succeeded", "skipped", "revoked", "cancelled"];
 
 // Sentinel bucket key for runs that never started. Must not be able to
 // collide with a real day key, which is always "YYYY-MM-DD" — the underscores

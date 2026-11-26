@@ -438,6 +438,8 @@ def cancel_delayed_tasks(celery_app: Celery, session, username: str, task_ids: l
     for start in range(0, len(ids), _REVOKE_CHUNK):
         _broadcast(celery_app.control.revoke, ids[start:start + _REVOKE_CHUNK])
 
+    from celery_manager.control.tasks import _remember
+    _remember(session, ids, False, username)
     now = datetime.now(timezone.utc)
     marked = []
     for run in session.query(TaskRun).filter(TaskRun.task_id.in_(ids)).all():

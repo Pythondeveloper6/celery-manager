@@ -222,7 +222,7 @@ function DelayedPanel() {
 
   // A cancelled task stays in the worker's schedule until its ETA; its run
   // reading `revoked` is how the page knows not to offer cancel again.
-  const cancellable = (t: DelayedTask) => t.run?.status !== "revoked";
+  const cancellable = (t: DelayedTask) => t.run?.status !== "revoked" && t.run?.status !== "cancelled";
   const tasks = data?.tasks ?? [];
   const selectable = tasks.filter(cancellable);
   // Drop ids from the selection once the worker no longer holds them.
